@@ -6,6 +6,7 @@ mod convos;
 mod inventory;
 mod accounts;
 mod files;
+mod git;
 mod projects;
 mod livre;
 mod term;
@@ -152,6 +153,44 @@ async fn list_dir(state: State<'_, AppState>, project_id: String, path: String) 
 async fn read_file(state: State<'_, AppState>, project_id: String, path: String) -> Result<FileContent, String> {
     let root = state.root_of(&project_id)?;
     files::read_file(&root, &path)
+}
+
+// ---------------------------------------------------------------- Git e GitHub (só leitura)
+
+#[tauri::command]
+async fn git_status(state: State<'_, AppState>, project_id: String) -> Result<git::Status, String> {
+    let root = state.root_of(&project_id)?;
+    blocking(move || git::status(&root)).await?
+}
+
+/// Resumo de todos os projetos (Mapa e barra lateral).
+#[tauri::command]
+async fn git_summaries(state: State<'_, AppState>) -> Result<HashMap<String, git::Summary>, String> {
+    let list: Vec<(String, PathBuf)> = {
+        let store = state.store.lock().map_err(|e| e.to_string())?;
+        store.projects.iter().map(|p| (p.id.clone(), PathBuf::from(&p.path))).collect()
+    };
+    blocking(move || {
+        let handles: Vec<_> = list.into_iter().map(|(id, root)| std::thread::spawn(move || (id, git::summary(&root)))).collect();
+        handles.into_iter().filter_map(|h| h.join().ok()).collect()
+    })
+    .await
+}
+
+#[tauri::command]
+async fn git_fetch(state: State<'_, AppState>, project_id: String) -> Result<git::Status, String> {
+    let root = state.root_of(&project_id)?;
+    blocking(move || {
+        git::fetch(&root)?;
+        git::status(&root)
+    })
+    .await?
+}
+
+#[tauri::command]
+async fn git_github(state: State<'_, AppState>, project_id: String, branch: Option<String>) -> Result<git::GitHub, String> {
+    let root = state.root_of(&project_id)?;
+    blocking(move || git::github(&root, branch.as_deref())).await?
 }
 
 // ---------------------------------------------------------------- Contas
@@ -818,6 +857,10 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            git_status,
+            git_summaries,
+            git_fetch,
+            git_github,
             settings_get,
             settings_set,
             app_paths,

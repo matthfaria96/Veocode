@@ -14,6 +14,7 @@ import Settings from "./views/Settings";
 import Livre from "./views/Livre";
 import { loadSettings } from "./settings";
 import { helpOpen, loadProjects, paletteOpen, setHelpOpen, setPaletteOpen, showToast, toast, view } from "./store";
+import { loadSummaries } from "./git";
 import { api } from "./api";
 import { handleFsChange } from "./realProject";
 import { refreshProcs } from "./xray";
@@ -57,8 +58,12 @@ export default function App() {
     // mudanças no disco chegam do Rust (src-tauri/src/watch.rs)
     // se o settings do Claude no projeto mudar (por fora ou pelo próprio Claude), o painel do nível relê
     let accTimer: number | undefined;
+    let gitTimer: number | undefined;
     const unlisten = api.onFsChange((e) => {
       handleFsChange(e);
+      // arquivos mudaram: o número de mudanças do git também (uma leitura leve, juntando os avisos)
+      clearTimeout(gitTimer);
+      gitTimer = window.setTimeout(() => void loadSummaries(true), 1500);
       if (acc.reports[e.projectId] && e.changes.some((c) => /(^|[\\/])\.claude[\\/]settings(\.local)?\.json$/.test(c.path))) {
         clearTimeout(accTimer);
         accTimer = window.setTimeout(() => loadAccess(e.projectId), 400);

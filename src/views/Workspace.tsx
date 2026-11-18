@@ -4,6 +4,7 @@ import { createEffect, createSignal, For, on, onCleanup, Show } from "solid-js";
 import { accessLevels } from "../data/mock";
 import { accountById } from "../accounts";
 import { forgetProject } from "../terminal";
+import { forgetGit, git, loadSummaries, setGitTab } from "../git";
 import { absPathOf, addProjectFromPicker, currentProject, projectId, projects, removeProject, resetWorkspace, setProjectId, setWs, showToast } from "../store";
 import { startAgentSim } from "../sim/agentSim";
 import { startAgentFeed } from "../agentFeed";
@@ -33,6 +34,7 @@ export default function Workspace() {
         onCleanup(stop);
       } else {
         openRealProject();
+        void loadSummaries(true);
         // passos reais do Claude nesta pasta (lidos dos históricos dele)
         const stop = startAgentFeed(root);
         onCleanup(stop);
@@ -96,7 +98,12 @@ export default function Workspace() {
         </div>
 
         <div class="sidebar-meta">
-          <span><GitBranch size={12} /> {p().branch}</span>
+          <button class="meta-git" title="Git e GitHub deste projeto" onClick={() => setGitTab("git")}>
+            <GitBranch size={12} /> {git.summaries[p().id]?.branch ?? p().branch}
+            <Show when={git.summaries[p().id]?.ahead}><span class="meta-n warn">↑{git.summaries[p().id]!.ahead}</span></Show>
+            <Show when={git.summaries[p().id]?.behind}><span class="meta-n info">↓{git.summaries[p().id]!.behind}</span></Show>
+            <Show when={git.summaries[p().id]?.changed}><span class="meta-n edit" title="Arquivos mudados desde o último commit">●{git.summaries[p().id]!.changed}</span></Show>
+          </button>
           <span class="meta-dot" style={{ background: accountById(p().accountId).color }} />
           <span>{accountById(p().accountId).label}</span>
         </div>
@@ -107,7 +114,7 @@ export default function Workspace() {
             <span class="sidebar-tools">
               <button class="icon-btn small" title="Recarregar" onClick={() => loadDir("")}><RefreshCw size={12} /></button>
               <button class="icon-btn small" title="Mostrar no Finder/Explorer" onClick={reveal}><FolderSearch size={12} /></button>
-              <button class="icon-btn small" title="Remover da lista (não apaga a pasta)" onClick={() => { const id = p().id; removeProject(id).then(() => forgetProject(id)); }}><X size={12} /></button>
+              <button class="icon-btn small" title="Remover da lista (não apaga a pasta)" onClick={() => { const id = p().id; removeProject(id).then(() => (forgetProject(id), forgetGit(id))); }}><X size={12} /></button>
             </span>
           </Show>
         </div>

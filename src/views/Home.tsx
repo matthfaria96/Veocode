@@ -3,6 +3,7 @@ import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid
 import { accessLevels, formatBytes } from "../data/mock";
 import { accountById, accountSub, accts, isWorking, providers } from "../accounts";
 import { loadCaches, loadMachines, xray } from "../xray";
+import { git, loadSummaries } from "../git";
 import { addProjectFromPicker, projects, setProjectId, setView } from "../store";
 import { CountUp, PageHeader, ProviderMark } from "../components/ui";
 import { ProjectIcon } from "../components/icons";
@@ -52,6 +53,7 @@ export default function Home() {
   };
 
   onMount(() => {
+    void loadSummaries(true);
     if (!xray.cachesLoaded) loadCaches();
     if (!xray.machines) loadMachines();
     const ro = new ResizeObserver(measure);
@@ -175,7 +177,18 @@ export default function Home() {
                   <strong>{p.name}</strong>
                   <small>{p.stack}</small>
                 </div>
-                <span class="node-time" classList={{ live: p.live }}>{p.demo ? "demo" : p.live ? "ao vivo" : p.branch}</span>
+                <span class="node-time" classList={{ live: p.live }}>
+                  {p.demo ? "demo" : p.live ? "ao vivo" : (git.summaries[p.id]?.branch ?? p.branch)}
+                  <Show when={!p.demo && git.summaries[p.id]}>
+                    {(g) => (
+                      <span class="node-git" title="Commits para enviar / baixar e arquivos mudados">
+                        <Show when={g().ahead}><b class="warn">↑{g().ahead}</b></Show>
+                        <Show when={g().behind}><b class="info">↓{g().behind}</b></Show>
+                        <Show when={g().changed}><b class="edit">●{g().changed}</b></Show>
+                      </span>
+                    )}
+                  </Show>
+                </span>
                 <ArrowUpRight size={14} class="node-go" />
               </div>
             )}

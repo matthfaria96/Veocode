@@ -8,6 +8,8 @@ import { acc, loadAccess, openClaude } from "../access";
 import { answerPermission, chatOf, clearError, isClaudeChat, listConversations, newChat, openConversation, sendChat, setAttach, setInput, stopChat, type Convo } from "../chat";
 import { isTauri } from "../api";
 import AccessLevel from "./AccessLevel";
+import GitPanel from "./GitPanel";
+import { git, gitTab, setGitTab } from "../git";
 import ActivityIcon, { kindColor } from "./ActivityIcon";
 import { ProviderMark } from "./ui";
 
@@ -363,7 +365,7 @@ function Composer(props: { onLevel: () => void }) {
 }
 
 export default function ChatPanel() {
-  const [tab, setTab] = createSignal<"chat" | "access">("chat");
+  const [tab, setTab] = [gitTab, setGitTab];
   const [pickAccount, setPickAccount] = createSignal(false);
   const [convos, setConvos] = createSignal(false);
   const project = currentProject;
@@ -434,10 +436,11 @@ export default function ChatPanel() {
         </Show>
       </div>
 
-      <div class="seg">
+      <div class="seg three">
         <button classList={{ active: tab() === "chat" }} onClick={() => setTab("chat")}>Agente</button>
-        <button classList={{ active: tab() === "access" }} onClick={() => setTab("access")}>Nível de acesso</button>
-        <span class="seg-thumb" style={{ transform: `translateX(${tab() === "chat" ? 0 : 100}%)` }} />
+        <button classList={{ active: tab() === "access" }} onClick={() => setTab("access")}>Acesso</button>
+        <button classList={{ active: tab() === "git" }} onClick={() => setTab("git")} title="Git e GitHub deste projeto">Git <GitBadge /></button>
+        <span class="seg-thumb" style={{ transform: `translateX(${["chat", "access", "git"].indexOf(tab()) * 100}%)` }} />
       </div>
 
       <Switch>
@@ -498,7 +501,24 @@ export default function ChatPanel() {
             <AccessLevel projectId={project().id} />
           </div>
         </Match>
+        <Match when={tab() === "git"}>
+          <div class="chat-scroll">
+            <GitPanel />
+          </div>
+        </Match>
       </Switch>
     </aside>
+  );
+}
+
+/** Na aba Git: quantos commits faltam enviar ou baixar, ou um ponto quando há mudanças. */
+function GitBadge() {
+  const sum = () => git.summaries[currentProject().id];
+  return (
+    <Show when={sum()?.repo}>
+      <Show when={sum()!.ahead || sum()!.behind} fallback={<Show when={sum()!.changed}><i class="seg-dot" title={`${sum()!.changed} arquivos mudados`} /></Show>}>
+        <span class="seg-badge" title="Commits para enviar / baixar">{sum()!.ahead ? `↑${sum()!.ahead}` : ""}{sum()!.behind ? `↓${sum()!.behind}` : ""}</span>
+      </Show>
+    </Show>
   );
 }
