@@ -37,6 +37,7 @@ export const topics: Topic[] = [
       {
         title: "Bom saber",
         items: [
+          "O sininho no topo junta tudo o que espera você: IA pedindo permissão, erro, conflito no git, conta sem login, commits só neste computador. Clique num item para ir direto onde se resolve. Quando a IA de outro projeto termina, aparece um aviso.",
           "Nada é apagado de vez: o que o Veocode tira vai para a Lixeira.",
           "Chaves de API ficam no chaveiro do sistema, nunca num arquivo.",
           "O projeto \"demo · simulação\" só aparece enquanto você não tem nenhuma pasta: é uma demonstração parada (aperte Assistir), com um aviso em cima, e nada ali é gravado.",
@@ -364,6 +365,7 @@ export const topics: Topic[] = [
       {
         title: "O que dá para mudar",
         items: [
+          "Claro ou escuro: tema escuro, claro ou igual ao do computador (troca sozinho). O terminal continua escuro.",
           "Ícones detalhados: pastas com volume e cor (src azul, testes verdes, assets rosa, node_modules cinza…), arquivos com a etiqueta do tipo (TS, RS, CSS…) e cada projeto com uma cor e a sigla da tecnologia.",
           "Ícones minimalistas: traços finos de uma cor só, mais discretos.",
           "Animações completas ou reduzidas: reduzidas tira laços e deslizes para quem se incomoda com movimento.",

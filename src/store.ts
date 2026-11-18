@@ -49,7 +49,7 @@ export async function loadProjects() {
     setProjects(reconcile(list.length ? list.map(fromInfo) : [structuredClone(demoProject)], { key: "id" }));
     if (list.length > 0) setProjectId(list[0].id);
   } catch (e) {
-    showToast(`Erro ao carregar projetos: ${e}`);
+    showToast(`Não deu para abrir a lista de projetos: ${e}`);
   }
 }
 

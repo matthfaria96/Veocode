@@ -1,16 +1,11 @@
-import { Match, onCleanup, onMount, Show, Switch } from "solid-js";
+import { lazy, Match, onCleanup, onMount, Show, Suspense, Switch } from "solid-js";
 import { acc, loadAccess } from "./access";
 import TitleBar from "./components/TitleBar";
 import Rail from "./components/Rail";
 import Dialogs from "./components/Dialogs";
 import ContextMenu from "./components/ContextMenu";
 import CommandPalette from "./components/CommandPalette";
-import Help from "./components/Help";
 import Workspace from "./views/Workspace";
-import Accounts from "./views/Accounts";
-import System from "./views/System";
-import Inventory from "./views/Inventory";
-import Settings from "./views/Settings";
 import Livre from "./views/Livre";
 import Board from "./views/Board";
 import { loadSettings } from "./settings";
@@ -22,6 +17,22 @@ import { refreshProcs } from "./xray";
 import { loadAccounts, refreshStatuses } from "./accounts";
 import { startChatEvents } from "./chat";
 import { startTermEvents } from "./terminal";
+import { startNotices } from "./attention";
+import { every } from "./every";
+
+// telas menos usadas chegam aos poucos: o app abre mais rápido e elas ficam prontas logo depois
+const loaders = {
+  Accounts: () => import("./views/Accounts"),
+  System: () => import("./views/System"),
+  Inventory: () => import("./views/Inventory"),
+  Settings: () => import("./views/Settings"),
+  Help: () => import("./components/Help"),
+};
+const Accounts = lazy(loaders.Accounts);
+const System = lazy(loaders.System);
+const Inventory = lazy(loaders.Inventory);
+const Settings = lazy(loaders.Settings);
+const Help = lazy(loaders.Help);
 
 export default function App() {
   const onKey = (e: KeyboardEvent) => {
@@ -53,9 +64,13 @@ export default function App() {
     onCleanup(() => (window.removeEventListener("error", onErr), window.removeEventListener("unhandledrejection", onErr)));
     loadProjects();
     loadAccounts();
+    // carrega as outras telas quando o app estiver parado, para não haver espera ao abrir
+    const warm = () => Object.values(loaders).forEach((l) => void l());
+    "requestIdleCallback" in window ? (window as any).requestIdleCallback(warm, { timeout: 3000 }) : setTimeout(warm, 1500);
+    // avisa quando a IA de outro projeto termina ou passa a esperar você
+    onCleanup(startNotices());
     // uso do Claude e Ollama a cada 20 s (só leitura local); APIs só quando pedir
-    const accounts = setInterval(() => refreshStatuses(false), 20000);
-    onCleanup(() => clearInterval(accounts));
+    onCleanup(every(() => refreshStatuses(false), 20000));
     // mudanças no disco chegam do Rust (src-tauri/src/watch.rs)
     // se o settings do Claude no projeto mudar (por fora ou pelo próprio Claude), o painel do nível relê
     let accTimer: number | undefined;
@@ -73,8 +88,7 @@ export default function App() {
     onCleanup(() => unlisten.then((f) => f()));
     // pulso dos agentes na barra de título; na tela Raio-X ela mesma atualiza a cada 2 s
     refreshProcs();
-    const t = setInterval(() => view() !== "system" && refreshProcs(), 5000);
-    onCleanup(() => clearInterval(t));
+    onCleanup(every(() => view() !== "system" && refreshProcs(), 5000));
   });
   onCleanup(() => window.removeEventListener("keydown", onKey));
 
@@ -84,6 +98,7 @@ export default function App() {
       <div class="app-body">
         <Rail />
         <main class="stage">
+          <Suspense>
           <Switch>
             <Match when={view() === "workspace"}>
               <div class="view-enter"><Workspace /></div>
@@ -107,10 +122,11 @@ export default function App() {
               <div class="view-enter"><System /></div>
             </Match>
           </Switch>
+          </Suspense>
         </main>
       </div>
       <Show when={helpOpen()}>
-        <Help />
+        <Suspense><Help /></Suspense>
       </Show>
       <Show when={paletteOpen()}>
         <CommandPalette />

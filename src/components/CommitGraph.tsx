@@ -7,7 +7,7 @@ import { createSignal, For, Show } from "solid-js";
 import { api } from "../api";
 import { commitDiff, commitFiles, since, type CommitFile, type GitCommit } from "../git";
 
-const COLORS = ["#7c9cff", "#4cc38a", "#f5a524", "#e5649a", "#38bdf8", "#a78bfa", "#f97316", "#94a3b8"];
+const COLORS = ["#6b9cff", "#4cc38a", "#f5a524", "#e5649a", "#38bdf8", "#a78bfa", "#f97316", "#94a3b8"];
 const LANE = 12;
 const ROW = 34;
 const color = (i: number) => COLORS[i % COLORS.length];
@@ -145,7 +145,7 @@ export default function CommitGraph(props: {
                   </span>
                   <small>
                     <span class="graph-where" title={c.pushed ? "Já está no remoto (nuvem)" : "Só neste computador"}>{c.pushed ? <Cloud size={10} /> : <Laptop size={10} />}</span>
-                    <code>{c.short}</code> · {c.author} · {since(c.time)}
+                    {c.author} · {since(c.time)}
                     <For each={c.refs.filter((r) => !r.endsWith("/HEAD")).slice(0, 3)}>
                       {(r) => (
                         <span class="git-ref" classList={{ tag: r.startsWith("tag: "), remote: r.includes("/") && !r.startsWith("tag: ") }}>

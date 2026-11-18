@@ -56,7 +56,7 @@ export default function TrailPanel() {
     const ok = await confirmAction(`Mover ${l.path} para a Lixeira?`, `${l.why}. ${formatBytes(l.bytes)}. Dá para recuperar pela Lixeira.`, "Mover para a Lixeira", true);
     if (!ok) return;
     markOwn(p().id, l.path);
-    await api.trashEntry(p().id, l.path).then(() => showToast("Foi para a Lixeira")).catch((e) => showToast(String(e)));
+    await api.trashEntry(p().id, l.path).then(() => showToast("Pronto, foi para a Lixeira. Dá para recuperar lá.")).catch((e) => showToast(String(e)));
     void refetch();
   };
 

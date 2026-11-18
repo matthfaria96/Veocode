@@ -10,7 +10,8 @@ import { accountById } from "./accounts";
 import { isTauri } from "./api";
 import { feedAgentEvent, setSeenAgent, type AgentEvent } from "./agentFeed";
 import { absPathOf, projectId, projects, pushEvent, setWs, showToast, ws } from "./store";
-import { handleLivre, LIVRE } from "./livre";
+import { handleLivre, LIVRE, newLivre } from "./livre";
+import { confirmAction } from "./dialogs";
 import { feedChat, feedUser } from "./feeds";
 
 export interface PermissionAsk {
@@ -240,10 +241,44 @@ export async function listConversations(pid: string) {
   return { items: r.items, current: r.current ? `${r.current[0]}:${r.current[1]}` : null };
 }
 
+/**
+ * Apaga conversas anteriores (uma ou várias): os arquivos vão para a Lixeira, então dá para
+ * recuperar. Pergunta antes. Se a aberta agora estiver entre elas, o chat começa uma nova.
+ * Devolve quantas foram apagadas.
+ */
+export async function deleteConvos(pid: string, list: Convo[], current: string | null): Promise<number> {
+  if (!list.length) return 0;
+  const one = list.length === 1;
+  const claude = list.some((c) => c.kind === "claude");
+  const ok = await confirmAction(
+    one ? `Apagar “${list[0].title.slice(0, 60)}”?` : `Apagar ${list.length} conversas?`,
+    `${one ? "A conversa vai" : "As conversas vão"} para a Lixeira do computador: dá para recuperar lá enquanto você não esvaziar.${claude ? " Sessões do Claude apagadas também somem do “claude --resume” no Terminal e do editor." : ""}`,
+    one ? "Apagar conversa" : `Apagar ${list.length} conversas`,
+    true,
+  );
+  if (!ok) return 0;
+  let done = 0;
+  let failed = "";
+  for (const c of list) {
+    try {
+      await invoke("chat_delete", { projectId: pid, kind: c.kind, id: c.id, account: c.account });
+      done++;
+    } catch (e) {
+      failed = errMsg(e);
+    }
+  }
+  if (current && list.some((c) => `${c.kind}:${c.id}` === current)) {
+    if (pid === LIVRE) await newLivre();
+    else await newChat(pid);
+  }
+  showToast(failed ? `${done} apagada(s). Uma não deu: ${failed}` : one ? "Pronto, a conversa foi para a Lixeira." : `Pronto, ${done} conversas foram para a Lixeira.`);
+  return done;
+}
+
 /** Retoma uma conversa: o fim dela aparece no painel e o próximo pedido continua dela. */
 export async function openConversation(pid: string, c: Convo) {
   ensure(pid);
-  if (chats[pid].busy) return showToast("Espere o agente terminar (ou pare a resposta) antes de trocar de conversa");
+  if (chats[pid].busy) return showToast("Espere a IA terminar (ou pare a resposta) antes de trocar de conversa");
   try {
     const evs = await invoke<AgentEvent[]>("chat_open", { projectId: pid, kind: c.kind, id: c.id, account: c.account });
     setChats(pid, produce((x) => {

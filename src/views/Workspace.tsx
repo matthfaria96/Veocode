@@ -4,7 +4,7 @@ import { createEffect, createSignal, For, on, onCleanup, Show } from "solid-js";
 import { accessLevels } from "../data/mock";
 import { accountById } from "../accounts";
 import { forgetProject } from "../terminal";
-import { forgetGit, git, loadSummaries, setGitTab } from "../git";
+import { forgetGit, git, gitWords, loadSummaries, setGitTab } from "../git";
 import { forgetFeed } from "../feeds";
 import { absPathOf, addProjectFromPicker, currentProject, projectId, projects, removeProject, resetWorkspace, setProjectId, setWs, showToast, ws } from "../store";
 import { startAgentSim } from "../sim/agentSim";
@@ -26,6 +26,43 @@ import { ProviderMark } from "../components/ui";
 import { projectState } from "../board";
 import { watchFeeds } from "../feeds";
 import { setWsMode, wsMode } from "../layoutMode";
+
+// largura da conversa à direita: arrastável, lembrada neste computador
+const CHAT_W = 400;
+const readW = () => {
+  try {
+    const v = Number(localStorage.getItem("veocode.chat.width"));
+    return v >= 320 && v <= 900 ? v : CHAT_W;
+  } catch {
+    return CHAT_W;
+  }
+};
+const [chatW, setChatW] = createSignal(readW());
+const saveChatW = (w: number) => {
+  setChatW(w);
+  try {
+    localStorage.setItem("veocode.chat.width", String(w));
+  } catch {
+    /* sem armazenamento */
+  }
+};
+const [dragging, setDragging] = createSignal(false);
+function startDrag(e: PointerEvent) {
+  e.preventDefault();
+  const x0 = e.clientX;
+  const w0 = chatW();
+  const max = Math.min(900, window.innerWidth - 560);
+  setDragging(true);
+  const move = (ev: PointerEvent) => setChatW(Math.round(Math.max(320, Math.min(max, w0 + (x0 - ev.clientX)))));
+  const up = () => {
+    setDragging(false);
+    saveChatW(chatW());
+    window.removeEventListener("pointermove", move);
+    window.removeEventListener("pointerup", up);
+  };
+  window.addEventListener("pointermove", move);
+  window.addEventListener("pointerup", up);
+}
 
 export default function Workspace() {
   let root!: HTMLDivElement;
@@ -76,7 +113,7 @@ export default function Workspace() {
   };
 
   return (
-    <div class="workspace" classList={{ adv: wsMode() === "avancado" }} ref={root}>
+    <div class="workspace" classList={{ adv: wsMode() === "avancado", "no-file": !ws.activeFile, resizing: dragging() }} style={{ "--chat-w": `${chatW()}px` }} ref={root}>
       <Show when={wsMode() === "avancado"}>
         <ProjectsColumn />
       </Show>
@@ -128,9 +165,7 @@ export default function Workspace() {
         <div class="sidebar-meta">
           <button class="meta-git" title="Git e GitHub deste projeto" onClick={() => setGitTab("git")}>
             <GitBranch size={12} /> {git.summaries[p().id]?.branch ?? p().branch}
-            <Show when={git.summaries[p().id]?.ahead}><span class="meta-n warn">↑{git.summaries[p().id]!.ahead}</span></Show>
-            <Show when={git.summaries[p().id]?.behind}><span class="meta-n info">↓{git.summaries[p().id]!.behind}</span></Show>
-            <Show when={git.summaries[p().id]?.changed}><span class="meta-n edit" title="Arquivos mudados desde o último commit">●{git.summaries[p().id]!.changed}</span></Show>
+            <For each={gitWords(git.summaries[p().id])}>{(w) => <span class="meta-n edit" title={w.tip}>· {w.text}</span>}</For>
           </button>
           <span class="meta-dot" style={{ background: accountById(p().accountId).color }} />
           <span>{accountById(p().accountId).label}</span>
@@ -175,6 +210,7 @@ export default function Workspace() {
         <BottomPanel />
       </section>
 
+      <div class="chat-resize" title="Arraste para alargar ou estreitar a conversa (dois cliques volta ao normal)" onPointerDown={startDrag} onDblClick={() => saveChatW(CHAT_W)} />
       <ChatPanel />
       <AgentCursors />
     </div>
@@ -207,7 +243,7 @@ function ProjectsColumn() {
                   <small>
                     <i class={`proj-col-dot ${st().tone}`} />
                     {st().label}
-                    <Show when={g()?.changed}><span class="meta-n edit"> ●{g()!.changed}</span></Show>
+                    <Show when={g()?.changed}><span class="meta-n edit" title="Arquivos mudados desde o último commit"> · {g()!.changed} mudados</span></Show>
                   </small>
                 </span>
                 <span class="proj-col-acc" style={{ background: accountById(pr.accountId).color }} title={accountById(pr.accountId).label} />

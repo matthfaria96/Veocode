@@ -722,6 +722,35 @@ async fn chat_open(state: State<'_, AppState>, project_id: String, kind: String,
     r
 }
 
+/// Apaga uma conversa anterior: o arquivo dela vai para a Lixeira (dá para recuperar lá).
+/// Se for a conversa aberta agora, o chat do projeto começa uma nova.
+#[tauri::command]
+async fn chat_delete(state: State<'_, AppState>, project_id: String, kind: String, id: String, account: String) -> Result<(), String> {
+    if !convos::valid_id(&id) {
+        return Err("conversa inválida".into());
+    }
+    let root = state.root_of(&project_id)?;
+    let files: Vec<PathBuf> = if kind == "claude" {
+        let owner = state.accounts.lock().map_err(|e| e.to_string())?.get(&account).cloned().ok_or("A conta desta conversa não existe mais no Veocode.")?;
+        if owner.provider != Provider::Claude {
+            return Err("conversa inválida".into());
+        }
+        let dir = convos::claude_dir(&accounts::claude::config_dir(&owner), &root);
+        // a sessão e, se houver, a pasta dos ajudantes dela (subagentes)
+        [dir.join(format!("{id}.jsonl")), dir.join(&id)].into_iter().filter(|p| p.exists()).collect()
+    } else {
+        let dir = state.chats.api_dir(&project_id);
+        [dir.join(format!("{id}.json")), dir.join(format!("{id}.meta.json"))].into_iter().filter(|p| p.exists()).collect()
+    };
+    if files.is_empty() {
+        return Err("Essa conversa já não existe.".into());
+    }
+    if state.chats.current(&project_id).is_some_and(|(k, c)| k == kind && c == id) {
+        state.chats.reset(&project_id);
+    }
+    blocking(move || inventory::to_trash(&files).map_err(|e| format!("Não deu para mandar para a Lixeira: {e}"))).await?
+}
+
 #[tauri::command]
 fn chat_history(state: State<'_, AppState>, project_id: String) -> (Vec<chat::Msg>, bool) {
     (state.chats.history(&project_id), state.chats.is_busy(&project_id))
@@ -998,6 +1027,7 @@ pub fn run() {
             chat_reset,
             chat_history,
             chat_conversations,
+            chat_delete,
             chat_open,
             list_projects,
             add_project,

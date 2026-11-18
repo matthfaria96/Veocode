@@ -14,6 +14,7 @@ import ConfirmDialog from "../components/ConfirmDialog";
 import Explainer from "../components/Explainer";
 import ComputerTabs from "../components/ComputerTabs";
 import { SkillDetail } from "./SkillDetail";
+import { every } from "../every";
 
 // ---------------------------------------------------------------- modelo
 
@@ -243,8 +244,7 @@ export default function Inventory() {
 
   onMount(() => {
     loadInventory();
-    const t = setInterval(refreshRunning, 3000);
-    onCleanup(() => clearInterval(t));
+    onCleanup(every(refreshRunning, 3000));
   });
 
   const rows = createMemo<Row[]>(() => [
@@ -342,7 +342,7 @@ export default function Inventory() {
         <label class="search-box">
           <Search size={13} />
           <input placeholder="Buscar…" value={q()} onInput={(e) => setQ(e.currentTarget.value)} />
-          <Show when={q()}><button class="icon-btn tiny visible" onClick={() => setQ("")}><X size={11} /></button></Show>
+          <Show when={q()}><button class="icon-btn tiny visible" title="Limpar a busca" onClick={() => setQ("")}><X size={11} /></button></Show>
         </label>
       </div>
 

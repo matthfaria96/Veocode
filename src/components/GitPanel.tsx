@@ -28,6 +28,7 @@ import { changeLabel, fetchGit, gitOf, loadGit, loadGithub, operationLabel, sinc
 import { openRealFile } from "../realProject";
 import CommitGraph from "./CommitGraph";
 import { currentProject, showToast } from "../store";
+import { every } from "../every";
 
 const open = (url: string | null | undefined) => url && void api.openUrl(url).catch(() => {});
 const copy = (text: string) => navigator.clipboard?.writeText(text).then(() => showToast("Comando copiado")).catch(() => {});
@@ -57,11 +58,11 @@ export default function GitPanel() {
   createEffect(on(pid, (id) => {
     setShowAll(false);
     void loadGit(id);
-    const t = window.setInterval(() => void loadGit(id, true), 8000);
+    const stopEvery = every(() => void loadGit(id, true), 8000);
     const focus = () => void loadGit(id, true);
     window.addEventListener("focus", focus);
     onCleanup(() => {
-      clearInterval(t);
+      stopEvery();
       window.removeEventListener("focus", focus);
     });
   }));

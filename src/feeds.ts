@@ -15,6 +15,7 @@ import { accountById } from "./accounts";
 import type { AgentEvent } from "./agentFeed";
 import { isTauri } from "./api";
 import { projects } from "./store";
+import { hidden } from "./every";
 
 export interface FeedItem {
   id: string;
@@ -202,7 +203,7 @@ async function tick() {
     );
   }
   await Promise.all(jobs);
-  timer = window.setTimeout(tick, 450);
+  timer = window.setTimeout(tick, hidden() ? 2000 : 450);
 }
 
 /** Nova conversa no Painel: limpa o que o canto mostra (o histórico no disco continua). */

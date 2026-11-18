@@ -11,6 +11,7 @@ export default function ComputerTabs() {
   ];
   return (
     <div class="computer-tabs" role="tablist">
+      <span class="computer-tabs-thumb" style={{ transform: `translateX(${view() === "system" ? 100 : 0}%)` }} />
       {tabs.map((t) => (
         <button role="tab" aria-selected={view() === t.id} classList={{ active: view() === t.id }} onClick={() => setView(t.id)}>
           <t.icon size={15} />

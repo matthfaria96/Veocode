@@ -8,8 +8,10 @@ import { showToast } from "./store";
 
 export type IconStyle = "minimalista" | "detalhado";
 export type Motion = "completa" | "reduzida";
+export type Theme = "escuro" | "claro" | "sistema";
 
 export interface Settings {
+  theme: Theme;
   icons: IconStyle;
   motion: Motion;
   /** conta do Chat livre ("" = a padrão) */
@@ -18,13 +20,24 @@ export interface Settings {
   freePc: boolean;
 }
 
-const defaults: Settings = { icons: "detalhado", motion: "completa", freeAccount: "", freePc: false };
+const defaults: Settings = { theme: "escuro", icons: "detalhado", motion: "completa", freeAccount: "", freePc: false };
 const KEY = "veocode.settings";
 
 export const [settings, setSettings] = createStore<Settings>({ ...defaults });
 
 /** Animações reduzidas: uma classe na raiz desliga as animações longas e os laços. */
-const applyMotion = () => document.documentElement.classList.toggle("reduce-motion", settings.motion === "reduzida");
+const applyLooks = () => {
+  const root = document.documentElement;
+  root.classList.toggle("reduce-motion", settings.motion === "reduzida");
+  const light = settings.theme === "claro" || (settings.theme === "sistema" && !!window.matchMedia?.("(prefers-color-scheme: light)").matches);
+  root.dataset.theme = light ? "light" : "dark";
+};
+const applyMotion = applyLooks;
+try {
+  window.matchMedia?.("(prefers-color-scheme: light)").addEventListener("change", () => settings.theme === "sistema" && applyLooks());
+} catch {
+  /* navegador antigo: fica o que está */
+}
 
 export async function loadSettings() {
   try {

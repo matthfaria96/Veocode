@@ -1,6 +1,6 @@
 import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
-import { Check, CircleHelp, FolderOpen, Keyboard, Palette, Sparkles } from "lucide-solid";
+import { Check, CircleHelp, FolderOpen, Keyboard, Monitor, Moon, Palette, Sun, Waves } from "lucide-solid";
 import { createResource, For, Show, type JSX } from "solid-js";
 import { api, isTauri, prettyPath } from "../api";
 import { setHelpOpen, showToast } from "../store";
@@ -64,6 +64,16 @@ function MotionPreview(props: { motion: Motion }) {
   );
 }
 
+function ThemePreview(props: { kind: "dark" | "light" | "auto"; icon: JSX.Element }) {
+  return (
+    <div class={`theme-preview tp-${props.kind}`}>
+      <div class="tp-half tp-d"><i /><b /><b /></div>
+      <div class="tp-half tp-l"><i /><b /><b /></div>
+      <span class="tp-icon">{props.icon}</span>
+    </div>
+  );
+}
+
 function Choice<T extends string>(props: { value: T; current: T; title: string; desc: string; onPick: (v: T) => void; children: JSX.Element }) {
   const on = () => props.value === props.current;
   return (
@@ -106,6 +116,20 @@ export default function Settings() {
     <div class="page">
       <PageHeader title="Ajustes" subtitle="Como o Veocode aparece e onde ele guarda as coisas. As mudanças valem na hora." />
 
+      <Section icon={<Sun size={15} />} title="Claro ou escuro" desc="As cores do app inteiro. O terminal continua escuro.">
+        <div class="set-cards three" role="radiogroup" aria-label="Claro ou escuro">
+          <Choice value="escuro" current={settings.theme} title="Escuro" desc="Fundo escuro, bom à noite e em salas com pouca luz." onPick={(v) => updateSettings({ theme: v })}>
+            <ThemePreview kind="dark" icon={<Moon size={16} />} />
+          </Choice>
+          <Choice value="claro" current={settings.theme} title="Claro" desc="Fundo claro, mais fácil de ler de dia e com o sol batendo." onPick={(v) => updateSettings({ theme: v })}>
+            <ThemePreview kind="light" icon={<Sun size={16} />} />
+          </Choice>
+          <Choice value="sistema" current={settings.theme} title="Igual ao computador" desc="Troca sozinho quando o computador muda entre claro e escuro." onPick={(v) => updateSettings({ theme: v })}>
+            <ThemePreview kind="auto" icon={<Monitor size={16} />} />
+          </Choice>
+        </div>
+      </Section>
+
       <Section icon={<Palette size={15} />} title="Ícones" desc="Pastas, arquivos e projetos em todas as telas.">
         <div class="set-cards" role="radiogroup" aria-label="Estilo dos ícones">
           <Choice value="detalhado" current={settings.icons} title="Detalhados" desc="Pastas com volume e cor, arquivos com a etiqueta do tipo e projetos com a sigla da tecnologia." onPick={(v) => updateSettings({ icons: v })}>
@@ -117,7 +141,7 @@ export default function Settings() {
         </div>
       </Section>
 
-      <Section icon={<Sparkles size={15} />} title="Animações" desc="Cursores, entradas das listas, pulsos e gráficos." delay={80}>
+      <Section icon={<Waves size={15} />} title="Animações" desc="Cursores, entradas das listas, pulsos e gráficos." delay={80}>
         <div class="set-cards" role="radiogroup" aria-label="Animações">
           <Choice value="completa" current={settings.motion} title="Completas" desc="Movimento só onde ajuda: o cursor da IA no arquivo que ela mexe, a espera da resposta e os pedidos de permissão. Nada fica piscando à toa." onPick={(v) => updateSettings({ motion: v })}>
             <MotionPreview motion="completa" />

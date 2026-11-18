@@ -1,4 +1,4 @@
-import { AlertTriangle, Check, ExternalLink, X } from "lucide-solid";
+import { AlertTriangle, Check, ExternalLink, FileText, MessageSquare, Search, X } from "lucide-solid";
 import { FileIcon } from "./icons";
 import { createMemo, For, Index, Match, Show, Switch } from "solid-js";
 import { api, formatSize } from "../api";
@@ -219,7 +219,7 @@ export default function Editor() {
           )}
         </For>
       </div>
-      <Show when={ws.activeFile} fallback={<div class="editor-empty">{currentProject().demo ? "Nenhum arquivo aberto" : "Escolha um arquivo na árvore à esquerda"}</div>}>
+      <Show when={ws.activeFile} fallback={<EditorHome />}>
         <div class="breadcrumb">
           <span>{ws.activeFile.split("/").join("  ›  ")}</span>
           <Show when={!currentProject().demo && ws.contents[ws.activeFile]?.kind === "text"}><SaveState /></Show>
@@ -228,6 +228,23 @@ export default function Editor() {
           <CodeLines lines={lines()} ext={ext()} plusGutter />
         </Show>
       </Show>
+    </div>
+  );
+}
+
+/** Sem arquivo aberto: em vez de um vazio, o que dá para fazer aqui, com atalhos. */
+function EditorHome() {
+  const p = () => currentProject();
+  return (
+    <div class="editor-empty editor-home">
+      <div class="eh-glow" aria-hidden="true" />
+      <strong>{p().name}</strong>
+      <p>{p().demo ? "Nenhum arquivo aberto." : "Converse com a IA no painel à direita, ou abra um arquivo para ler e editar."}</p>
+      <div class="eh-tips">
+        <span style={{ "--i": 0 }}><MessageSquare size={14} /> Peça algo à IA <em>painel à direita →</em></span>
+        <span style={{ "--i": 1 }}><FileText size={14} /> Abra um arquivo <em>na árvore à esquerda</em></span>
+        <span style={{ "--i": 2 }}><Search size={14} /> Busque qualquer coisa <kbd>⌘K</kbd></span>
+      </div>
     </div>
   );
 }

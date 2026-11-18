@@ -26,9 +26,9 @@ const waiting = new Map<string, string[]>();
 const theme = {
   background: "#0e1118",
   foreground: "#e7eaf3",
-  cursor: "#7c8cff",
+  cursor: "#6b9cff",
   cursorAccent: "#0e1118",
-  selectionBackground: "#7c8cff55",
+  selectionBackground: "#6b9cff55",
   black: "#1d2331",
   red: "#f87171",
   green: "#34d399",

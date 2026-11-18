@@ -1,13 +1,14 @@
-import { AlertTriangle, Box, Brain, Copy, Cpu, FolderOpen, HardDrive, Monitor, Play, Power, RefreshCw, Square, Trash2 } from "lucide-solid";
-import { createMemo, createSignal, For, Match, onCleanup, onMount, Show, Switch } from "solid-js";
+import { Activity, AlertTriangle, Box, Brain, Copy, Cpu, FolderOpen, HardDrive, Monitor, Package, Play, Power, RefreshCw, Sparkles, Square, Trash2 } from "lucide-solid";
+import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, onMount, Show, Switch, type JSX } from "solid-js";
 import { api, copyText, isTauri, type AgentGroup, type Proc } from "../api";
 import { formatBytes } from "../data/mock";
 import { showToast } from "../store";
-import { agentColor, killProc, loadCaches, loadInstalls, loadMachines, loadModels, refreshProcs, setXray, toggleMachine, trashCaches, xray, type CacheRow } from "../xray";
+import { agentColor, diskPoints, killProc, loadCaches, loadInstalls, loadMachines, loadModels, refreshProcs, setXray, toggleMachine, trashCaches, xray, type CacheRow } from "../xray";
 import { CountUp, PageHeader, Sparkline, Stagger } from "../components/ui";
 import ConfirmDialog from "../components/ConfirmDialog";
 import Explainer from "../components/Explainer";
 import ComputerTabs from "../components/ComputerTabs";
+import { every } from "../every";
 
 type Tab = "caches" | "installed" | "models" | "machines" | "processes";
 const [tab, setTab] = createSignal<Tab>("caches");
@@ -17,7 +18,10 @@ const when = (iso: string) => {
   const d = new Date(iso);
   return isNaN(d.getTime()) ? "—" : d.toLocaleString("pt-BR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 };
-const uptime = (s: number) => (s < 3600 ? `${Math.max(1, Math.round(s / 60))} min` : s < 86400 ? `${Math.round(s / 3600)} h` : `${Math.round(s / 86400)} d`);
+const uptime = (s: number) => {
+  const n = (v: number, one: string, many: string) => `${v} ${v === 1 ? one : many}`;
+  return s < 3600 ? n(Math.max(1, Math.round(s / 60)), "minuto", "minutos") : s < 86400 ? n(Math.round(s / 3600), "hora", "horas") : n(Math.round(s / 86400), "dia", "dias");
+};
 
 export default function System() {
   const [confirmTrash, setConfirmTrash] = createSignal<CacheRow[] | null>(null);
@@ -32,8 +36,7 @@ export default function System() {
     if (!xray.models) loadModels();
     refreshProcs();
     // processos "respiram": atualiza a cada 2 s enquanto a tela está aberta
-    const t = setInterval(refreshProcs, 2000);
-    onCleanup(() => clearInterval(t));
+    onCleanup(every(refreshProcs, 2000));
   });
 
   const refreshAll = () => {
@@ -50,13 +53,24 @@ export default function System() {
   const maxSize = createMemo(() => Math.max(1, ...xray.caches.map((c) => c.size ?? 0)));
   const running = createMemo(() => xray.machines?.machines.filter((m) => m.running).length ?? 0);
   const busyProcs = createMemo(() => xray.procs.filter((g) => g.children.length > 0));
+  const procMem = createMemo(() => xray.procs.reduce((s, g) => s + g.mem + g.children.reduce((t, c) => t + c.mem, 0), 0));
+  const parts = createMemo(() =>
+    KINDS.map((k) => ({ ...k, bytes: xray.caches.filter((c) => c.kind === k.id).reduce((s, c) => s + (c.size ?? 0), 0) })).filter((k) => k.bytes > 0),
+  );
+  const biggest = createMemo(() => [...xray.caches].sort((a, b) => (b.size ?? 0) - (a.size ?? 0))[0]);
+  const heroSays = () =>
+    !xray.cachesLoaded || measuring()
+      ? "Medindo pasta por pasta; cada número aparece assim que fica pronto."
+      : !total()
+        ? "Nada guardado pelas IAs por enquanto. Tudo limpo."
+        : `O que mais ocupa é ${biggest()?.label ?? "—"} (${formatBytes(biggest()?.size ?? 0)}). Marque abaixo o que não quer e mande para a Lixeira.`;
 
-  const tabs: { id: Tab; label: string; count: () => string }[] = [
-    { id: "caches", label: "Espaço ocupado", count: () => (xray.cachesLoaded ? formatBytes(total()) + (measuring() ? "…" : "") : "…") },
-    { id: "installed", label: "Instalado pelas IAs", count: () => (xray.installs ? String(xray.installs.aiInstalls.length) : "…") },
-    { id: "models", label: "IAs locais", count: () => (xray.models ? (xray.models.models.length ? formatBytes(xray.models.models.reduce((s, m) => s + m.size, 0)) : "nenhuma") : "…") },
-    { id: "machines", label: "Máquinas virtuais", count: () => (xray.machines ? (xray.machines.machines.length ? `${running()} rodando` : "nenhum") : "…") },
-    { id: "processes", label: "IAs abertas agora", count: () => (xray.procsLoaded ? String(xray.procs.length) : "…") },
+  const tabs: { id: Tab; label: string; icon: (p: { size: number }) => JSX.Element; color: string; count: () => string }[] = [
+    { id: "caches", label: "Espaço ocupado", icon: HardDrive, color: "#8b7bff", count: () => (xray.cachesLoaded ? formatBytes(total()) + (measuring() ? "…" : "") : "…") },
+    { id: "installed", label: "Instalado pelas IAs", icon: Package, color: "#38bdf8", count: () => (xray.installs ? String(xray.installs.aiInstalls.length) : "…") },
+    { id: "models", label: "IAs locais", icon: Brain, color: "#f472b6", count: () => (xray.models ? (xray.models.models.length ? formatBytes(xray.models.models.reduce((s, m) => s + m.size, 0)) : "nenhuma") : "…") },
+    { id: "machines", label: "Máquinas virtuais", icon: Box, color: "#34d399", count: () => (xray.machines ? (xray.machines.machines.length ? `${running()} rodando` : "nenhum") : "…") },
+    { id: "processes", label: "IAs abertas agora", icon: Activity, color: "#fbbf24", count: () => (xray.procsLoaded ? String(xray.procs.length) : "…") },
   ];
 
   const systemFiltered = createMemo(() => {
@@ -77,26 +91,46 @@ export default function System() {
         }
       />
 
-      <Explainer
-        id="xray"
-        title="O que é esta tela?"
-        intro="Mostra o que as IAs estão fazendo no seu computador agora e o que deixaram para trás. As abas:"
-        terms={[
-          { word: "Espaço ocupado", means: "Arquivos temporários e históricos que crescem com o tempo. Marque e mova para a Lixeira para liberar espaço." },
-          { word: "Instalado pelas IAs", means: "Programas que o Claude instalou enquanto trabalhava. Valem para o computador todo, não só para o projeto que pediu." },
-          { word: "IAs locais", means: "Modelos de IA baixados para rodar no próprio computador (Ollama, LM Studio, Hugging Face). Ficam soltos na máquina, fora dos projetos, e costumam ocupar vários GB." },
-          { word: "Máquinas virtuais", means: "Computadores de mentira (Docker e afins) que podem estar gastando memória." },
-          { word: "IAs abertas agora", means: "Cada janela de IA aberta e quanta memória usa. Dá para fechar uma travada daqui." },
-        ]}
-        calm={<>Nada é apagado sem você confirmar, e tudo vai para a <strong>Lixeira</strong>.</>}
-      />
+
+      <section class="cx-hero">
+        <span class="cx-orb a" />
+        <span class="cx-orb b" />
+        <Donut parts={parts()} total={total()} busy={!xray.cachesLoaded || measuring()} />
+        <div class="cx-hero-main">
+          <small class="cx-eyebrow"><Sparkles size={12} /> O que as IAs deixaram no disco</small>
+          <strong class="cx-big"><CountUp value={total()} format={formatBytes} /></strong>
+          <p>{heroSays()}</p>
+          <div class="cx-legend">
+            <For each={parts()}>
+              {(k, i) => (
+                <span style={{ "--k": k.color, "--i": i() }}>
+                  <i /> {k.label} <b>{formatBytes(k.bytes)}</b>
+                </span>
+              )}
+            </For>
+          </div>
+        </div>
+        <div class="cx-hero-side">
+          <div class="cx-live" classList={{ on: busyProcs().length > 0 }}>
+            <i />
+            <div>
+              <strong><CountUp value={xray.procs.length} /> {xray.procs.length === 1 ? "IA aberta" : "IAs abertas"}</strong>
+              <small>{busyProcs().length ? `${busyProcs().length} rodando programas · ` : ""}usando {formatBytes(procMem())}</small>
+            </div>
+          </div>
+          <DiskTrend />
+        </div>
+      </section>
 
       <div class="xray-tabs">
         <For each={tabs}>
-          {(t) => (
-            <button class="xray-tab" classList={{ active: tab() === t.id }} onClick={() => setTab(t.id)}>
-              <span>{t.label}</span>
-              <strong>{t.count()}</strong>
+          {(t, i) => (
+            <button class="xray-tab" classList={{ active: tab() === t.id }} style={{ "--k": t.color, "--i": i() }} onClick={() => setTab(t.id)}>
+              <span class="xray-tab-icon"><t.icon size={16} /></span>
+              <span class="xray-tab-text">
+                <span>{t.label}</span>
+                <strong>{t.count()}</strong>
+              </span>
             </button>
           )}
         </For>
@@ -105,12 +139,9 @@ export default function System() {
       <Switch>
         {/* ------------------------------------------------ caches */}
         <Match when={tab() === "caches"}>
+          <div class="cx-pane">
           <div class="cache-summary">
-            <div class="disk-big">
-              <HardDrive size={18} />
-              <strong><CountUp value={total()} format={formatBytes} /></strong>
-              <span>{measuring() ? "medindo…" : "no total"}</span>
-            </div>
+            <span class="cache-sel">{selected().length ? `${selected().length} ${selected().length === 1 ? "marcado" : "marcados"}` : "Marque as caixas para escolher o que liberar"}</span>
             <button class="danger-btn" disabled={selected().length === 0} onClick={() => setConfirmTrash(selected())}>
               <Trash2 size={14} /> Mover selecionados para a Lixeira
               <Show when={selected().length}> ({formatBytes(selected().reduce((s, c) => s + (c.size ?? 0), 0))})</Show>
@@ -145,10 +176,12 @@ export default function System() {
             </div>
           </Show>
           <p class="foot-note">Limpar sempre move para a Lixeira — dá para recuperar enquanto você não esvaziar. Só aparecem pastas que existem nesta máquina.</p>
+          </div>
         </Match>
 
         {/* ------------------------------------------------ instalado */}
         <Match when={tab() === "installed"}>
+          <div class="cx-pane">
           <Show when={xray.installs} fallback={<div class="loading-rows"><div /><div /><div /><span>Lendo os históricos do Claude Code e consultando brew, npm, pip, cargo…</span></div>}>
             {(r) => (
               <>
@@ -205,10 +238,12 @@ export default function System() {
               </>
             )}
           </Show>
+          </div>
         </Match>
 
         {/* ------------------------------------------------ IAs locais */}
         <Match when={tab() === "models"}>
+          <div class="cx-pane">
           <Show when={xray.models} fallback={<div class="loading-rows"><div /><div /><span>Procurando modelos do Ollama, LM Studio e Hugging Face…</span></div>}>
             {(r) => (
               <>
@@ -255,10 +290,12 @@ export default function System() {
               </>
             )}
           </Show>
+          </div>
         </Match>
 
         {/* ------------------------------------------------ máquinas */}
         <Match when={tab() === "machines"}>
+          <div class="cx-pane">
           <Show when={xray.machines} fallback={<div class="loading-rows"><div /><div /></div>}>
             {(r) => (
               <>
@@ -311,10 +348,12 @@ export default function System() {
               </>
             )}
           </Show>
+          </div>
         </Match>
 
         {/* ------------------------------------------------ processos */}
         <Match when={tab() === "processes"}>
+          <div class="cx-pane">
           <Show when={xray.procsLoaded} fallback={<div class="loading-rows"><div /><div /></div>}>
             <Show when={xray.procs.length > 0} fallback={<div class="empty-state">Nenhum agente de IA rodando agora.</div>}>
               <p class="foot-note top">
@@ -327,8 +366,25 @@ export default function System() {
               </div>
             </Show>
           </Show>
+          </div>
         </Match>
       </Switch>
+
+      <div class="cx-explain">
+      <Explainer
+        id="xray"
+        title="O que é esta tela?"
+        intro="Mostra o que as IAs estão fazendo no seu computador agora e o que deixaram para trás. As abas:"
+        terms={[
+          { word: "Espaço ocupado", means: "Arquivos temporários e históricos que crescem com o tempo. Marque e mova para a Lixeira para liberar espaço." },
+          { word: "Instalado pelas IAs", means: "Programas que o Claude instalou enquanto trabalhava. Valem para o computador todo, não só para o projeto que pediu." },
+          { word: "IAs locais", means: "Modelos de IA baixados para rodar no próprio computador (Ollama, LM Studio, Hugging Face). Ficam soltos na máquina, fora dos projetos, e costumam ocupar vários GB." },
+          { word: "Máquinas virtuais", means: "Computadores de mentira (Docker e afins) que podem estar gastando memória." },
+          { word: "IAs abertas agora", means: "Cada janela de IA aberta e quanta memória usa. Dá para fechar uma travada daqui." },
+        ]}
+        calm={<>Nada é apagado sem você confirmar, e tudo vai para a <strong>Lixeira</strong>.</>}
+      />
+      </div>
 
       <Show when={confirmTrash()}>
         {(items) => (
@@ -388,18 +444,18 @@ function AgentCard(props: { g: AgentGroup; onKill: (p: Proc) => void }) {
         <strong>{props.g.agent}</strong>
         <Show when={props.g.host}><span class="host-chip" title="Onde esta IA está aberta">{props.g.host}</span></Show>
         <span class="proj-chip" title={props.g.cwd ?? ""}>{props.g.cwd ? base(props.g.cwd) : "—"}</span>
-        <small>pid {props.g.pid} · há {uptime(props.g.runSecs)} · {formatBytes(props.g.mem)}</small>
+        <small title={`Processo ${props.g.pid}`}>aberta há {uptime(props.g.runSecs)} · usa {formatBytes(props.g.mem)} de memória</small>
         <Sparkline data={xray.cpu[props.g.pid] ?? [0, 0]} color={color()} width={70} height={18} />
-        <span class="agent-count">{props.g.children.length ? `${props.g.children.length} processos` : "ocioso"}</span>
+        <span class="agent-count">{props.g.children.length ? `rodando ${props.g.children.length} ${props.g.children.length === 1 ? "programa" : "programas"}` : "parada"}</span>
       </div>
       <Show when={props.g.children.length > 0}>
         <div class="proc-list">
           <For each={props.g.children}>
             {(p) => (
               <div class="proc-row" style={{ "padding-left": `${10 + (p.depth - 1) * 16}px` }}>
-                <code class="pid">{p.pid}</code>
+
                 <div class="cache-info">
-                  <strong class="mono" title={p.cmd}>{p.cmd}</strong>
+                  <strong class="mono" title={`${p.cmd}\n(processo ${p.pid})`}>{p.cmd}</strong>
                 </div>
                 <Sparkline data={xray.cpu[p.pid] ?? [0, 0]} color={color()} />
                 <span class="size">{p.cpu.toFixed(0)}% · {formatBytes(p.mem)}</span>
@@ -411,5 +467,93 @@ function AgentCard(props: { g: AgentGroup; onKill: (p: Proc) => void }) {
         </div>
       </Show>
     </div>
+  );
+}
+
+const KINDS = [
+  { id: "ia", label: "Históricos das IAs", color: "#8b7bff" },
+  { id: "pacotes", label: "Pacotes baixados", color: "#38bdf8" },
+  { id: "build", label: "Restos de build", color: "#fbbf24" },
+] as const;
+
+/** Rosca do espaço: uma fatia por tipo, desenhando-se ao abrir e quando os números mudam. */
+function Donut(props: { parts: { id: string; color: string; bytes: number; label: string }[]; total: number; busy: boolean }) {
+  const size = 156;
+  const stroke = 16;
+  const r = (size - stroke) / 2;
+  const c = 2 * Math.PI * r;
+  const [k, setK] = createSignal(0);
+  createEffect(on(() => props.total, () => requestAnimationFrame(() => setK(1))));
+  const segs = () => {
+    let acc = 0;
+    const t = Math.max(1, props.total);
+    return props.parts.map((p) => {
+      const len = (p.bytes / t) * c;
+      const seg = { ...p, len: Math.max(0, len - 3), off: acc };
+      acc += len;
+      return seg;
+    });
+  };
+  return (
+    <div class="cx-donut" classList={{ busy: props.busy }}>
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+        <defs>
+          <filter id="cx-glow" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="4" /></filter>
+        </defs>
+        <circle cx={size / 2} cy={size / 2} r={r} class="cx-donut-track" stroke-width={stroke} fill="none" />
+        <g transform={`rotate(-90 ${size / 2} ${size / 2})`}>
+          <For each={segs()}>
+            {(sg) => (
+              <>
+                <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={sg.color} stroke-width={stroke} opacity="0.35" filter="url(#cx-glow)"
+                  stroke-dasharray={`${sg.len * k()} ${c}`} stroke-dashoffset={-sg.off * k()} class="cx-seg" />
+                <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={sg.color} stroke-width={stroke} stroke-linecap="round"
+                  stroke-dasharray={`${sg.len * k()} ${c}`} stroke-dashoffset={-sg.off * k()} class="cx-seg" />
+              </>
+            )}
+          </For>
+        </g>
+      </svg>
+      <div class="cx-donut-label">
+        <Show when={!props.busy} fallback={<span class="spinner" />}>
+          <HardDrive size={18} />
+          <small>{props.parts.length} {props.parts.length === 1 ? "tipo" : "tipos"}</small>
+        </Show>
+      </div>
+    </div>
+  );
+}
+
+/** Como o espaço das IAs mudou nos últimos dias (um ponto por dia em que você abriu esta tela). */
+function DiskTrend() {
+  const pts = () => diskPoints().slice(-30);
+  const max = () => Math.max(1, ...pts().map((p) => p.bytes));
+  const says = () => {
+    const p = pts();
+    if (p.length < 2) return "O gráfico começa a aparecer a partir do segundo dia em que você abrir esta tela.";
+    const first = p[0], last = p[p.length - 1];
+    const diff = last.bytes - first.bytes;
+    const since = new Date(first.day + "T12:00").toLocaleDateString("pt-BR", { day: "numeric", month: "short" });
+    if (Math.abs(diff) < 50 * 1024 ** 2) return `Quase igual desde ${since}.`;
+    return diff > 0 ? `Cresceu ${formatBytes(diff)} desde ${since}.` : `Diminuiu ${formatBytes(-diff)} desde ${since}.`;
+  };
+  return (
+    <Show when={isTauri}>
+      <div class="disk-trend">
+        <small class="cx-eyebrow">Nos últimos dias</small>
+        <div class="disk-trend-bars" aria-hidden="true">
+          <For each={pts()}>
+            {(p, i) => (
+              <span
+                classList={{ last: i() === pts().length - 1 }}
+                style={{ height: `${Math.max(4, (p.bytes / max()) * 100)}%` }}
+                title={`${new Date(p.day + "T12:00").toLocaleDateString("pt-BR", { day: "numeric", month: "short" })}: ${formatBytes(p.bytes)}`}
+              />
+            )}
+          </For>
+        </div>
+        <p>{says()}</p>
+      </div>
+    </Show>
   );
 }

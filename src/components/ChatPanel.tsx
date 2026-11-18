@@ -1,16 +1,17 @@
 import { dismissable } from "../dismiss";
-import { AlertTriangle, ArrowLeft, Ban, Check, ChevronDown, FileCode2, History, Lock, MessageSquarePlus, Paperclip, SendHorizontal, ShieldCheck, Square, TerminalSquare, X } from "lucide-solid";
+import { AlertTriangle, ArrowLeft, Ban, Check, ChevronDown, FileCode2, History, MessageSquarePlus, Paperclip, SendHorizontal, ShieldCheck, Square, TerminalSquare, X } from "lucide-solid";
 import { createEffect, createMemo, createResource, createSignal, For, Match, on, Show, Switch } from "solid-js";
 import { accessLevels } from "../data/mock";
-import { accountById, accountSub, accts, fmtAgo } from "../accounts";
+import { accountById, accountSub, accts } from "../accounts";
 import { currentProject, setProjectAccount, showToast, ws, type ActivityEvent } from "../store";
 import { seenAgent } from "../agentFeed";
 import { acc, loadAccess, openClaude } from "../access";
-import { answerPermission, chatOf, clearError, isClaudeChat, listConversations, newChat, openConversation, sendChat, setAttach, setInput, stopChat, type Convo } from "../chat";
+import { answerPermission, chatOf, clearError, deleteConvos, isClaudeChat, listConversations, newChat, openConversation, sendChat, setAttach, setInput, stopChat, type Convo } from "../chat";
 import { isTauri } from "../api";
 import AccessLevel from "./AccessLevel";
 import GitPanel from "./GitPanel";
 import TrailPanel from "./TrailPanel";
+import ConvoRow from "./ConvoRow";
 import { git, gitTab, setGitTab } from "../git";
 import ActivityIcon, { kindColor } from "./ActivityIcon";
 import { ProviderMark } from "./ui";
@@ -172,7 +173,6 @@ function Conversations(props: { onClose: () => void }) {
   const pid = p().id;
   const [data, { refetch }] = createResource(() => listConversations(pid).catch((e) => (showToast(String(e)), { items: [] as Convo[], current: null })));
   const [opening, setOpening] = createSignal<string | null>(null);
-  const ago = (ms: number) => fmtAgo(Math.max(0, (Date.now() - ms) / 1000));
   const usable = (c: Convo) => c.account === p().accountId;
   const open = async (c: Convo) => {
     if (!usable(c)) return showToast(`Esta conversa é da conta ${accountById(c.account).label}. Troque a conta do projeto para continuar nela.`);
@@ -204,42 +204,31 @@ function Conversations(props: { onClose: () => void }) {
         >
           <For each={data()!.items}>
             {(c, i) => {
-              const a = () => accountById(c.account);
               const key = `${c.kind}:${c.id}`;
               // a conversa aberta de outra conta (o projeto trocou de conta) não vale mais: mostra o cadeado
               const current = () => data()?.current === key && usable(c);
               return (
-                <button
-                  class="convo slide-in"
-                  classList={{ current: current(), locked: !usable(c), opening: opening() === key }}
-                  style={{ "--c": a().color, "animation-delay": `${Math.min(i(), 12) * 30}ms` }}
-                  title={usable(c) ? (current() ? "Conversa aberta no chat" : "Continuar esta conversa") : `Da conta ${a().label}: troque a conta do projeto para continuar`}
+                <ConvoRow
+                  c={c}
+                  i={i()}
+                  current={current()}
+                  locked={!usable(c)}
+                  opening={opening() === key}
                   disabled={!!opening()}
-                  onClick={() => open(c)}
-                >
-                  <span class="convo-bar" />
-                  <span class="convo-main">
-                    <span class="convo-title">{c.title}</span>
-                    <Show when={c.lastPrompt}><span class="convo-last">↳ {c.lastPrompt}</span></Show>
-                    <span class="convo-meta">
-                      <ProviderMark id={c.account} size={14} />
-                      <span>{a().label}</span>
-                      <Show when={c.origin}><span>· {c.origin}</span></Show>
-                      <span>· {ago(c.updated)}</span>
-                    </span>
-                  </span>
-                  <Show when={opening() === key} fallback={
-                    <Show when={current()} fallback={<Show when={!usable(c)}><Lock size={12} class="convo-lock" /></Show>}>
-                      <span class="convo-badge">aberta</span>
-                    </Show>
-                  }>
-                    <span class="spinner" />
-                  </Show>
-                </button>
+                  title={usable(c) ? (current() ? "Conversa aberta no chat" : "Continuar esta conversa") : `Da conta ${accountById(c.account).label}: troque a conta do projeto para continuar`}
+                  extra={<Show when={c.origin}><span>· {c.origin}</span></Show>}
+                  onOpen={() => open(c)}
+                  onDelete={async () => (await deleteConvos(pid, [c], data()?.current ?? null)) && refetch()}
+                />
               );
             }}
           </For>
-          <button class="convos-refresh" onClick={() => refetch()}>Atualizar a lista</button>
+          <div class="convos-foot">
+            <button class="convos-refresh" onClick={() => refetch()}>Atualizar a lista</button>
+            <button class="convos-clear" disabled={chatOf(pid).busy} onClick={async () => (await deleteConvos(pid, [...data()!.items], data()?.current ?? null)) && refetch()}>
+              Apagar todas ({data()!.items.length})
+            </button>
+          </div>
         </Show>
       </Show>
     </div>

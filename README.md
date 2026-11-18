@@ -33,7 +33,9 @@ cd src-tauri && cargo test   # testes do lado Rust
 | Computador → Espaço e memória | (antigo Raio-X) Caches com limpeza, o que cada IA instalou, IAs locais (Ollama, LM Studio, Hugging Face), VMs/containers com o projeto de origem e IAs abertas com onde estão |
 | Computador → Extras do Claude | (antigos Inventário e Skills e MCP) Receitas, atalhos, ajudantes, conexões e pacotes: onde valem, quanto pesam, ligar, desligar e tirar, e ler cada receita |
 | Chat livre | Conversa sem projeto; opcionalmente lendo (só lendo) os arquivos da pasta pessoal |
-| Ajustes | Estilo dos ícones (detalhados ou minimalistas) e das animações, com prévia; onde o app guarda as coisas |
+| Ajustes | Tema claro, escuro ou igual ao sistema; estilo dos ícones e das animações, com prévia; onde o app guarda as coisas |
+| Gráficos | Uso da semana em frase em cada conta, espaço das IAs ao longo dos dias (Espaço e memória) e passos por hora nas últimas 24 h em cada cartão da Visão geral |
+| Sininho (topo) | "Precisa de você": permissões, erros, conflitos, contas sem login, commits só neste computador e disco cheio, cada um levando direto ao lugar certo |
 
 `⌘K` / `Ctrl+K` abre a paleta de comandos. `F1` abre a ajuda.
 

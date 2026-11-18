@@ -12,6 +12,19 @@ import { CountUp, PageHeader, ProviderMark, Stagger } from "../components/ui";
 import ConfirmDialog from "../components/ConfirmDialog";
 
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
+/** A semana em uma frase: "Esta semana: 1,2 mi tokens. Dia mais forte: ter. Hoje está acima do normal." */
+function weekSays(days: number[]): string {
+  const total = days.reduce((a, b) => a + b, 0);
+  if (!total) return "Não usada nos últimos 7 dias.";
+  const max = Math.max(...days);
+  const peak = days.indexOf(max);
+  const before = days.slice(0, 6).filter((d) => d > 0);
+  const avg = before.length ? before.reduce((a, b) => a + b, 0) / before.length : 0;
+  const today = days[6] ?? 0;
+  const trend = !avg ? "" : today > avg * 1.5 ? " Hoje está bem acima do normal." : today < avg * 0.5 && today > 0 ? " Hoje está mais calmo que o normal." : "";
+  return `Esta semana: ${fmtTokens(total)} tokens. Dia mais forte: ${peak === 6 ? "hoje" : weekday(6 - peak)}.${trend}`;
+}
+
 const weekday = (offset: number) => {
   const d = new Date();
   d.setDate(d.getDate() - offset);
@@ -192,6 +205,7 @@ function AccountCard(props: { a: Account; onRemove: (a: Account) => void; onKey:
             <dd>{fmtAgo(u()!.lastActiveSecs)}</dd>
           </dl>
         </div>
+        <p class="usage-says">{weekSays(u()!.days)}</p>
         <Show when={u()!.models.length}>
           <div class="model-mix">
             <For each={u()!.models}>

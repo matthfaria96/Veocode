@@ -1,12 +1,14 @@
 import { dismissable } from "../dismiss";
-import { AlertTriangle, ArrowLeft, Ban, Check, ChevronDown, Eye, History, HardDrive, Lock, MessageSquarePlus, MessagesSquare, SendHorizontal, ShieldCheck, Sparkles, Square, X } from "lucide-solid";
+import { AlertTriangle, ArrowLeft, Ban, Check, ChevronDown, Eye, History, HardDrive, MessageSquarePlus, MessagesSquare, SendHorizontal, ShieldCheck, Square, X } from "lucide-solid";
 import { createEffect, createResource, createSignal, For, Match, on, onCleanup, onMount, Show, Switch } from "solid-js";
-import { accountById, accountSub, accts, fmtAgo } from "../accounts";
+import { accountById, accountSub, accts } from "../accounts";
 import type { ActivityEvent } from "../store";
 import { isTauri } from "../api";
 import { settings } from "../settings";
 import { answerLivre, freeAccount, freeAccountId, listLivre, livre, newLivre, openLivre, sendLivre, setFreeAccount, setFreePc, setLivre, stopLivre, type Item } from "../livre";
-import type { Convo } from "../chat";
+import { deleteConvos, type Convo } from "../chat";
+import { LIVRE } from "../livre";
+import ConvoRow from "../components/ConvoRow";
 import ActivityIcon, { kindColor } from "../components/ActivityIcon";
 import Markdown from "../components/Markdown";
 import { ProviderMark } from "../components/ui";
@@ -105,7 +107,7 @@ function Empty() {
         <For each={list()}>
           {(t, i) => (
             <button class="livre-idea pop-in" style={{ "animation-delay": `${80 + i() * 60}ms` }} onClick={() => sendLivre(t)}>
-              <Sparkles size={13} />
+              <MessageSquarePlus size={13} />
               <span>{t}</span>
             </button>
           )}
@@ -174,7 +176,6 @@ function Message(props: { item: Item }) {
 function Conversations(props: { onClose: () => void }) {
   const [data, { refetch }] = createResource(() => listLivre().catch(() => ({ items: [] as Convo[], current: null })));
   const [opening, setOpening] = createSignal<string | null>(null);
-  const ago = (ms: number) => fmtAgo(Math.max(0, (Date.now() - ms) / 1000));
   const open = async (c: Convo) => {
     setOpening(`${c.kind}:${c.id}`);
     await openLivre(c);
@@ -192,35 +193,28 @@ function Conversations(props: { onClose: () => void }) {
         <Show when={data()?.items.length} fallback={<div class="convos-empty">{isTauri ? "Nenhuma conversa guardada ainda. Cada conversa aqui fica salva para você voltar nela depois." : "No navegador as conversas não ficam guardadas: abra o app."}</div>}>
           <For each={data()!.items}>
             {(c, i) => {
-              const a = () => accountById(c.account);
               const key = `${c.kind}:${c.id}`;
               const exists = () => accts.list.some((x) => x.id === c.account);
               return (
-                <button
-                  class="convo slide-in"
-                  classList={{ current: data()?.current === key, locked: !exists(), opening: opening() === key }}
-                  style={{ "--c": a().color, "animation-delay": `${Math.min(i(), 12) * 30}ms` }}
+                <ConvoRow
+                  c={c}
+                  i={i()}
+                  current={data()?.current === key}
+                  locked={!exists()}
+                  opening={opening() === key}
                   disabled={!!opening() || !exists() || livre.busy}
-                  title={exists() ? (c.account === freeAccountId() ? "Continuar esta conversa" : `Continuar (troca para a conta ${a().label})`) : "A conta desta conversa não existe mais"}
-                  onClick={() => open(c)}
-                >
-                  <span class="convo-bar" />
-                  <span class="convo-main">
-                    <span class="convo-title">{c.title}</span>
-                    <Show when={c.lastPrompt}><span class="convo-last">↳ {c.lastPrompt}</span></Show>
-                    <span class="convo-meta">
-                      <ProviderMark id={c.account} size={14} />
-                      <span>{a().label}</span>
-                      <span>· {ago(c.updated)}</span>
-                    </span>
-                  </span>
-                  <Show when={opening() === key} fallback={<Show when={data()?.current === key} fallback={<Show when={!exists()}><Lock size={12} class="convo-lock" /></Show>}><span class="convo-badge">aberta</span></Show>}>
-                    <span class="spinner" />
-                  </Show>
-                </button>
+                  title={exists() ? (c.account === freeAccountId() ? "Continuar esta conversa" : `Continuar (troca para a conta ${accountById(c.account).label})`) : "A conta desta conversa não existe mais"}
+                  onOpen={() => open(c)}
+                  onDelete={async () => (await deleteConvos(LIVRE, [c], data()?.current ?? null)) && refetch()}
+                />
               );
             }}
           </For>
+          <div class="convos-foot">
+            <button class="convos-clear" disabled={livre.busy} onClick={async () => (await deleteConvos(LIVRE, [...data()!.items], data()?.current ?? null)) && refetch()}>
+              Apagar todas ({data()!.items.length})
+            </button>
+          </div>
         </Show>
       </Show>
     </div>

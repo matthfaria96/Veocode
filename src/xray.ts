@@ -1,5 +1,6 @@
 // Estado do Raio-X. No app (Tauri) vem do Rust; no navegador puro usa os dados fictícios.
 
+import { createSignal } from "solid-js";
 import { createStore, produce, reconcile } from "solid-js/store";
 import { isTauri, xrayApi, type AgentGroup, type CacheSpec, type InstallReport, type MachineReport, type ModelReport } from "./api";
 import { caches as mockCaches, installed as mockInstalled, machines as mockMachines, processes as mockProcs } from "./data/mock";
@@ -75,8 +76,9 @@ export async function loadCaches() {
       }
     };
     await Promise.all([worker(), worker(), worker()]);
+    noteDisk(xray.caches.reduce((t, c) => t + (c.size ?? 0), 0));
   } catch (e) {
-    showToast(`Raio-X: ${errMsg(e)}`);
+    showToast(`Não deu para ler esta parte do computador: ${errMsg(e)}`);
   }
 }
 
@@ -131,7 +133,7 @@ export async function loadInstalls() {
   try {
     setXray("installs", await xrayApi.installs());
   } catch (e) {
-    showToast(`Raio-X: ${errMsg(e)}`);
+    showToast(`Não deu para ler esta parte do computador: ${errMsg(e)}`);
   }
   setXray("installsLoading", false);
 }
@@ -153,7 +155,7 @@ export async function loadMachines() {
   try {
     setXray("machines", await xrayApi.machines());
   } catch (e) {
-    showToast(`Raio-X: ${errMsg(e)}`);
+    showToast(`Não deu para ler esta parte do computador: ${errMsg(e)}`);
   }
   setXray("machinesLoading", false);
 }
@@ -173,7 +175,7 @@ export async function loadModels() {
   try {
     setXray("models", await xrayApi.models());
   } catch (e) {
-    showToast(`IAs locais: ${errMsg(e)}`);
+    showToast(`Não deu para procurar as IAs locais: ${errMsg(e)}`);
   }
   setXray("modelsLoading", false);
 }
@@ -183,7 +185,7 @@ export async function toggleMachine(engine: string, id: string, start: boolean) 
   setXray("busy", key, true);
   try {
     if (isTauri) await xrayApi.toggleMachine(engine, id, start);
-    showToast(start ? "Iniciado" : "Parado");
+    showToast(start ? "Pronto, está ligado" : "Pronto, está desligado");
     await loadMachines();
   } catch (e) {
     showToast(errMsg(e));
@@ -229,7 +231,7 @@ export async function refreshProcs() {
 export async function killProc(pid: number) {
   try {
     if (isTauri) await xrayApi.kill(pid);
-    showToast(`Processo ${pid} encerrado`);
+    showToast("Pronto, o programa foi fechado");
     setTimeout(refreshProcs, 400);
   } catch (e) {
     showToast(errMsg(e));
@@ -238,3 +240,38 @@ export async function killProc(pid: number) {
 
 export const agentColor = (agent: string) =>
   agent.startsWith("Claude") ? "#e8915b" : agent.startsWith("Codex") ? "#10a37f" : agent.startsWith("Gemini") ? "#4f8cff" : agent.startsWith("Ollama") ? "#34d399" : agent.startsWith("DeepSeek") ? "#4f8cff" : "#a78bfa";
+
+// ---------- espaço ao longo dos dias ----------
+// Um número por dia (o último medido), guardado neste computador. Serve só para o gráfico
+// "como o espaço mudou"; se não der para guardar, o gráfico apenas não aparece.
+
+const DISK_KEY = "veocode.disk.history";
+export type DiskPoint = { day: string; bytes: number };
+
+const today = () => new Date().toLocaleDateString("sv-SE"); // AAAA-MM-DD no fuso local
+
+export function diskHistory(): DiskPoint[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(DISK_KEY) ?? "[]");
+    return Array.isArray(v) ? v.filter((p) => typeof p?.day === "string" && typeof p?.bytes === "number") : [];
+  } catch {
+    return [];
+  }
+}
+
+export const [diskPoints, setDiskPoints] = createSignal<DiskPoint[]>(diskHistory());
+
+function noteDisk(bytes: number) {
+  if (!isTauri || !bytes) return;
+  const d = today();
+  const list = diskHistory().filter((p) => p.day !== d);
+  list.push({ day: d, bytes });
+  list.sort((a, b) => a.day.localeCompare(b.day));
+  const kept = list.slice(-60);
+  try {
+    localStorage.setItem(DISK_KEY, JSON.stringify(kept));
+  } catch {
+    /* sem armazenamento: só não guarda */
+  }
+  setDiskPoints(kept);
+}

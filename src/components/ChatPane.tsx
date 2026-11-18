@@ -1,11 +1,11 @@
 import { dismissable } from "../dismiss";
-import { AlertTriangle, ArrowLeft, ArrowRight, Ban, Check, ChevronDown, Maximize2, MessageSquarePlus, Minimize2, PanelRightOpen, SendHorizontal, ShieldCheck, Square, X } from "lucide-solid";
+import { AlertTriangle, ArrowLeft, ArrowRight, Ban, Check, ChevronDown, Maximize2, MessageSquarePlus, Minimize2, PanelRightOpen, Pin, SendHorizontal, ShieldCheck, Square, X } from "lucide-solid";
 import { createEffect, createMemo, createSignal, For, on, Show } from "solid-js";
 import { accountById } from "../accounts";
-import { maximized, movePane, panes, projectState, replacePane, setMaximized, toggleGrid } from "../board";
+import { isPinned, maximized, movePane, panes, projectState, replacePane, setMaximized, togglePin } from "../board";
 import { answerPermission, chatOf, clearError, newChat, sendChat, setInput, stopChat } from "../chat";
 import { clearFeed, feedOf, type FeedItem } from "../feeds";
-import { git } from "../git";
+import { git, gitWords } from "../git";
 import { projects, setProjectId, setView } from "../store";
 import ActivityIcon, { kindColor } from "./ActivityIcon";
 import { ProjectIcon } from "./icons";
@@ -69,7 +69,7 @@ export default function ChatPane(props: { pid: string; index: number }) {
         </button>
         <span class={`pane-state ${st().tone}`}><i />{st().label}</span>
         <Show when={g()?.repo && (g()!.ahead || g()!.behind || g()!.changed)}>
-          <span class="pane-git" title="Git: para enviar / para baixar / arquivos mudados">
+          <span class="pane-git" title={gitWords(g()).map((w) => w.text).join(" · ")}>
             <Show when={g()!.ahead}><b class="warn">↑{g()!.ahead}</b></Show>
             <Show when={g()!.behind}><b class="info">↓{g()!.behind}</b></Show>
             <Show when={g()!.changed}><b>●{g()!.changed}</b></Show>
@@ -88,7 +88,7 @@ export default function ChatPane(props: { pid: string; index: number }) {
           </Show>
           <button class="icon-btn small" title="Nova conversa (a anterior fica guardada no projeto)" disabled={chat().busy} onClick={() => void newChat(props.pid).then(() => clearFeed(props.pid))}><MessageSquarePlus size={12} /></button>
           <button class="icon-btn small" title="Abrir o projeto completo (árvore, editor, terminal)" onClick={openFull}><PanelRightOpen size={12} /></button>
-          <button class="icon-btn small" title="Tirar do Ao vivo (a conversa continua)" onClick={() => toggleGrid(props.pid)}><X size={12} /></button>
+          <button class="icon-btn small pane-pin" classList={{ on: isPinned(props.pid) }} title={isPinned(props.pid) ? "Fixado: fica sempre na tela, neste lugar. Clique para soltar" : "Fixar na tela (sem fixar, um projeto parado dá lugar a quem pedir você)"} onClick={() => togglePin(props.pid)}><Pin size={12} /></button>
         </span>
         <Show when={pick()}>
           <div class="menu pop-in pane-menu" ref={(el) => dismissable(el, () => setPick(false), () => titleBtn)}>

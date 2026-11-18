@@ -249,6 +249,16 @@ export async function commitDiff(pid: string, hash: string, path: string): Promi
 
 // ---------------------------------------------------------------- textos
 
+/** Situação do git em palavras: "3 para enviar · 55 mudados". Vazio quando está tudo igual. */
+export function gitWords(g: { ahead: number; behind: number; changed: number } | undefined | null): { text: string; tip: string }[] {
+  if (!g) return [];
+  const out: { text: string; tip: string }[] = [];
+  if (g.changed) out.push({ text: `${g.changed} ${g.changed === 1 ? "mudado" : "mudados"}`, tip: "Arquivos mudados desde o último commit (ainda não salvos no git)" });
+  if (g.ahead) out.push({ text: `${g.ahead} para enviar`, tip: "Commits que só existem neste computador" });
+  if (g.behind) out.push({ text: `${g.behind} para baixar`, tip: "Commits que estão no remoto e ainda não aqui" });
+  return out;
+}
+
 /** "agora", "há 5 min", "há 3 h", "há 2 d", "há 4 sem", "há 3 meses" */
 export function since(sec: number | null): string {
   if (!sec) return "nunca";

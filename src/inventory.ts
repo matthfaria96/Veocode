@@ -55,7 +55,7 @@ export async function loadInventory() {
     setInv("loaded", true);
     await refreshRunning();
   } catch (e) {
-    showToast(`Inventário: ${errMsg(e)}`);
+    showToast(`Não deu para ler os extras do Claude: ${errMsg(e)}`);
   }
   setInv("loading", false);
 }
