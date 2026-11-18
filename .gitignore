@@ -1,0 +1,18 @@
+# dependências e saídas de build
+node_modules
+dist
+src-tauri/target
+src-tauri/gen/schemas
+
+# sistema e editores
+.DS_Store
+*.log
+
+# ajustes locais do Claude Code (o launch.json do preview fica no git)
+.claude/settings.local.json
+
+# segredos, se algum dia aparecerem aqui
+.env
+.env.*
+*.pem
+*.key

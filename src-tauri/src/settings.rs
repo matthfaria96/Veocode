@@ -1,0 +1,80 @@
+//! Ajustes do Veocode (aparência e afins), em `settings.json` na pasta de configuração do app.
+//! Valor desconhecido ou arquivo estragado volta para o padrão em vez de travar a abertura.
+
+use serde::{Deserialize, Serialize};
+use std::fs;
+use std::path::{Path, PathBuf};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum Icons {
+    Minimalista,
+    #[default]
+    Detalhado,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum Motion {
+    #[default]
+    Completa,
+    Reduzida,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Settings {
+    pub icons: Icons,
+    pub motion: Motion,
+    /// conta do Chat livre (vazio = a conta padrão)
+    pub free_account: String,
+    /// Chat livre pode olhar o computador (só leitura, fora os segredos)
+    pub free_pc: bool,
+}
+
+/// Lê campo a campo: um valor ruim não derruba os outros.
+pub fn load(dir: &Path) -> Settings {
+    let Ok(text) = fs::read_to_string(dir.join("settings.json")) else { return Settings::default() };
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) else { return Settings::default() };
+    let field = |k: &str| v.get(k).cloned().unwrap_or(serde_json::Value::Null);
+    Settings {
+        icons: serde_json::from_value(field("icons")).unwrap_or_default(),
+        motion: serde_json::from_value(field("motion")).unwrap_or_default(),
+        free_account: serde_json::from_value(field("freeAccount")).unwrap_or_default(),
+        free_pc: serde_json::from_value(field("freePc")).unwrap_or_default(),
+    }
+}
+
+/// Grava inteiro (arquivo temporário + troca), para nunca ficar pela metade.
+pub fn save(dir: &Path, s: &Settings) -> Result<(), String> {
+    fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    let file: PathBuf = dir.join("settings.json");
+    let tmp = dir.join("settings.json.tmp");
+    let text = serde_json::to_string_pretty(s).map_err(|e| e.to_string())?;
+    fs::write(&tmp, text).map_err(|e| e.to_string())?;
+    fs::rename(&tmp, &file).map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn saves_and_survives_bad_values() {
+        let dir = std::env::temp_dir().join(format!("veocode-settings-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        assert_eq!(load(&dir), Settings::default());
+
+        let s = Settings { icons: Icons::Minimalista, motion: Motion::Reduzida, free_account: "acc-1".into(), free_pc: true };
+        save(&dir, &s).unwrap();
+        assert_eq!(load(&dir), s);
+
+        // valor desconhecido num campo não apaga o outro
+        fs::write(dir.join("settings.json"), r#"{"icons":"neon","motion":"reduzida","freePc":"sim","freeAccount":"a2"}"#).unwrap();
+        assert_eq!(load(&dir), Settings { icons: Icons::Detalhado, motion: Motion::Reduzida, free_account: "a2".into(), free_pc: false });
+
+        fs::write(dir.join("settings.json"), "{ quebrado").unwrap();
+        assert_eq!(load(&dir), Settings::default());
+        let _ = fs::remove_dir_all(&dir);
+    }
+}

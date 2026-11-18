@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- Ícone do Veocode: a pasta do projeto, o V da marca e os cursores das IAs trabalhando nela.
+       Fonte dos PNG/ICNS/ICO em src-tauri/icons (gerados com `npx tauri icon`). -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2a3160"/>
+      <stop offset="0.55" stop-color="#151a33"/>
+      <stop offset="1" stop-color="#0b0e1c"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.55" r="0.5">
+      <stop offset="0" stop-color="#7c8cff" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#7c8cff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="back" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5865e6"/>
+      <stop offset="1" stop-color="#3a43b0"/>
+    </linearGradient>
+    <linearGradient id="front" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#a3afff"/>
+      <stop offset="1" stop-color="#6874f0"/>
+    </linearGradient>
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="18" stdDeviation="22" flood-color="#000" flood-opacity="0.45"/>
+    </filter>
+    <filter id="soft" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="8" stdDeviation="9" flood-color="#000" flood-opacity="0.45"/>
+    </filter>
+    <clipPath id="tile"><rect x="100" y="100" width="824" height="824" rx="186"/></clipPath>
+  </defs>
+
+  <!-- placa -->
+  <g filter="url(#shadow)">
+    <rect x="100" y="100" width="824" height="824" rx="186" fill="url(#bg)"/>
+  </g>
+  <g clip-path="url(#tile)">
+    <rect x="100" y="100" width="824" height="824" fill="url(#glow)"/>
+  </g>
+  <rect x="101.5" y="101.5" width="821" height="821" rx="184.5" fill="none" stroke="#ffffff" stroke-opacity="0.12" stroke-width="3"/>
+
+  <!-- pasta -->
+  <g filter="url(#shadow)">
+    <path d="M232 352 q0-48 48-48 h150 q26 0 42 20 l26 32 h246 q48 0 48 48 v330 q0 48-48 48 h-464 q-48 0-48-48 z" fill="url(#back)"/>
+    <!-- folha de código saindo da pasta -->
+    <rect x="290" y="346" width="444" height="200" rx="26" fill="#eef0ff"/>
+    <g stroke-linecap="round" stroke-width="20">
+      <line x1="330" y1="384" x2="470" y2="384" stroke="#7c8cff"/>
+      <line x1="500" y1="384" x2="580" y2="384" stroke="#e8915b"/>
+      <line x1="360" y1="414" x2="560" y2="414" stroke="#b9bfdc"/>
+    </g>
+    <path d="M232 470 q0-40 40-40 h480 q40 0 40 40 v264 q0 48-48 48 h-464 q-48 0-48-48 z" fill="url(#front)"/>
+    <path d="M232 470 q0-40 40-40 h480 q40 0 40 40 v60 h-560 z" fill="url(#sheen)"/>
+  </g>
+
+  <!-- V da marca -->
+  <path d="M418 530 L512 690 L606 530" fill="none" stroke="#ffffff" stroke-width="64" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- cursores das contas (Claude, DeepSeek, local) -->
+  <g filter="url(#soft)">
+    <path transform="translate(712 236) scale(5.4)" d="M0 0 L0 22 L6 16.5 L10.5 26 L14.5 24.2 L10 14.8 L18 14.8 Z" fill="#e8915b" stroke="#ffffff" stroke-width="2.2" stroke-linejoin="round"/>
+    <path transform="translate(176 628) scale(4.4)" d="M0 0 L0 22 L6 16.5 L10.5 26 L14.5 24.2 L10 14.8 L18 14.8 Z" fill="#4f8cff" stroke="#ffffff" stroke-width="2.4" stroke-linejoin="round"/>
+    <path transform="translate(738 704) scale(4)" d="M0 0 L0 22 L6 16.5 L10.5 26 L14.5 24.2 L10 14.8 L18 14.8 Z" fill="#34d399" stroke="#ffffff" stroke-width="2.6" stroke-linejoin="round"/>
+  </g>
+</svg>
