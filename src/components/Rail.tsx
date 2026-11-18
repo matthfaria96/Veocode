@@ -19,10 +19,10 @@ export default function Rail() {
       <div class="rail-items">
         <span class="rail-indicator" style={{ transform: `translateY(${Math.max(0, index()) * 52}px)`, opacity: index() < 0 ? 0 : 1 }} />
         <For each={items}>
-          {(item) => (
+          {(item, i) => (
             <button class="rail-btn" classList={{ active: on(item) }} onClick={() => setView(item.id)}>
               {item.icon()}
-              <span class="rail-tip">{item.label}</span>
+              <span class="rail-tip">{item.label} <kbd>⌘{i() + 1}</kbd></span>
             </button>
           )}
         </For>

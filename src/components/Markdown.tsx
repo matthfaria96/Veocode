@@ -2,8 +2,9 @@
 // código e, no meio do texto, `código`, **negrito**, *itálico* e [links](url). Monta os
 // elementos direto (sem innerHTML): nada do texto vira HTML de verdade.
 
-import { For, Match, Switch, type JSX } from "solid-js";
-import { api } from "../api";
+import { Check, Copy } from "lucide-solid";
+import { createSignal, For, Match, Switch, type JSX } from "solid-js";
+import { api, copyText } from "../api";
 
 type Block =
   | { t: "p"; text: string }
@@ -119,6 +120,7 @@ export default function Markdown(props: { text: string }) {
               {(c) => (
                 <div class="md-code">
                   <span class="md-lang">{c().lang || "código"}</span>
+                  <CodeCopy text={c().text} />
                   <pre>{c().text}</pre>
                 </div>
               )}
@@ -128,5 +130,19 @@ export default function Markdown(props: { text: string }) {
         )}
       </For>
     </div>
+  );
+}
+
+/** Botão "Copiar" no canto de cada bloco de código. */
+function CodeCopy(props: { text: string }) {
+  const [ok, setOk] = createSignal(false);
+  return (
+    <button
+      class="md-copy"
+      classList={{ done: ok() }}
+      onClick={() => void copyText(props.text).then(() => (setOk(true), setTimeout(() => setOk(false), 1400)))}
+    >
+      {ok() ? <><Check size={11} /> Copiado</> : <><Copy size={11} /> Copiar</>}
+    </button>
   );
 }

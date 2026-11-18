@@ -12,6 +12,7 @@ import ConvoRow from "../components/ConvoRow";
 import ActivityIcon, { kindColor } from "../components/ActivityIcon";
 import Markdown from "../components/Markdown";
 import { ProviderMark } from "../components/ui";
+import MsgTools, { focusComposer } from "../components/MsgTools";
 
 const ideas = {
   conversa: [
@@ -149,12 +150,13 @@ function Steps(props: { steps: Item & { t: "work" } }) {
 function Message(props: { item: Item }) {
   return (
     <Switch>
-      <Match when={props.item.t === "user" && props.item}>{(it) => <div class="livre-msg user pop-in">{it().text}</div>}</Match>
+      <Match when={props.item.t === "user" && props.item}>{(it) => <div class="livre-msg user pop-in">{it().text}<MsgTools text={it().text} onReuse={() => (setLivre("input", it().text), focusComposer(document.querySelector(".livre-composer")))} /></div>}</Match>
       <Match when={props.item.t === "say" && props.item}>
         {(it) => (
           <div class="livre-msg agent pop-in" style={{ "--c": accountById(it().account).color }}>
             <ProviderMark id={it().account} size={22} />
             <div class="livre-say"><Markdown text={it().text} /></div>
+            <MsgTools text={it().text} />
           </div>
         )}
       </Match>

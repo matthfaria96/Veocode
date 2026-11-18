@@ -11,6 +11,7 @@ import ActivityIcon, { kindColor } from "./ActivityIcon";
 import { ProjectIcon } from "./icons";
 import Markdown from "./Markdown";
 import { ProviderMark } from "./ui";
+import MsgTools, { focusComposer } from "./MsgTools";
 
 type Block = { kind: "msg"; item: FeedItem } | { kind: "steps"; items: FeedItem[] };
 
@@ -114,9 +115,9 @@ export default function ChatPane(props: { pid: string; index: number }) {
                 b.kind === "steps" ? (
                   <Steps items={b.items} />
                 ) : b.item.kind === "user" ? (
-                  <div class="bubble user">{b.item.title}</div>
+                  <div class="bubble user">{b.item.title}<MsgTools text={b.item.title} onReuse={() => (setInput(props.pid, b.item.title), focusComposer(scroller.closest(".pane")))} /></div>
                 ) : b.item.kind === "say" ? (
-                  <div class="bubble agent say" style={{ "--c": a().color }}><Markdown text={b.item.title} /></div>
+                  <div class="bubble agent say" style={{ "--c": a().color }}><Markdown text={b.item.title} /><MsgTools text={b.item.title} /></div>
                 ) : b.item.kind === "error" ? (
                   <div class="pane-done err"><AlertTriangle size={11} /> {b.item.title}</div>
                 ) : (

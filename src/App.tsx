@@ -9,13 +9,14 @@ import Workspace from "./views/Workspace";
 import Livre from "./views/Livre";
 import Board from "./views/Board";
 import { loadSettings } from "./settings";
-import { helpOpen, loadProjects, paletteOpen, setHelpOpen, setPaletteOpen, showToast, toast, view } from "./store";
+import { helpOpen, loadProjects, paletteOpen, projectId, setHelpOpen, setPaletteOpen, setView, showToast, toast, view } from "./store";
 import { loadSummaries } from "./git";
 import { api } from "./api";
 import { handleFsChange } from "./realProject";
 import { refreshProcs } from "./xray";
 import { loadAccounts, refreshStatuses } from "./accounts";
-import { startChatEvents } from "./chat";
+import { newChat, startChatEvents } from "./chat";
+import { newLivre } from "./livre";
 import { startTermEvents } from "./terminal";
 import { startNotices } from "./attention";
 import { every } from "./every";
@@ -41,6 +42,18 @@ export default function App() {
       setPaletteOpen(!paletteOpen());
     }
     if (e.key === "Escape") setPaletteOpen(false);
+    // ⌘1…5 trocam de tela; ⌘N começa uma conversa nova onde você está
+    if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
+      const views = ["board", "workspace", "livre", "accounts", "inventory"] as const;
+      const n = Number(e.key);
+      if (n >= 1 && n <= views.length) {
+        e.preventDefault();
+        setView(views[n - 1]);
+      } else if (e.key.toLowerCase() === "n" && (view() === "workspace" || view() === "livre")) {
+        e.preventDefault();
+        void (view() === "livre" ? newLivre() : newChat(projectId()));
+      }
+    }
     // F1 (ou ? fora de campos de texto) abre a ajuda na tela atual
     const typing = e.target instanceof HTMLElement && (e.target.closest("input, textarea, select, [contenteditable=true]") !== null);
     if (e.key === "F1" || (e.key === "?" && !typing && !e.metaKey && !e.ctrlKey)) {

@@ -44,6 +44,8 @@ export const topics: Topic[] = [
           "\"Seguir o agente\" (embaixo, ao lado da Atividade) vem desligado: a tela não troca sozinha de arquivo. Ligue se quiser que a árvore e o editor acompanhem o que a IA está mexendo.",
           "Com vários projetos rodando, a Visão geral mostra todos de uma vez e até 4 conversas ao vivo, na divisão de tela que você escolher.",
           "⌘K (Ctrl+K no Windows) abre a busca de projetos, arquivos e ações. F1 abre esta ajuda.",
+          "⌘1 a ⌘5 trocam de tela (Visão geral, Projetos, Chat livre, Contas, Computador). ⌘N começa uma conversa nova no projeto ou no Chat livre.",
+          "Passe o mouse numa mensagem para copiar o texto; nos seus pedidos, a seta volta o texto para a caixa para você ajustar e mandar de novo. Blocos de código têm o botão Copiar.",
         ],
       },
     ],

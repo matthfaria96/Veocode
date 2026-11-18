@@ -15,6 +15,8 @@ import ConvoRow from "./ConvoRow";
 import { git, gitTab, setGitTab } from "../git";
 import ActivityIcon, { kindColor } from "./ActivityIcon";
 import { ProviderMark } from "./ui";
+import MsgTools, { focusComposer } from "./MsgTools";
+import Markdown from "./Markdown";
 
 /** Projeto real sem conversa ainda. */
 function RealIdle(props: { onAccess: () => void; onConvos: () => void }) {
@@ -96,7 +98,6 @@ function RealConversation() {
     return map;
   });
   const keys = createMemo(() => [...blocks().keys()].slice(-16), undefined, { equals: (a, b) => a.length === b.length && a.every((k, i) => k === b[i]) });
-  const plain = (t: string) => t.replace(/\*\*/g, "").replace(/`/g, "");
 
   const a = () => accountById(p().accountId);
   const chat = () => chatOf(p().id);
@@ -124,9 +125,9 @@ function RealConversation() {
           const b = () => blocks().get(k);
           return (
             <Switch>
-              <Match when={b()?.t === "user" && (b() as { e: ActivityEvent }).e}>{(e) => <div class="bubble user pop-in">{e().title}</div>}</Match>
+              <Match when={b()?.t === "user" && (b() as { e: ActivityEvent }).e}>{(e) => <div class="bubble user pop-in">{e().title}<MsgTools text={e().title} onReuse={() => (setInput(currentProject().id, e().title), focusComposer(document.querySelector(".chat-panel")))} /></div>}</Match>
               <Match when={b()?.t === "say" && (b() as { e: ActivityEvent }).e}>
-                {(e) => <div class="bubble agent pop-in say" style={{ "--c": e().color ?? "var(--accent)" }}>{plain(e().title)}</div>}
+                {(e) => <div class="bubble agent pop-in say md-bubble" style={{ "--c": e().color ?? "var(--accent)" }}><Markdown text={e().title} /><MsgTools text={e().title} /></div>}
               </Match>
               <Match when={b()?.t === "done" && (b() as { e: ActivityEvent }).e}>{(e) => <div class="done-line pop-in"><span>✓</span> {e().agent} terminou · {e().time}</div>}</Match>
               <Match when={b()?.t === "work" && (b() as { items: ActivityEvent[] }).items}>
