@@ -3,7 +3,7 @@
 
 import type { View } from "../store";
 
-export type TopicId = "inicio" | "mapa" | "projetos" | "nivel" | "chat" | "livre" | "contas" | "inventario" | "raiox" | "skills" | "ajustes" | "palavras";
+export type TopicId = "inicio" | "mapa" | "painel" | "projetos" | "nivel" | "chat" | "livre" | "contas" | "inventario" | "raiox" | "skills" | "ajustes" | "palavras";
 
 export interface Topic {
   id: TopicId;
@@ -40,6 +40,7 @@ export const topics: Topic[] = [
           "Nada é apagado de vez: o que o Veocode tira vai para a Lixeira.",
           "Chaves de API ficam no chaveiro do sistema, nunca num arquivo.",
           "O projeto \"demo · simulação\" é só uma demonstração: ali nada é gravado.",
+          "Com vários projetos rodando, o Painel mostra todos de uma vez e até 4 conversas lado a lado.",
           "⌘K (Ctrl+K no Windows) abre a busca de projetos, arquivos e ações. F1 abre esta ajuda.",
         ],
       },
@@ -68,10 +69,37 @@ export const topics: Topic[] = [
     ],
   },
   {
+    id: "painel",
+    title: "Painel",
+    view: "board",
+    where: "Segundo ícone do menu lateral (quatro quadrados).",
+    lead: "Todos os seus projetos num lugar só, com o que a IA está fazendo em cada um, e até 4 conversas abertas lado a lado.",
+    sections: [
+      {
+        title: "Todos",
+        items: [
+          "Um cartão por projeto: a situação agora (pedindo permissão, trabalhando, com erro ou parado), a última fala da conversa, a conta, o nível de acesso e o git (↑ para enviar, ↓ para baixar, ● mudados).",
+          "Quem precisa de você vem primeiro: um pedido de permissão deixa o cartão com borda amarela piscando.",
+          "Também conta o que a IA faz fora do Veocode: o Claude aberto no Terminal ou no editor aparece como agente aberto naquela pasta.",
+          "Clicar no cartão abre o projeto completo (árvore, editor, terminal).",
+        ],
+      },
+      {
+        title: "Lado a lado",
+        items: [
+          "O botão de duas colunas no cartão põe o projeto na grade. Cabem 4: superior esquerdo, superior direito, inferior esquerdo e inferior direito.",
+          "Cada canto mostra a conversa rolando ao vivo (pedidos, respostas e os passos da IA) e tem a caixa para pedir, o botão de parar e os cartões de Permitir e Recusar.",
+          "No topo de cada canto: trocar o projeto (clicando no nome), mudar de lugar (setas), ocupar a tela toda (e Esc para voltar), abrir o projeto completo e tirar da grade.",
+          "Tirar da grade ou trocar de tela não para nada: a IA continua trabalhando e a conversa continua guardada.",
+        ],
+      },
+    ],
+  },
+  {
     id: "projetos",
     title: "Projetos",
     view: "workspace",
-    where: "Segundo ícone do menu lateral. Troque de projeto pelo nome no topo da tela.",
+    where: "Terceiro ícone do menu lateral. Troque de projeto pelo nome no topo da tela.",
     lead: "A mesa de trabalho de um projeto: os arquivos, o editor, a conversa com a IA e tudo o que ela está fazendo, ao vivo.",
     sections: [
       {
@@ -182,7 +210,7 @@ export const topics: Topic[] = [
     id: "livre",
     title: "Chat livre",
     view: "livre",
-    where: "Terceiro ícone do menu lateral (dois balões).",
+    where: "Quarto ícone do menu lateral (dois balões).",
     lead: "Uma conversa fora de qualquer projeto, para tirar dúvidas, escrever textos e pensar junto. Se você quiser, a IA também pode olhar os arquivos do seu computador, só para ler.",
     sections: [
       {
@@ -224,7 +252,7 @@ export const topics: Topic[] = [
     id: "contas",
     title: "Contas e IAs",
     view: "accounts",
-    where: "Quarto ícone do menu lateral.",
+    where: "Quinto ícone do menu lateral.",
     lead: "As contas de IA que o Veocode usa e quanto cada uma está sendo usada.",
     sections: [
       {
@@ -250,7 +278,7 @@ export const topics: Topic[] = [
     id: "inventario",
     title: "Inventário",
     view: "inventory",
-    where: "Quinto ícone do menu lateral.",
+    where: "Sexto ícone do menu lateral.",
     lead: "Tudo o que as IAs instalaram ou usam neste computador, numa lista só: para qual projeto vale, se está ligado ou rodando, quanto pesa e como tirar.",
     sections: [
       {
@@ -285,7 +313,7 @@ export const topics: Topic[] = [
     id: "raiox",
     title: "Raio-X",
     view: "system",
-    where: "Sexto ícone do menu lateral.",
+    where: "Sétimo ícone do menu lateral.",
     lead: "A máquina vista por dentro: o que as IAs deixaram no disco e o que está rodando agora.",
     sections: [
       {
@@ -307,7 +335,7 @@ export const topics: Topic[] = [
     id: "skills",
     title: "Skills e MCP",
     view: "skills",
-    where: "Sétimo ícone do menu lateral.",
+    where: "Oitavo ícone do menu lateral.",
     lead: "O que cada conta do Claude sabe fazer além do básico, e de onde isso vem: da conta, de um plugin ou do projeto.",
     sections: [
       {

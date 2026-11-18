@@ -11,6 +11,7 @@ import { isTauri } from "./api";
 import { feedAgentEvent, setSeenAgent, type AgentEvent } from "./agentFeed";
 import { absPathOf, projectId, projects, pushEvent, setWs, showToast, ws } from "./store";
 import { handleLivre, LIVRE } from "./livre";
+import { feedChat, feedUser } from "./feeds";
 
 export interface PermissionAsk {
   requestId: string;
@@ -97,6 +98,7 @@ export function startChatEvents() {
 
 function handle(pid: string, e: ChatEvent) {
   ensure(pid);
+  feedChat(pid, e as Parameters<typeof feedChat>[1]); // conversa guardada para o Painel
   const here = projectId() === pid;
   const acc = accountOf(pid);
   switch (e.kind) {
@@ -169,7 +171,9 @@ export async function sendChat(pid: string) {
   const c = chats[pid];
   const text = c.input.trim();
   if (!text || c.busy) return;
-  const attach = c.attach && ws.activeFile ? ws.activeFile : null;
+  // pode vir do Painel, de um projeto que não é o aberto na tela Projetos
+  const here = projectId() === pid;
+  const attach = here && c.attach && ws.activeFile ? ws.activeFile : null;
   setChats(pid, produce((x) => {
     x.busy = true;
     x.draft = "";
@@ -177,9 +181,12 @@ export async function sendChat(pid: string) {
     x.input = "";
   }));
   echoes.push({ text: norm(text), at: Date.now() });
-  pushEvent({ kind: "user", title: attach ? `${text}\n📎 ${attach}` : text, agent: "Você", status: "ok" });
-  setSeenAgent(true);
-  setWs("running", true);
+  feedUser(pid, attach ? `${text}\n📎 ${attach}` : text);
+  if (here) {
+    pushEvent({ kind: "user", title: attach ? `${text}\n📎 ${attach}` : text, agent: "Você", status: "ok" });
+    setSeenAgent(true);
+    setWs("running", true);
+  }
   try {
     await invoke("chat_send", { projectId: pid, text, attach });
   } catch (e) {
@@ -188,7 +195,7 @@ export async function sendChat(pid: string) {
       x.error = errMsg(e);
       x.input = text; // devolve o texto para tentar de novo
     }));
-    setWs("running", false);
+    if (projectId() === pid) setWs("running", false);
   }
 }
 

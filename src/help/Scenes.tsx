@@ -114,6 +114,42 @@ function Mapa() {
   );
 }
 
+function Painel() {
+  // quatro cantos, cada um com uma conta trabalhando; o de baixo à direita pede permissão
+  const cells = [
+    { x: 14, y: 12, c: C.claude, lines: [70, 120, 92], state: "work" },
+    { x: 266, y: 12, c: C.deep, lines: [110, 80, 130], state: "work" },
+    { x: 14, y: 116, c: C.local, lines: [90, 60, 0], state: "idle" },
+    { x: 266, y: 116, c: C.claude, lines: [80, 0, 0], state: "ask" },
+  ];
+  return (
+    <Svg>
+      <For each={cells}>
+        {(k, i) => (
+          <g class="il-rise" style={rise(i())}>
+            <rect x={k.x} y={k.y} width={240} height={94} rx={10} class={k.state === "ask" ? "il-win il-pulse-box" : "il-win"} style={k.state === "ask" ? { stroke: C.warn } : k.state === "work" ? { stroke: k.c } : {}} />
+            <rect x={k.x + 10} y={k.y + 9} width={14} height={14} rx={4} style={{ fill: k.c, opacity: 0.85 }} />
+            <Bar x={k.x + 30} y={k.y + 13} w={58} />
+            <circle cx={k.x + 100} cy={k.y + 16} r={3.5} class={k.state === "idle" ? "" : "il-blink"} style={{ fill: k.state === "ask" ? C.warn : k.state === "work" ? C.ok : "var(--text-3)" }} />
+            <line x1={k.x} y1={k.y + 30} x2={k.x + 240} y2={k.y + 30} class="il-sep" />
+            <rect x={k.x + 150} y={k.y + 38} width={80} height={12} rx={6} class="il-bubble-me" />
+            <For each={k.lines.filter((w) => w)}>
+              {(w, j) => <Bar x={k.x + 12} y={k.y + 56 + j() * 11} w={w} h={5} cls={j() === k.lines.filter((x) => x).length - 1 && k.state === "work" ? "il-bar il-typing" : "il-bar"} />}
+            </For>
+            {k.state === "ask" && (
+              <g>
+                <rect x={k.x + 12} y={k.y + 64} width={216} height={22} rx={6} style={{ fill: "color-mix(in srgb, #fbbf24 12%, transparent)", stroke: "color-mix(in srgb, #fbbf24 45%, transparent)" }} />
+                <rect x={k.x + 128} y={k.y + 69} width={42} height={12} rx={6} class="il-bar" />
+                <rect x={k.x + 176} y={k.y + 69} width={44} height={12} rx={6} style={{ fill: C.ok }} />
+              </g>
+            )}
+          </g>
+        )}
+      </For>
+    </Svg>
+  );
+}
+
 function Projetos() {
   const code = [70, 120, 96, 140, 60, 110, 130, 84];
   return (
@@ -481,6 +517,7 @@ function Palavras() {
 export const scenes: Record<TopicId, () => JSX.Element> = {
   inicio: Inicio,
   mapa: Mapa,
+  painel: Painel,
   projetos: Projetos,
   nivel: Nivel,
   chat: Chat,

@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, ArrowUpRight, BookOpen, Bot, Boxes, FolderOpen, Gauge, MessageSquare, MessagesSquare, Network, Puzzle, Radar, Rocket, Settings, X, type LucideProps } from "lucide-solid";
+import { ArrowLeft, ArrowRight, ArrowUpRight, BookOpen, Bot, Boxes, FolderOpen, Gauge, MessageSquare, MessagesSquare, Network, Puzzle, Radar, Rocket, Settings, X, type LucideProps, LayoutDashboard } from "lucide-solid";
 import { createSignal, For, onCleanup, onMount, Show, type JSX } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { setHelpOpen, setView, view } from "../store";
@@ -8,6 +8,7 @@ import { scenes } from "../help/Scenes";
 const icons: Record<TopicId, (p: LucideProps) => JSX.Element> = {
   inicio: Rocket,
   mapa: Network,
+  painel: LayoutDashboard,
   projetos: FolderOpen,
   nivel: Gauge,
   chat: MessageSquare,

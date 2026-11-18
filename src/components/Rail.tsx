@@ -1,9 +1,10 @@
-import { Bot, Boxes, MessagesSquare, CircleHelp, FolderOpen, Network, Puzzle, Radar, Settings } from "lucide-solid";
+import { Bot, Boxes, LayoutDashboard, MessagesSquare, CircleHelp, FolderOpen, Network, Puzzle, Radar, Settings } from "lucide-solid";
 import { For, type JSX } from "solid-js";
 import { helpOpen, setHelpOpen, setView, view, type View } from "../store";
 
 const items: { id: View; label: string; icon: () => JSX.Element }[] = [
   { id: "home", label: "Mapa", icon: () => <Network size={19} /> },
+  { id: "board", label: "Painel (todos os projetos)", icon: () => <LayoutDashboard size={19} /> },
   { id: "workspace", label: "Projetos", icon: () => <FolderOpen size={19} /> },
   { id: "livre", label: "Chat livre", icon: () => <MessagesSquare size={19} /> },
   { id: "accounts", label: "Contas e IAs", icon: () => <Bot size={19} /> },

@@ -96,13 +96,13 @@ impl AppState {
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn list_projects(state: State<'_, AppState>) -> Result<Vec<ProjectInfo>, String> {
     let store = state.store.lock().map_err(|e| e.to_string())?;
     Ok(store.projects.iter().map(projects::info).collect())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn add_project(app: AppHandle, state: State<'_, AppState>, path: String) -> Result<ProjectInfo, String> {
     let default_account = state.accounts.lock().map_err(|e| e.to_string())?.default_id();
     let project = {
@@ -118,7 +118,7 @@ fn add_project(app: AppHandle, state: State<'_, AppState>, path: String) -> Resu
     Ok(projects::info(&project))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn remove_project(state: State<'_, AppState>, project_id: String) -> Result<(), String> {
     let mut store = state.store.lock().map_err(|e| e.to_string())?;
     store.remove(&project_id);
@@ -130,7 +130,7 @@ fn remove_project(state: State<'_, AppState>, project_id: String) -> Result<(), 
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn update_project(state: State<'_, AppState>, project_id: String, account_id: Option<String>, access: Option<u8>) -> Result<ProjectInfo, String> {
     if let Some(a) = &account_id {
         if state.accounts.lock().map_err(|e| e.to_string())?.get(a).is_none() {
@@ -195,12 +195,12 @@ async fn git_github(state: State<'_, AppState>, project_id: String, branch: Opti
 
 // ---------------------------------------------------------------- Contas
 
-#[tauri::command]
+#[tauri::command(async)]
 fn accounts_list(state: State<'_, AppState>) -> Result<Vec<AccountInfo>, String> {
     Ok(state.accounts.lock().map_err(|e| e.to_string())?.accounts.iter().map(accounts::info).collect())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn account_add(state: State<'_, AppState>, account: NewAccount) -> Result<AccountInfo, String> {
     let mut store = state.accounts.lock().map_err(|e| e.to_string())?;
     let a = store.add(account, &state.claude_root)?;
@@ -208,7 +208,7 @@ fn account_add(state: State<'_, AppState>, account: NewAccount) -> Result<Accoun
     Ok(accounts::info(&a))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn account_update(state: State<'_, AppState>, id: String, label: Option<String>, color: Option<String>, model: Option<String>) -> Result<AccountInfo, String> {
     let mut store = state.accounts.lock().map_err(|e| e.to_string())?;
     let a = store.update(&id, label, color, model)?;
@@ -231,7 +231,7 @@ async fn account_set_key(state: State<'_, AppState>, id: String, key: String) ->
 }
 
 /// Tira a conta da lista. Não apaga a pasta do Claude; apaga a chave do chaveiro.
-#[tauri::command]
+#[tauri::command(async)]
 fn account_remove(state: State<'_, AppState>, id: String) -> Result<(), String> {
     let using: Vec<String> = state.store.lock().map_err(|e| e.to_string())?.projects.iter().filter(|p| p.account_id == id).map(|p| p.name.clone()).collect();
     if !using.is_empty() {
@@ -257,7 +257,7 @@ async fn account_status(state: State<'_, AppState>, id: String) -> Result<Accoun
     .await
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn account_login(state: State<'_, AppState>, id: String) -> Result<(), String> {
     let account = state.accounts.lock().map_err(|e| e.to_string())?.get(&id).cloned().ok_or("conta não encontrada")?;
     if account.provider != Provider::Claude {
@@ -312,13 +312,13 @@ fn reapply(state: &AppState, project_id: &str, force: bool) -> Result<(), String
     store.save()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn access_report(state: State<'_, AppState>, project_id: String) -> Result<access::Report, String> {
     access_report_for(&state, &project_id)
 }
 
 /// Muda o nível ou um ajuste. `cap` + `rule: null` volta o ajuste ao padrão do nível.
-#[tauri::command]
+#[tauri::command(async)]
 fn access_set(state: State<'_, AppState>, project_id: String, level: Option<u8>, cap: Option<String>, rule: Option<access::Rule>) -> Result<access::Report, String> {
     {
         let mut store = state.store.lock().map_err(|e| e.to_string())?;
@@ -347,14 +347,14 @@ fn access_set(state: State<'_, AppState>, project_id: String, level: Option<u8>,
     access_report_for(&state, &project_id)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn access_apply(state: State<'_, AppState>, project_id: String) -> Result<access::Report, String> {
     reapply(&state, &project_id, true)?;
     access_report_for(&state, &project_id)
 }
 
 /// Tira do projeto só as regras que o Veocode gravou.
-#[tauri::command]
+#[tauri::command(async)]
 fn access_remove(state: State<'_, AppState>, project_id: String) -> Result<access::Report, String> {
     {
         let mut store = state.store.lock().map_err(|e| e.to_string())?;
@@ -379,7 +379,7 @@ fn access_preview(level: u8, overrides: std::collections::BTreeMap<String, acces
 }
 
 /// Abre o Claude Code no projeto, com a conta dele.
-#[tauri::command]
+#[tauri::command(async)]
 fn open_claude(state: State<'_, AppState>, project_id: String) -> Result<(), String> {
     let p = state.store.lock().map_err(|e| e.to_string())?.get(&project_id).cloned().ok_or("projeto não encontrado")?;
     let a = state.accounts.lock().map_err(|e| e.to_string())?.get(&p.account_id).cloned().ok_or("conta não encontrada")?;
@@ -393,16 +393,22 @@ fn open_claude(state: State<'_, AppState>, project_id: String) -> Result<(), Str
 
 /// Novos passos dos agentes do Claude neste projeto (a 1ª chamada traz o fim das sessões recentes).
 #[tauri::command]
-async fn agent_poll(state: State<'_, AppState>, project_id: String, reset: Option<bool>) -> Result<Vec<agent::AgentEvent>, String> {
+async fn agent_poll(state: State<'_, AppState>, project_id: String, reset: Option<bool>, channel: Option<String>) -> Result<Vec<agent::AgentEvent>, String> {
     let root = state.root_of(&project_id)?;
     let accounts = state.claude_dirs()?;
     let agents = state.agents.clone();
+    // cada leitor tem a sua posição no histórico: a tela do projeto e o Painel (vários
+    // projetos ao mesmo tempo) leem os mesmos arquivos sem tirar eventos um do outro
+    let key = match channel.as_deref() {
+        Some(c) if !c.is_empty() => format!("{project_id}#{c}"),
+        _ => project_id,
+    };
     blocking(move || {
         let mut map = agents.lock().map_err(|e| e.to_string())?;
         if reset == Some(true) {
-            map.remove(&project_id);
+            map.remove(&key);
         }
-        let w = map.entry(project_id).or_insert_with(|| agent::Watch::new(root, accounts));
+        let w = map.entry(key).or_insert_with(|| agent::Watch::new(root, accounts));
         Ok(w.poll())
     })
     .await?
@@ -412,7 +418,7 @@ async fn agent_poll(state: State<'_, AppState>, project_id: String, reset: Optio
 
 /// Manda um pedido para o agente do projeto (Claude Code sem terminal, ou API). A resposta
 /// chega aos poucos pelo evento `chat-event`.
-#[tauri::command]
+#[tauri::command(async)]
 fn chat_send(app: AppHandle, state: State<'_, AppState>, project_id: String, text: String, attach: Option<String>) -> Result<(), String> {
     if project_id == livre::ID {
         let account = state.free_account()?;
@@ -482,7 +488,7 @@ fn chat_send(app: AppHandle, state: State<'_, AppState>, project_id: String, tex
     )
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn term_open(app: AppHandle, state: State<'_, AppState>, project_id: String, cols: u16, rows: u16) -> Result<term::TermInfo, String> {
     let p = state.store.lock().map_err(|e| e.to_string())?.get(&project_id).cloned().ok_or("projeto não encontrado")?;
     let root = PathBuf::from(&p.path);
@@ -498,17 +504,17 @@ fn term_list(state: State<'_, AppState>, project_id: String) -> Vec<term::TermIn
     state.terms.list(&project_id)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn term_write(state: State<'_, AppState>, id: String, data: String) -> Result<(), String> {
     state.terms.write(&id, &data)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn term_resize(state: State<'_, AppState>, id: String, cols: u16, rows: u16) -> Result<(), String> {
     state.terms.resize(&id, cols, rows)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn term_buffer(state: State<'_, AppState>, id: String) -> Result<String, String> {
     state.terms.buffer(&id)
 }
@@ -518,12 +524,12 @@ fn term_close(state: State<'_, AppState>, id: String) {
     state.terms.close(&id);
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn chat_permission(state: State<'_, AppState>, project_id: String, request_id: String, allow: bool) -> Result<(), String> {
     state.chats.answer(&project_id, &request_id, allow)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn chat_stop(app: AppHandle, state: State<'_, AppState>, project_id: String) -> Result<(), String> {
     state.chats.stop(&app, &project_id)
 }
@@ -718,7 +724,7 @@ async fn inventory_mcp_remove(state: State<'_, AppState>, account: String, name:
     blocking(move || inventory::mcp_remove(dir.as_deref(), &name, &scope, project.as_deref())).await?
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn skill_read(state: State<'_, AppState>, path: String) -> Result<String, String> {
     let allowed = state.skill_paths.lock().map_err(|e| e.to_string())?;
     skills::read_item(&path, &allowed)
@@ -731,9 +737,9 @@ async fn blocking<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> 
     tauri::async_runtime::spawn_blocking(f).await.map_err(|e| e.to_string())
 }
 
-#[tauri::command]
-fn xray_caches(state: State<'_, AppState>) -> Vec<xray::caches::CacheSpec> {
-    xray::caches::known(&state.project_roots())
+#[tauri::command(async)]
+fn xray_caches(state: State<'_, AppState>) -> Result<Vec<xray::caches::CacheSpec>, String> {
+    Ok(xray::caches::known(&state.project_roots()))
 }
 
 fn find_cache(state: &AppState, id: &str) -> Result<xray::caches::CacheSpec, String> {
@@ -784,12 +790,12 @@ async fn xray_kill(state: State<'_, AppState>, pid: u32) -> Result<(), String> {
 
 // ---------------------------------------------------------------- Ajustes
 
-#[tauri::command]
+#[tauri::command(async)]
 fn settings_get(state: State<'_, AppState>) -> Result<settings::Settings, String> {
     Ok(state.settings.lock().map_err(|e| e.to_string())?.clone())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn settings_set(state: State<'_, AppState>, settings: settings::Settings) -> Result<settings::Settings, String> {
     settings::save(&state.config_dir, &settings)?;
     *state.settings.lock().map_err(|e| e.to_string())? = settings.clone();

@@ -1,4 +1,4 @@
-import { ArrowUpRight, Bot, Boxes, MessagesSquare, CircleHelp, Settings2, FolderPlus, Puzzle, Radar, Search, Trash2 } from "lucide-solid";
+import { ArrowUpRight, Bot, Boxes, MessagesSquare, CircleHelp, Settings2, FolderPlus, Puzzle, Radar, Search, Trash2, LayoutDashboard } from "lucide-solid";
 import { ProjectIcon } from "./icons";
 import { createMemo, createSignal, For, onMount, type JSX } from "solid-js";
 import { addProjectFromPicker, setHelpOpen, setPaletteOpen, setProjectId, setView, showToast, projects } from "../store";
@@ -30,6 +30,7 @@ export default function CommandPalette() {
     { label: "Ver o que as IAs instalaram", hint: "Raio-X → Instalado", icon: () => <Radar size={15} />, run: () => setView("system") },
     { label: "Ver VMs e containers", hint: "Raio-X → Máquinas", icon: () => <Radar size={15} />, run: () => setView("system") },
     { label: "Trocar conta de um projeto", hint: "Contas e IAs", icon: () => <Bot size={15} />, run: () => setView("accounts") },
+    { label: "Painel: todos os projetos e até 4 chats lado a lado", hint: "Painel", icon: () => <LayoutDashboard size={15} />, run: () => setView("board") },
     { label: "Chat livre: conversar sem projeto", hint: "Chat livre", icon: () => <MessagesSquare size={15} />, run: () => setView("livre") },
     { label: "Ajustes: ícones e animações", hint: "Ajustes", icon: () => <Settings2 size={15} />, run: () => setView("settings") },
     { label: "Ajuda: como o Veocode funciona", hint: "F1", icon: () => <CircleHelp size={15} />, run: () => setHelpOpen(true) },

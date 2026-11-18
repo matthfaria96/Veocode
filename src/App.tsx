@@ -12,6 +12,7 @@ import Skills from "./views/Skills";
 import Inventory from "./views/Inventory";
 import Settings from "./views/Settings";
 import Livre from "./views/Livre";
+import Board from "./views/Board";
 import { loadSettings } from "./settings";
 import { helpOpen, loadProjects, paletteOpen, setHelpOpen, setPaletteOpen, showToast, toast, view } from "./store";
 import { loadSummaries } from "./git";
@@ -95,6 +96,9 @@ export default function App() {
             </Match>
             <Match when={view() === "inventory"}>
               <div class="view-enter"><Inventory /></div>
+            </Match>
+            <Match when={view() === "board"}>
+              <div class="view-enter"><Board /></div>
             </Match>
             <Match when={view() === "livre"}>
               <div class="view-enter"><Livre /></div>

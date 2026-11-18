@@ -3,7 +3,7 @@ import { createStore, reconcile } from "solid-js/store";
 import { demoProject, type Project } from "./data/mock";
 import { api, prettyPath, type FileContent, type DirListing, type ProjectInfo } from "./api";
 
-export type View = "home" | "workspace" | "accounts" | "system" | "skills" | "inventory" | "settings" | "livre";
+export type View = "home" | "board" | "workspace" | "accounts" | "system" | "skills" | "inventory" | "settings" | "livre";
 
 export const [view, setView] = createSignal<View>("home");
 export const [paletteOpen, setPaletteOpen] = createSignal(false);

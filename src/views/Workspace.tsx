@@ -5,6 +5,7 @@ import { accessLevels } from "../data/mock";
 import { accountById } from "../accounts";
 import { forgetProject } from "../terminal";
 import { forgetGit, git, loadSummaries, setGitTab } from "../git";
+import { forgetFeed } from "../feeds";
 import { absPathOf, addProjectFromPicker, currentProject, projectId, projects, removeProject, resetWorkspace, setProjectId, setWs, showToast } from "../store";
 import { startAgentSim } from "../sim/agentSim";
 import { startAgentFeed } from "../agentFeed";
@@ -114,7 +115,7 @@ export default function Workspace() {
             <span class="sidebar-tools">
               <button class="icon-btn small" title="Recarregar" onClick={() => loadDir("")}><RefreshCw size={12} /></button>
               <button class="icon-btn small" title="Mostrar no Finder/Explorer" onClick={reveal}><FolderSearch size={12} /></button>
-              <button class="icon-btn small" title="Remover da lista (não apaga a pasta)" onClick={() => { const id = p().id; removeProject(id).then(() => (forgetProject(id), forgetGit(id))); }}><X size={12} /></button>
+              <button class="icon-btn small" title="Remover da lista (não apaga a pasta)" onClick={() => { const id = p().id; removeProject(id).then(() => (forgetProject(id), forgetGit(id), forgetFeed(id))); }}><X size={12} /></button>
             </span>
           </Show>
         </div>
