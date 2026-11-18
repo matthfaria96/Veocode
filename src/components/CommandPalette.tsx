@@ -1,7 +1,9 @@
-import { ArrowUpRight, Bot, Boxes, MessagesSquare, CircleHelp, Settings2, FolderPlus, Puzzle, Radar, Search, Trash2, LayoutDashboard } from "lucide-solid";
-import { ProjectIcon } from "./icons";
-import { createMemo, createSignal, For, onMount, type JSX } from "solid-js";
-import { addProjectFromPicker, setHelpOpen, setPaletteOpen, setProjectId, setView, showToast, projects } from "../store";
+import { ArrowUpRight, Bot, MessagesSquare, CircleHelp, Settings2, FolderPlus, HardDrive, Puzzle, Search, LayoutDashboard } from "lucide-solid";
+import { FileIcon, ProjectIcon } from "./icons";
+import { api } from "../api";
+import { revealAndOpen } from "../fileActions";
+import { createMemo, createResource, createSignal, For, onMount, type JSX } from "solid-js";
+import { addProjectFromPicker, currentProject, setHelpOpen, setPaletteOpen, setProjectId, setView, projects } from "../store";
 
 interface Action {
   label: string;
@@ -26,21 +28,38 @@ export default function CommandPalette() {
         setView("workspace");
       },
     })),
-    { label: "Limpar todos os caches das IAs", hint: "Raio-X → Caches", icon: () => <Trash2 size={15} />, run: () => { setView("system"); showToast("Simulação: nada foi apagado"); } },
-    { label: "Ver o que as IAs instalaram", hint: "Raio-X → Instalado", icon: () => <Radar size={15} />, run: () => setView("system") },
-    { label: "Ver VMs e containers", hint: "Raio-X → Máquinas", icon: () => <Radar size={15} />, run: () => setView("system") },
+    { label: "Liberar espaço: caches e históricos das IAs", hint: "Computador → Espaço e memória", icon: () => <HardDrive size={15} />, run: () => setView("system") },
+    { label: "Ver programas e máquinas virtuais que as IAs usam", hint: "Computador → Espaço e memória", icon: () => <HardDrive size={15} />, run: () => setView("system") },
     { label: "Trocar conta de um projeto", hint: "Contas e IAs", icon: () => <Bot size={15} />, run: () => setView("accounts") },
-    { label: "Painel: todos os projetos e até 4 chats lado a lado", hint: "Painel", icon: () => <LayoutDashboard size={15} />, run: () => setView("board") },
+    { label: "Visão geral: todos os projetos e até 4 conversas ao vivo", hint: "Visão geral", icon: () => <LayoutDashboard size={15} />, run: () => setView("board") },
     { label: "Chat livre: conversar sem projeto", hint: "Chat livre", icon: () => <MessagesSquare size={15} />, run: () => setView("livre") },
     { label: "Ajustes: ícones e animações", hint: "Ajustes", icon: () => <Settings2 size={15} />, run: () => setView("settings") },
     { label: "Ajuda: como o Veocode funciona", hint: "F1", icon: () => <CircleHelp size={15} />, run: () => setHelpOpen(true) },
-    { label: "Ver tudo o que as IAs usam neste computador", hint: "Inventário", icon: () => <Boxes size={15} />, run: () => setView("inventory") },
-    { label: "Gerenciar skills e MCP", hint: "Skills", icon: () => <Puzzle size={15} />, run: () => setView("skills") },
+    { label: "Extras do Claude: receitas, atalhos e conexões (skills e MCP)", hint: "Computador → Extras do Claude", icon: () => <Puzzle size={15} />, run: () => setView("inventory") },
   ];
+
+  // arquivos do projeto aberto (o que o .gitignore esconde fica de fora)
+  const cur = currentProject();
+  const [files] = createResource(() => (cur.demo ? null : cur.id), (id) => api.listFiles(id).catch(() => [] as string[]));
+  const fileActions = (s: string): Action[] => {
+    if (!s || !files()) return [];
+    const hits = files()!.filter((f) => f.toLowerCase().includes(s));
+    // nome do arquivo bate primeiro, depois o caminho
+    hits.sort((a, b) => Number(!(a.split("/").pop() ?? "").toLowerCase().includes(s)) - Number(!(b.split("/").pop() ?? "").toLowerCase().includes(s)) || a.length - b.length);
+    return hits.slice(0, 30).map((f) => ({
+      label: f.split("/").pop() ?? f,
+      hint: `${cur.name} · ${f}`,
+      icon: () => <FileIcon name={f.split("/").pop() ?? f} size={15} />,
+      run: () => {
+        setView("workspace");
+        void revealAndOpen(f);
+      },
+    }));
+  };
 
   const filtered = createMemo(() => {
     const s = q().toLowerCase().trim();
-    return s ? all().filter((a) => (a.label + a.hint).toLowerCase().includes(s)) : all();
+    return s ? [...all().filter((a) => (a.label + a.hint).toLowerCase().includes(s)), ...fileActions(s)] : all();
   });
 
   const exec = (a?: Action) => {
@@ -58,7 +77,7 @@ export default function CommandPalette() {
           <Search size={16} />
           <input
             ref={input}
-            placeholder="O que você quer fazer?"
+            placeholder="Busque um projeto, um arquivo do projeto aberto ou uma ação…"
             value={q()}
             onInput={(e) => {
               setQ(e.currentTarget.value);

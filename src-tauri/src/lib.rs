@@ -13,6 +13,7 @@ mod term;
 mod settings;
 mod skills;
 mod tools;
+mod trail;
 mod watch;
 mod xray;
 
@@ -155,6 +156,101 @@ async fn read_file(state: State<'_, AppState>, project_id: String, path: String)
     files::read_file(&root, &path)
 }
 
+#[tauri::command]
+async fn write_file(state: State<'_, AppState>, project_id: String, path: String, text: String) -> Result<u64, String> {
+    let root = state.root_of(&project_id)?;
+    blocking(move || files::write_file(&root, &path, &text)).await?
+}
+
+#[tauri::command]
+async fn create_entry(state: State<'_, AppState>, project_id: String, parent: String, name: String, dir: bool) -> Result<String, String> {
+    let root = state.root_of(&project_id)?;
+    blocking(move || files::create(&root, &parent, &name, dir)).await?
+}
+
+#[tauri::command]
+async fn rename_entry(state: State<'_, AppState>, project_id: String, path: String, name: String) -> Result<String, String> {
+    let root = state.root_of(&project_id)?;
+    blocking(move || files::rename(&root, &path, &name)).await?
+}
+
+#[tauri::command]
+async fn trash_entry(state: State<'_, AppState>, project_id: String, path: String) -> Result<(), String> {
+    let root = state.root_of(&project_id)?;
+    blocking(move || {
+        let target = files::trash_target(&root, &path)?;
+        inventory::to_trash(&[target]).map_err(|e| format!("não foi para a Lixeira: {e}"))
+    })
+    .await?
+}
+
+// ---------------------------------------------------------------- Rastro do projeto
+
+/// O que a IA deixou por causa do projeto: pastas fora dele, sites, modelos locais e sobras.
+#[tauri::command]
+async fn project_trail(state: State<'_, AppState>, project_id: String) -> Result<trail::Trail, String> {
+    let root = state.root_of(&project_id)?;
+    let dirs: Vec<PathBuf> = state.claude_dirs()?.into_iter().map(|(_, d)| d).collect();
+    let file = trail::store_file(&state.data_dir, &project_id);
+    blocking(move || {
+        let mut saved = trail::load(&file);
+        let t = trail::report(&root, &dirs, &xray::util::home(), &mut saved);
+        trail::save(&file, &saved)?;
+        Ok(t)
+    })
+    .await?
+}
+
+/// Liga uma pasta de fora ao projeto (escolhida pela pessoa).
+#[tauri::command]
+async fn trail_link(state: State<'_, AppState>, project_id: String, path: String) -> Result<(), String> {
+    state.root_of(&project_id)?;
+    let file = trail::store_file(&state.data_dir, &project_id);
+    blocking(move || {
+        if !std::path::Path::new(&path).is_absolute() {
+            return Err("caminho inválido".into());
+        }
+        let mut saved = trail::load(&file);
+        saved.hidden.retain(|h| h != &path);
+        if !saved.links.iter().any(|l| l.path == path) {
+            saved.links.push(trail::Link { path, how: "vinculada por você".into(), last: 0, manual: true });
+        }
+        trail::save(&file, &saved)
+    })
+    .await?
+}
+
+/// Esquece uma pasta de fora (não apaga nada; ela só sai da lista deste projeto).
+#[tauri::command]
+async fn trail_forget(state: State<'_, AppState>, project_id: String, path: String) -> Result<(), String> {
+    state.root_of(&project_id)?;
+    let file = trail::store_file(&state.data_dir, &project_id);
+    blocking(move || {
+        let mut saved = trail::load(&file);
+        saved.links.retain(|l| l.path != path);
+        if !saved.hidden.contains(&path) {
+            saved.hidden.push(path);
+        }
+        trail::save(&file, &saved)
+    })
+    .await?
+}
+
+/// Abre um arquivo do projeto com o programa padrão do sistema (imagem, PDF, planilha…).
+#[tauri::command]
+async fn open_entry(app: AppHandle, state: State<'_, AppState>, project_id: String, path: String) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    let root = state.root_of(&project_id)?;
+    let real = files::resolve_in_root(&root, &path)?;
+    app.opener().open_path(real.to_string_lossy(), None::<&str>).map_err(|e| format!("não abriu: {e}"))
+}
+
+#[tauri::command]
+async fn list_files(state: State<'_, AppState>, project_id: String) -> Result<Vec<String>, String> {
+    let root = state.root_of(&project_id)?;
+    blocking(move || files::all_files(&root, 20_000)).await?
+}
+
 // ---------------------------------------------------------------- Git e GitHub (só leitura)
 
 #[tauri::command]
@@ -185,6 +281,18 @@ async fn git_fetch(state: State<'_, AppState>, project_id: String) -> Result<git
         git::status(&root)
     })
     .await?
+}
+
+#[tauri::command]
+async fn git_commit_files(state: State<'_, AppState>, project_id: String, hash: String) -> Result<Vec<git::CommitFile>, String> {
+    let root = state.root_of(&project_id)?;
+    blocking(move || git::commit_files(&root, &hash)).await?
+}
+
+#[tauri::command]
+async fn git_commit_diff(state: State<'_, AppState>, project_id: String, hash: String, path: String) -> Result<String, String> {
+    let root = state.root_of(&project_id)?;
+    blocking(move || git::commit_diff(&root, &hash, &path)).await?
 }
 
 #[tauri::command]
@@ -770,6 +878,11 @@ async fn xray_machines() -> Result<xray::machines::MachineReport, String> {
 }
 
 #[tauri::command]
+async fn xray_models() -> Result<xray::models::ModelReport, String> {
+    blocking(|| xray::models::report(&xray::caches::claude_config_dirs())).await
+}
+
+#[tauri::command]
 async fn xray_toggle_machine(engine: String, id: String, start: bool) -> Result<(), String> {
     blocking(move || xray::machines::toggle(&engine, &id, start)).await?
 }
@@ -867,6 +980,8 @@ pub fn run() {
             git_summaries,
             git_fetch,
             git_github,
+            git_commit_files,
+            git_commit_diff,
             settings_get,
             settings_set,
             app_paths,
@@ -890,6 +1005,15 @@ pub fn run() {
             update_project,
             list_dir,
             read_file,
+            write_file,
+            create_entry,
+            rename_entry,
+            trash_entry,
+            open_entry,
+            list_files,
+            project_trail,
+            trail_link,
+            trail_forget,
             accounts_list,
             account_add,
             account_update,
@@ -909,6 +1033,7 @@ pub fn run() {
             xray_trash,
             xray_installs,
             xray_machines,
+            xray_models,
             xray_toggle_machine,
             xray_processes,
             xray_kill,

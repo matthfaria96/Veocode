@@ -2,13 +2,13 @@ import { Match, onCleanup, onMount, Show, Switch } from "solid-js";
 import { acc, loadAccess } from "./access";
 import TitleBar from "./components/TitleBar";
 import Rail from "./components/Rail";
+import Dialogs from "./components/Dialogs";
+import ContextMenu from "./components/ContextMenu";
 import CommandPalette from "./components/CommandPalette";
 import Help from "./components/Help";
-import Home from "./views/Home";
 import Workspace from "./views/Workspace";
 import Accounts from "./views/Accounts";
 import System from "./views/System";
-import Skills from "./views/Skills";
 import Inventory from "./views/Inventory";
 import Settings from "./views/Settings";
 import Livre from "./views/Livre";
@@ -85,9 +85,6 @@ export default function App() {
         <Rail />
         <main class="stage">
           <Switch>
-            <Match when={view() === "home"}>
-              <div class="view-enter"><Home /></div>
-            </Match>
             <Match when={view() === "workspace"}>
               <div class="view-enter"><Workspace /></div>
             </Match>
@@ -109,9 +106,6 @@ export default function App() {
             <Match when={view() === "system"}>
               <div class="view-enter"><System /></div>
             </Match>
-            <Match when={view() === "skills"}>
-              <div class="view-enter"><Skills /></div>
-            </Match>
           </Switch>
         </main>
       </div>
@@ -121,6 +115,8 @@ export default function App() {
       <Show when={paletteOpen()}>
         <CommandPalette />
       </Show>
+      <Dialogs />
+      <ContextMenu />
       <Show when={toast()}>
         <div class="toast">{toast()}</div>
       </Show>

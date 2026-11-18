@@ -32,6 +32,46 @@ pub struct AgentGroup {
     pub run_secs: u64,
     pub ports: Vec<u16>,
     pub children: Vec<Proc>,
+    /// Onde ele está aberto: "VS Code", "Cursor", "app do Claude", "Veocode", "Terminal" ou "outro".
+    pub host: &'static str,
+}
+
+/// Onde um agente foi aberto: pelo caminho do executável e pelos programas acima dele.
+fn host_of(procs: &HashMap<Pid, sysinfo::Process>, p: &sysinfo::Process) -> &'static str {
+    let exe = p.exe().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+    let cmd = cmd_line(p).to_lowercase();
+    if exe.contains(".vscode/extensions") || cmd.contains(".vscode/extensions") {
+        return "VS Code";
+    }
+    if exe.contains(".cursor/extensions") || cmd.contains(".cursor/extensions") {
+        return "Cursor";
+    }
+    if exe.contains("application support/claude/") {
+        return "app do Claude";
+    }
+    let mut a = p.parent();
+    for _ in 0..12 {
+        let Some(pid) = a else { break };
+        let Some(q) = procs.get(&pid) else { break };
+        let n = q.name().to_string_lossy().to_lowercase();
+        if n.contains("veocode") {
+            return "Veocode";
+        }
+        if n.starts_with("code") || n.contains("visual studio code") {
+            return "VS Code";
+        }
+        if n.starts_with("cursor") {
+            return "Cursor";
+        }
+        if n == "claude" && q.exe().is_some_and(|e| e.to_string_lossy().contains("Claude.app")) {
+            return "app do Claude";
+        }
+        if matches!(n.as_str(), "terminal" | "iterm2" | "warp" | "stable" | "ghostty" | "wezterm-gui" | "kitty" | "alacritty" | "hyper" | "tabby" | "windowsterminal.exe" | "conhost.exe") {
+            return "Terminal";
+        }
+        a = q.parent();
+    }
+    "outro"
 }
 
 /// Qual agente é este processo (pelo nome do executável e pela linha de comando).
@@ -186,6 +226,7 @@ pub fn snapshot(sys: &mut System) -> Vec<AgentGroup> {
             run_secs: p.run_time(),
             ports: ports.get(&pid.as_u32()).cloned().unwrap_or_default(),
             children: list,
+            host: host_of(procs, p),
         });
     }
     groups.sort_by(|a, b| b.children.len().cmp(&a.children.len()).then(a.pid.cmp(&b.pid)));

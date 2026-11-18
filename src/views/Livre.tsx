@@ -1,3 +1,4 @@
+import { dismissable } from "../dismiss";
 import { AlertTriangle, ArrowLeft, Ban, Check, ChevronDown, Eye, History, HardDrive, Lock, MessageSquarePlus, MessagesSquare, SendHorizontal, ShieldCheck, Sparkles, Square, X } from "lucide-solid";
 import { createEffect, createResource, createSignal, For, Match, on, onCleanup, onMount, Show, Switch } from "solid-js";
 import { accountById, accountSub, accts, fmtAgo } from "../accounts";
@@ -40,7 +41,7 @@ function AccountPicker() {
         <ChevronDown size={12} />
       </button>
       <Show when={open()}>
-        <div class="inv-menu">
+        <div class="inv-menu" ref={(el) => dismissable(el, () => setOpen(false))}>
           <For each={accts.list} fallback={<small class="inv-menu-empty">Nenhuma conta ainda: adicione em Contas e IAs</small>}>
             {(x) => (
               <button

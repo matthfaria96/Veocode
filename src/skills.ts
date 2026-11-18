@@ -32,6 +32,8 @@ export interface Item {
   project: string | null;
   plugin: string | null;
   origin: string | null;
+  /** programa que instalou várias juntas (ex.: "chatcut-desktop"), lido da lista dele */
+  group?: string | null;
   path: string | null;
   enabled: boolean;
   mcp: McpInfo | null;
@@ -66,9 +68,11 @@ interface SkillsState {
   plugins: PluginInfo[];
   loaded: boolean;
   loading: boolean;
+  /** última leitura falhou: a tela mostra o motivo e "Tentar de novo" */
+  error: string | null;
 }
 
-export const [sk, setSk] = createStore<SkillsState>({ items: [], plugins: [], loaded: false, loading: false });
+export const [sk, setSk] = createStore<SkillsState>({ items: [], plugins: [], loaded: false, loading: false, error: null });
 
 const mock = (): { items: Item[]; plugins: PluginInfo[] } => ({
   items: mockSkills.map((s) => ({
@@ -93,13 +97,14 @@ const mock = (): { items: Item[]; plugins: PluginInfo[] } => ({
 
 export async function loadSkills() {
   if (sk.loading) return;
-  setSk("loading", true);
+  setSk({ loading: true, error: null });
   try {
     const r = isTauri ? await invoke<{ items: Item[]; plugins: PluginInfo[] }>("skills_report") : mock();
     setSk("items", reconcile(r.items, { key: "id" }));
     setSk({ plugins: r.plugins, loaded: true });
   } catch (e) {
-    showToast(`Skills: ${e instanceof Error ? e.message : String(e)}`);
+    setSk("error", e instanceof Error ? e.message : String(e));
+    showToast("Não deu para ler os extras do Claude");
   }
   setSk("loading", false);
 }
@@ -107,4 +112,4 @@ export async function loadSkills() {
 export const readSkillFile = (path: string): Promise<string> =>
   isTauri ? invoke<string>("skill_read", { path }) : Promise.resolve("---\nname: exemplo\n---\n\nNo navegador o conteúdo é só de exemplo.");
 
-export const kindLabel: Record<Kind, string> = { skill: "Skill", command: "Comando", agent: "Agente", mcp: "MCP" };
+export const kindLabel: Record<Kind, string> = { skill: "Receita", command: "Atalho /", agent: "Ajudante", mcp: "Conexão" };

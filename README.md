@@ -27,14 +27,13 @@ cd src-tauri && cargo test   # testes do lado Rust
 
 | Tela | O que mostra |
 |---|---|
-| Mapa | Contas ↔ projetos ligados por linhas animadas, com o nível de acesso de cada ligação |
-| Projetos | Árvore de arquivos, editor, chat com o agente, atividade, comandos do agente, terminal próprio do projeto e cursores mostrando onde a IA está mexendo |
+| Visão geral | Panorama (um cartão por projeto com a situação de cada um) e Ao vivo (até 4 conversas ao mesmo tempo, com a tela dividida em 1, 2, 3 ou 4) |
+| Projetos | Árvore de arquivos, editor, chat com o agente (o nível de acesso fica dentro dele), Rastro (pastas fora do projeto, sobras, instalações e sites que a IA usou), Git com desenho dos branches, atividade, terminal próprio e cursores; modo Simples/Avançado (coluna com todos os projetos) |
 | Contas e IAs | Uso de cada conta e matriz "quem usa o quê" (clique para trocar) |
-| Raio-X | Caches (com limpeza), o que cada IA instalou, VMs/containers e processos |
-| Inventário | Tudo o que as IAs instalaram ou usam, para qual projeto vale, se está rodando, quanto pesa e como tirar |
+| Computador → Espaço e memória | (antigo Raio-X) Caches com limpeza, o que cada IA instalou, IAs locais (Ollama, LM Studio, Hugging Face), VMs/containers com o projeto de origem e IAs abertas com onde estão |
+| Computador → Extras do Claude | (antigos Inventário e Skills e MCP) Receitas, atalhos, ajudantes, conexões e pacotes: onde valem, quanto pesam, ligar, desligar e tirar, e ler cada receita |
 | Chat livre | Conversa sem projeto; opcionalmente lendo (só lendo) os arquivos da pasta pessoal |
 | Ajustes | Estilo dos ícones (detalhados ou minimalistas) e das animações, com prévia; onde o app guarda as coisas |
-| Skills e MCP | Skills, comandos, agentes e MCP por camada: conta → plugin → projeto, com busca e o conteúdo de cada SKILL.md |
 
 `⌘K` / `Ctrl+K` abre a paleta de comandos. `F1` abre a ajuda.
 
@@ -56,3 +55,5 @@ cd src-tauri && cargo test   # testes do lado Rust
 14. ~~Terminal próprio por projeto (pasta, histórico e conta do Claude de cada projeto)~~ ✅ (`src-tauri/src/term.rs`, `src/components/ProjectTerminal.tsx`)
 15. ~~Git e GitHub de cada projeto: o que falta enviar e baixar, mudanças, commits, branches, PRs e CI~~ ✅ (`src-tauri/src/git.rs`, `src/components/GitPanel.tsx`)
 16. ~~Painel: todos os projetos com a situação de cada um e até 4 chats ao vivo lado a lado~~ ✅ (`src/views/Board.tsx`, `src/components/ChatPane.tsx`, `src/feeds.ts`)
+17. ~~Rastro de cada projeto: pastas criadas fora, sobras de debug e backup, instalações, IAs locais e fontes consultadas, guardado mesmo se os históricos sumirem~~ ✅ (`src-tauri/src/trail.rs`, `src/components/TrailPanel.tsx`)
+18. ~~IAs locais e containers ligados ao projeto no Computador; desenho de branches e arquivos de cada commit no Git~~ ✅ (`src-tauri/src/xray/models.rs`, `src/components/CommitGraph.tsx`)

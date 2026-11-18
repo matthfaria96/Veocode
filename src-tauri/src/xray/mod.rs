@@ -3,6 +3,7 @@
 pub mod caches;
 pub mod installs;
 pub mod machines;
+pub mod models;
 pub mod procs;
 pub mod util;
 

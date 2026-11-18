@@ -181,7 +181,7 @@ fn scan_file(path: &Path) -> (Vec<Attempt>, HashSet<String>) {
     (attempts, failed)
 }
 
-fn transcript_files(config_dir: &Path) -> Vec<PathBuf> {
+pub(crate) fn transcript_files(config_dir: &Path) -> Vec<PathBuf> {
     let Ok(projects) = std::fs::read_dir(config_dir.join("projects")) else { return vec![] };
     projects
         .filter_map(|e| e.ok())

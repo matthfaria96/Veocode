@@ -1,4 +1,4 @@
-import { ChevronDown, FolderPlus, FolderSearch, GitBranch, RefreshCw, X } from "lucide-solid";
+import { ChevronDown, FilePlus, FlaskConical, FolderPlus, FolderSearch, GitBranch, Pause, Play, Plus, RefreshCw, X } from "lucide-solid";
 import { ProjectIcon } from "../components/icons";
 import { createEffect, createSignal, For, on, onCleanup, Show } from "solid-js";
 import { accessLevels } from "../data/mock";
@@ -6,8 +6,12 @@ import { accountById } from "../accounts";
 import { forgetProject } from "../terminal";
 import { forgetGit, git, loadSummaries, setGitTab } from "../git";
 import { forgetFeed } from "../feeds";
-import { absPathOf, addProjectFromPicker, currentProject, projectId, projects, removeProject, resetWorkspace, setProjectId, setWs, showToast } from "../store";
+import { absPathOf, addProjectFromPicker, currentProject, projectId, projects, removeProject, resetWorkspace, setProjectId, setWs, showToast, ws } from "../store";
 import { startAgentSim } from "../sim/agentSim";
+import { confirmAction } from "../dialogs";
+import { dismissable } from "../dismiss";
+import { saveAll } from "../editing";
+import { newEntry } from "../fileActions";
 import { startAgentFeed } from "../agentFeed";
 import { chatOf, restoreChat } from "../chat";
 import { loadDir, openRealProject } from "../realProject";
@@ -19,6 +23,9 @@ import ChatPanel from "../components/ChatPanel";
 import BottomPanel from "../components/BottomPanel";
 import AgentCursors from "../components/AgentCursors";
 import { ProviderMark } from "../components/ui";
+import { projectState } from "../board";
+import { watchFeeds } from "../feeds";
+import { setWsMode, wsMode } from "../layoutMode";
 
 export default function Workspace() {
   let root!: HTMLDivElement;
@@ -31,6 +38,8 @@ export default function Workspace() {
       const project = currentProject();
       if (project.demo) {
         resetWorkspace(true);
+        // começa parada: a pessoa escolhe assistir
+        setWs("paused", true);
         const stop = startAgentSim(root);
         onCleanup(stop);
       } else {
@@ -46,13 +55,31 @@ export default function Workspace() {
     }),
   );
 
+  const removeFromList = async () => {
+    const pr = p();
+    const ok = await confirmAction(
+      `Tirar ${pr.name} da lista?`,
+      "Só sai do Veocode: a pasta e os arquivos continuam no seu computador. Dá para adicionar de novo quando quiser.",
+      "Tirar da lista",
+    );
+    if (!ok) return;
+    await saveAll();
+    await removeProject(pr.id);
+    forgetProject(pr.id);
+    forgetGit(pr.id);
+    forgetFeed(pr.id);
+  };
+
   const reveal = () => {
     const abs = absPathOf(p().id);
     if (abs) api.reveal(abs).catch((e) => showToast(String(e)));
   };
 
   return (
-    <div class="workspace" ref={root}>
+    <div class="workspace" classList={{ adv: wsMode() === "avancado" }} ref={root}>
+      <Show when={wsMode() === "avancado"}>
+        <ProjectsColumn />
+      </Show>
       <aside class="sidebar">
         <div class="project-switch">
           <button class="project-btn" onClick={() => setPick(!pick())}>
@@ -64,7 +91,7 @@ export default function Workspace() {
             <ChevronDown size={14} />
           </button>
           <Show when={pick()}>
-            <div class="menu pop-in">
+            <div class="menu pop-in" ref={(el) => dismissable(el, () => setPick(false))}>
               <small class="menu-title">Projetos</small>
               <For each={projects}>
                 {(pr) => (
@@ -113,9 +140,11 @@ export default function Workspace() {
           <span title={p().path}>Arquivos{p().demo ? " (fictícios)" : ""}</span>
           <Show when={!p().demo}>
             <span class="sidebar-tools">
-              <button class="icon-btn small" title="Recarregar" onClick={() => loadDir("")}><RefreshCw size={12} /></button>
+              <button class="icon-btn small" title="Novo arquivo" onClick={() => void newEntry("", false)}><FilePlus size={12} /></button>
+              <button class="icon-btn small" title="Nova pasta" onClick={() => void newEntry("", true)}><FolderPlus size={12} /></button>
+              <button class="icon-btn small" title="Recarregar a lista de arquivos" onClick={() => loadDir("")}><RefreshCw size={12} /></button>
               <button class="icon-btn small" title="Mostrar no Finder/Explorer" onClick={reveal}><FolderSearch size={12} /></button>
-              <button class="icon-btn small" title="Remover da lista (não apaga a pasta)" onClick={() => { const id = p().id; removeProject(id).then(() => (forgetProject(id), forgetGit(id), forgetFeed(id))); }}><X size={12} /></button>
+              <button class="icon-btn small" title="Tirar este projeto da lista (a pasta continua no disco)" onClick={() => void removeFromList()}><X size={12} /></button>
             </span>
           </Show>
         </div>
@@ -124,16 +153,24 @@ export default function Workspace() {
           <FileTree />
         </Show>
 
-        <div class="legend">
-          <span class="lg read">L lido</span>
-          <span class="lg search">B busca</span>
-          <span class="lg edit">M modificado</span>
-          <span class="lg new">N novo</span>
-          <Show when={!p().demo}><span class="lg deleted">A apagado</span></Show>
+        <div class="mode-switch" role="radiogroup" aria-label="Modo da tela">
+          <button role="radio" aria-checked={wsMode() === "simples"} classList={{ active: wsMode() === "simples" }} onClick={() => setWsMode("simples")} title="Um projeto por vez: troque pelo nome lá em cima">Simples</button>
+          <button role="radio" aria-checked={wsMode() === "avancado"} classList={{ active: wsMode() === "avancado" }} onClick={() => setWsMode("avancado")} title="Todos os projetos numa coluna ao lado dos arquivos: um clique troca">Avançado</button>
         </div>
       </aside>
 
       <section class="center">
+        <Show when={p().demo}>
+          <div class="sim-banner">
+            <FlaskConical size={15} />
+            <div>
+              <strong>Simulação de exemplo</strong>
+              <span>Nada aqui é real: os arquivos e a IA são de mentira, só para mostrar como fica. Adicione uma pasta sua para ver as suas IAs de verdade.</span>
+            </div>
+            <button class="ghost-btn small" onClick={() => setWs("paused", !ws.paused)}>{ws.paused ? <Play size={12} /> : <Pause size={12} />} {ws.paused ? "Assistir" : "Pausar"}</button>
+            <button class="primary-btn small" onClick={() => void addProjectFromPicker()}><FolderPlus size={13} /> Adicionar pasta</button>
+          </div>
+        </Show>
         <Editor />
         <BottomPanel />
       </section>
@@ -141,5 +178,44 @@ export default function Workspace() {
       <ChatPanel />
       <AgentCursors />
     </div>
+  );
+}
+
+/** Modo avançado: todos os projetos um embaixo do outro, com a situação de cada um; um clique troca. */
+function ProjectsColumn() {
+  const ids = () => projects.filter((x) => !x.demo).map((x) => x.id).join(",");
+  createEffect(on(ids, (l) => {
+    const stop = watchFeeds("ws-column", l ? l.split(",") : [], 4000);
+    onCleanup(stop);
+  }));
+  return (
+    <aside class="proj-col">
+      <div class="proj-col-head">
+        <span>Projetos</span>
+        <button class="icon-btn small" title="Adicionar pasta" onClick={() => void addProjectFromPicker()}><Plus size={13} /></button>
+      </div>
+      <div class="proj-col-list">
+        <For each={projects}>
+          {(pr) => {
+            const st = () => (pr.demo ? { tone: "idle", label: "simulação" } : projectState(pr.id));
+            const g = () => git.summaries[pr.id];
+            return (
+              <button class="proj-col-item" classList={{ sel: pr.id === projectId() }} onClick={() => setProjectId(pr.id)} title={pr.path}>
+                <ProjectIcon id={pr.id} name={pr.name} stack={pr.stack} size={18} />
+                <span class="proj-col-text">
+                  <strong>{pr.name}</strong>
+                  <small>
+                    <i class={`proj-col-dot ${st().tone}`} />
+                    {st().label}
+                    <Show when={g()?.changed}><span class="meta-n edit"> ●{g()!.changed}</span></Show>
+                  </small>
+                </span>
+                <span class="proj-col-acc" style={{ background: accountById(pr.accountId).color }} title={accountById(pr.accountId).label} />
+              </button>
+            );
+          }}
+        </For>
+      </div>
+    </aside>
   );
 }

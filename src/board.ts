@@ -1,4 +1,4 @@
-// Painel: todos os projetos de uma vez e até 4 chats lado a lado. Guarda quais projetos estão
+// Visão geral: todos os projetos de uma vez (Panorama) e até 4 conversas ao vivo (Ao vivo). Guarda quais projetos estão
 // na grade (neste computador) e calcula a situação de cada projeto para os cartões.
 
 import { createSignal } from "solid-js";
@@ -45,6 +45,28 @@ export const setBoardMode = (m: "all" | "grid") => {
 
 export const inGrid = (id: string) => panes().includes(id);
 
+/** Como a tela "Ao vivo" se divide: 1 grande, 2 lado a lado, 2 um em cima do outro, 3 (um grande e dois menores) ou 4. */
+export type Layout = "1" | "2c" | "2r" | "3" | "4";
+export const layouts: { id: Layout; slots: number; label: string }[] = [
+  { id: "1", slots: 1, label: "Um projeto, tela inteira" },
+  { id: "2c", slots: 2, label: "Dois lado a lado" },
+  { id: "2r", slots: 2, label: "Dois, um em cima do outro" },
+  { id: "3", slots: 3, label: "Três: um grande e dois menores" },
+  { id: "4", slots: 4, label: "Quatro, um em cada canto" },
+];
+const [layoutRaw, setLayoutRaw] = createSignal<Layout>(load("veocode.board.layout", "2c"));
+export const layout = layoutRaw;
+export const slots = () => layouts.find((l) => l.id === layoutRaw())?.slots ?? 2;
+export const setLayout = (l: Layout) => {
+  setLayoutRaw(l);
+  save("veocode.board.layout", l);
+};
+/** Cabe mais um? Se não couber, passa para a divisão seguinte (1 → 2 → 3 → 4). */
+function growFor(n: number) {
+  if (n <= slots()) return;
+  setLayout(n <= 1 ? "1" : n === 2 ? "2c" : n === 3 ? "3" : "4");
+}
+
 /** Põe ou tira da grade. Devolve false se a grade já está cheia. */
 export function toggleGrid(id: string): boolean {
   const l = panes();
@@ -55,6 +77,7 @@ export function toggleGrid(id: string): boolean {
   }
   if (l.length >= MAX_PANES) return false;
   setPanes([...l, id]);
+  growFor(l.length + 1);
   return true;
 }
 

@@ -1,10 +1,12 @@
-import { X } from "lucide-solid";
+import { AlertTriangle, Check, ExternalLink, X } from "lucide-solid";
 import { FileIcon } from "./icons";
 import { createMemo, For, Index, Match, Show, Switch } from "solid-js";
-import { formatSize } from "../api";
+import { api, formatSize } from "../api";
+import { ask } from "../dialogs";
+import { draftOf, dropDraft, edit, isUnsaved, saveNow, textOf } from "../editing";
 import { openRealFile } from "../realProject";
 import { defaultFileContent, fileContents } from "../data/mock";
-import { closeTab, currentProject, openFile, ws } from "../store";
+import { closeTab, currentProject, openFile, projectId, showToast, ws } from "../store";
 
 type Tok = { t: string; c?: string };
 
@@ -53,23 +55,37 @@ function CodeLines(props: { lines: { t: string; added: boolean; removed: boolean
   );
 }
 
-/** Conteúdo de um arquivo real (somente leitura). */
+/** Conteúdo de um arquivo real: dá para escrever direto; grava sozinho (editing.ts). */
 function RealCode(props: { ext: string }) {
   const view = () => ws.contents[ws.activeFile];
-  const text = () => {
-    const v = view();
-    return v?.kind === "text" ? v : null;
-  };
+  const path = () => ws.activeFile;
+  const text = () => textOf(path());
+  const big = () => (text()?.split("\n").length ?? 0) > MAX_LINES;
   const lines = createMemo(() => {
     const t = text();
-    if (!t) return [];
-    const changed = new Set(ws.changedLines[ws.activeFile] ?? []);
-    return t.text
-      .split("\n")
-      .slice(0, MAX_LINES)
-      .map((line, i) => ({ t: line, added: changed.has(i + 1), removed: false }));
+    if (t === null || big()) return [];
+    const changed = new Set(isUnsaved(path()) ? [] : ws.changedLines[path()] ?? []);
+    return t.split("\n").map((line, i) => ({ t: line, added: changed.has(i + 1), removed: false }));
   });
-  const totalLines = () => text()?.text.split("\n").length ?? 0;
+  let area!: HTMLTextAreaElement;
+
+  const onKey = (e: KeyboardEvent) => {
+    const mod = e.metaKey || e.ctrlKey;
+    if (mod && e.key.toLowerCase() === "s") {
+      e.preventDefault();
+      void saveNow(path());
+      return;
+    }
+    if (e.key === "Tab" && !mod && !e.altKey) {
+      // Tab escreve espaços em vez de sair do editor
+      e.preventDefault();
+      const { selectionStart: a, selectionEnd: b, value } = area;
+      const indent = /\t/.test(value) && !/^ {2,}/m.test(value) ? "\t" : "  ";
+      area.setRangeText(indent, a, b, "end");
+      edit(path(), area.value);
+    }
+  };
+
   return (
     <Switch>
       <Match when={!view() || view()!.kind === "loading"}>
@@ -78,20 +94,92 @@ function RealCode(props: { ext: string }) {
       <Match when={view()!.kind === "error" && view()} keyed>
         {(v) => <div class="editor-empty">{(v as { message: string }).message}</div>}
       </Match>
-      <Match when={view()!.kind === "binary"}>
-        <div class="editor-empty">Arquivo binário ({formatSize((view() as { size: number }).size)}) — não dá para mostrar como texto.</div>
+      <Match when={view()!.kind === "binary" || view()!.kind === "tooLarge"}>
+        <div class="editor-empty">
+          <div class="editor-other">
+            <span>
+              {view()!.kind === "binary" ? "Este arquivo não é texto" : "Arquivo grande demais para o editor"} ({formatSize((view() as { size: number }).size)}).
+            </span>
+            <button class="primary-btn small" onClick={() => api.openEntry(projectId(), path()).catch((e) => showToast(String(e)))}><ExternalLink size={13} /> Abrir com o programa padrão</button>
+          </div>
+        </div>
       </Match>
-      <Match when={view()!.kind === "tooLarge"}>
-        <div class="editor-empty">Arquivo grande demais ({formatSize((view() as { size: number }).size)}). O limite do visualizador é 1 MB.</div>
-      </Match>
-      <Match when={text()}>
-        <CodeLines lines={lines()} ext={props.ext} />
-        <Show when={totalLines() > MAX_LINES}>
-          <div class="code-note">Mostrando as primeiras {MAX_LINES} de {totalLines()} linhas.</div>
-        </Show>
+      <Match when={text() !== null}>
+        <div class="code edit-scroll">
+          <div
+            class="edit-wrap"
+            classList={{ plain: big() }}
+            onMouseDown={(e) => {
+              // clicou no espaço vazio abaixo do texto: o cursor vai para o fim
+              if (e.target === area) return;
+              e.preventDefault();
+              area.focus();
+              area.setSelectionRange(area.value.length, area.value.length);
+            }}
+          >
+            <Show when={!big()}>
+              <CodeLines lines={lines()} ext={props.ext} />
+            </Show>
+            <textarea
+              ref={area}
+              class="edit-area"
+              value={text() ?? ""}
+              wrap="off"
+              spellcheck={false}
+              autocomplete="off"
+              autocapitalize="off"
+              aria-label={`Conteúdo de ${path()}`}
+              rows={Math.max(lines().length, text()?.split("\n").length ?? 1)}
+              onInput={(e) => edit(path(), e.currentTarget.value)}
+              onKeyDown={onKey}
+              onBlur={() => void saveNow(path())}
+            />
+          </div>
+        </div>
       </Match>
     </Switch>
   );
+}
+
+/** Situação da gravação do arquivo aberto, embaixo das abas. */
+function SaveState() {
+  const d = () => draftOf(ws.activeFile);
+  return (
+    <span class="save-state" classList={{ err: d()?.status === "error" }}>
+      <Show when={d()} fallback={<span>Clique no texto para editar · grava sozinho</span>}>
+        {(x) => (
+          <Switch>
+            <Match when={x().status === "editing" || x().status === "saving"}><span class="spinner inline" /> Salvando…</Match>
+            <Match when={x().status === "saved"}><Check size={12} /> Salvo</Match>
+            <Match when={x().status === "error"}>
+              <AlertTriangle size={12} /> Não salvou: {x().error}
+              <button class="link-btn" onClick={() => void saveNow(ws.activeFile)}>Tentar de novo</button>
+            </Match>
+          </Switch>
+        )}
+      </Show>
+    </span>
+  );
+}
+
+/** Fecha a aba; se ainda falta gravar, grava antes (e avisa se não deu). */
+async function closeRealTab(path: string) {
+  if (isUnsaved(path)) {
+    const ok = await saveNow(path);
+    if (!ok) {
+      const r = await ask({
+        title: `Não deu para salvar ${path.split("/").pop()}`,
+        body: "Se fechar agora, o que você escreveu depois da última gravação se perde.",
+        options: [
+          { id: "cancel", label: "Voltar e tentar de novo", tone: "ghost" },
+          { id: "drop", label: "Fechar sem salvar", tone: "danger" },
+        ],
+      });
+      if (r?.id !== "drop") return;
+    }
+  }
+  dropDraft(path);
+  closeTab(path);
 }
 
 export default function Editor() {
@@ -112,15 +200,17 @@ export default function Editor() {
       <div class="tabs">
         <For each={ws.openTabs}>
           {(path) => (
-            <div class="tab" classList={{ active: ws.activeFile === path, edited: ws.marks[path] === "edit" || ws.marks[path] === "new" }} onClick={() => (currentProject().demo ? openFile(path) : openRealFile(path))}>
+            <div class="tab" classList={{ active: ws.activeFile === path, edited: !currentProject().demo && isUnsaved(path) }} title={!currentProject().demo && isUnsaved(path) ? "Salvando…" : path} onClick={() => (currentProject().demo ? openFile(path) : openRealFile(path))}>
               <span class="tab-icon"><FileIcon name={path.split("/").pop() ?? path} size={12} /></span>
               <span class="tab-name">{path.split("/").pop()}</span>
               <span class="tab-dot" />
               <button
                 class="tab-close"
+                title="Fechar"
                 onClick={(e) => {
                   e.stopPropagation();
-                  closeTab(path);
+                  if (currentProject().demo) closeTab(path);
+                  else void closeRealTab(path);
                 }}
               >
                 <X size={12} />
@@ -130,7 +220,10 @@ export default function Editor() {
         </For>
       </div>
       <Show when={ws.activeFile} fallback={<div class="editor-empty">{currentProject().demo ? "Nenhum arquivo aberto" : "Escolha um arquivo na árvore à esquerda"}</div>}>
-        <div class="breadcrumb">{ws.activeFile.split("/").join("  ›  ")}</div>
+        <div class="breadcrumb">
+          <span>{ws.activeFile.split("/").join("  ›  ")}</span>
+          <Show when={!currentProject().demo && ws.contents[ws.activeFile]?.kind === "text"}><SaveState /></Show>
+        </div>
         <Show when={currentProject().demo} fallback={<RealCode ext={ext()} />}>
           <CodeLines lines={lines()} ext={ext()} plusGutter />
         </Show>

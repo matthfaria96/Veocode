@@ -131,6 +131,122 @@ pub fn read_file(root: &Path, rel: &str) -> Result<FileContent, String> {
     Ok(FileContent::Text { text: String::from_utf8_lossy(&buf).into_owned(), size })
 }
 
+
+// ---------------------------------------------------------------- mudanças feitas pela pessoa
+
+/// Nome de arquivo ou pasta válido em qualquer sistema (sem barras, sem `..`, sem caracteres
+/// que o Windows recusa).
+pub fn check_name(name: &str) -> Result<&str, String> {
+    let n = name.trim();
+    if n.is_empty() {
+        return Err("escreva um nome".into());
+    }
+    const BAD: &str = "/\\:*?\"<>|";
+    if n == "." || n == ".." || n.chars().any(|c| BAD.contains(c) || c.is_control()) {
+        return Err("o nome não pode ter / \\ : * ? \" < > |".into());
+    }
+    if n.len() > 255 {
+        return Err("nome comprido demais".into());
+    }
+    Ok(n)
+}
+
+/// Caminho que ainda não existe: a pasta-mãe tem de estar dentro da raiz.
+fn resolve_new(root: &Path, parent: &str, name: &str) -> Result<PathBuf, String> {
+    let name = check_name(name)?;
+    let root = root.canonicalize().map_err(|e| format!("raiz do projeto inacessível: {e}"))?;
+    let dir = if parent.is_empty() { root.clone() } else { resolve_in_root(&root, parent)? };
+    if !dir.is_dir() {
+        return Err("a pasta de destino não existe mais".into());
+    }
+    let target = dir.join(name);
+    if target.symlink_metadata().is_ok() {
+        return Err(format!("já existe \"{name}\" nesta pasta"));
+    }
+    Ok(target)
+}
+
+/// Grava o texto num arquivo que já existe (o editor salvando). Escreve numa cópia ao lado e
+/// troca no fim, para um erro no meio não deixar o arquivo pela metade.
+pub fn write_file(root: &Path, rel: &str, text: &str) -> Result<u64, String> {
+    let path = resolve_in_root(root, rel)?;
+    if path.is_dir() {
+        return Err("é uma pasta".into());
+    }
+    let perms = fs::metadata(&path).map_err(|e| e.to_string())?.permissions();
+    if perms.readonly() {
+        return Err("o arquivo está protegido contra escrita".into());
+    }
+    let tmp = path.with_file_name(format!(".{}.veocode-salvando", path.file_name().map(|n| n.to_string_lossy()).unwrap_or_default()));
+    fs::write(&tmp, text.as_bytes()).map_err(|e| format!("não gravou: {e}"))?;
+    let _ = fs::set_permissions(&tmp, perms);
+    if let Err(e) = fs::rename(&tmp, &path) {
+        let _ = fs::remove_file(&tmp);
+        return Err(format!("não gravou: {e}"));
+    }
+    Ok(text.len() as u64)
+}
+
+/// Cria um arquivo vazio (ou uma pasta) dentro de `parent`. Devolve o caminho relativo novo.
+pub fn create(root: &Path, parent: &str, name: &str, dir: bool) -> Result<String, String> {
+    let target = resolve_new(root, parent, name)?;
+    if dir {
+        fs::create_dir(&target).map_err(|e| e.to_string())?;
+    } else {
+        fs::OpenOptions::new().write(true).create_new(true).open(&target).map_err(|e| e.to_string())?;
+    }
+    let root = root.canonicalize().map_err(|e| e.to_string())?;
+    Ok(to_rel(&root, &target))
+}
+
+/// Troca o nome de um arquivo ou pasta (na mesma pasta). Devolve o caminho relativo novo.
+pub fn rename(root: &Path, rel: &str, new_name: &str) -> Result<String, String> {
+    if rel.is_empty() {
+        return Err("não dá para renomear a pasta do projeto por aqui".into());
+    }
+    let from = resolve_in_root(root, rel)?;
+    let parent = rel.rsplit_once('/').map(|(p, _)| p).unwrap_or("");
+    let to = resolve_new(root, parent, new_name)?;
+    fs::rename(&from, &to).map_err(|e| e.to_string())?;
+    let root = root.canonicalize().map_err(|e| e.to_string())?;
+    Ok(to_rel(&root, &to))
+}
+
+/// Caminho real de um item do projeto para mandar para a Lixeira (nunca a própria raiz).
+pub fn trash_target(root: &Path, rel: &str) -> Result<PathBuf, String> {
+    if rel.is_empty() {
+        return Err("a pasta do projeto não vai para a Lixeira por aqui".into());
+    }
+    // não segue o link: apaga o link, não o que ele aponta
+    let root_real = root.canonicalize().map_err(|e| e.to_string())?;
+    let rel_path = Path::new(rel);
+    if rel_path.is_absolute() || rel_path.components().any(|c| !matches!(c, Component::Normal(_))) {
+        return Err("caminho fora do projeto".into());
+    }
+    let parent = rel.rsplit_once('/').map(|(p, _)| p).unwrap_or("");
+    let dir = if parent.is_empty() { root_real.clone() } else { resolve_in_root(&root_real, parent)? };
+    let target = dir.join(rel_path.file_name().ok_or("caminho inválido")?);
+    target.symlink_metadata().map_err(|_| "não existe mais".to_string())?;
+    Ok(target)
+}
+
+/// Todos os arquivos do projeto (para a busca), sem o que o .gitignore esconde. Até `max`.
+pub fn all_files(root: &Path, max: usize) -> Result<Vec<String>, String> {
+    let root = root.canonicalize().map_err(|e| e.to_string())?;
+    let mut out = Vec::new();
+    let walk = ignore::WalkBuilder::new(&root).hidden(false).git_ignore(true).git_exclude(true).parents(false).follow_links(false).filter_entry(|e| e.file_name() != ".git").build();
+    for e in walk.flatten() {
+        if e.file_type().is_some_and(|t| t.is_file()) {
+            out.push(to_rel(&root, e.path()));
+            if out.len() >= max {
+                break;
+            }
+        }
+    }
+    out.sort_by_key(|p| p.to_lowercase());
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -200,5 +316,46 @@ mod tests {
         std::os::unix::fs::symlink(outside.path(), p.path().join("atalho")).unwrap();
         assert!(read_file(p.path(), "atalho/secret.txt").is_err());
         assert!(list_dir(p.path(), "atalho").is_err());
+    }
+
+    #[test]
+    fn person_edits_stay_inside_the_project() {
+        let d = project();
+        let root = d.path();
+        fs::write(root.join("a.txt"), "velho").unwrap();
+        assert_eq!(write_file(root, "a.txt", "novo").unwrap(), 4);
+        assert_eq!(fs::read_to_string(root.join("a.txt")).unwrap(), "novo");
+        assert!(write_file(root, "../fora.txt", "x").is_err());
+
+        assert_eq!(create(root, "", "pasta", true).unwrap(), "pasta");
+        assert_eq!(create(root, "pasta", "b.md", false).unwrap(), "pasta/b.md");
+        assert!(create(root, "pasta", "b.md", false).unwrap_err().contains("já existe"));
+        assert!(create(root, "", "x/y", false).is_err());
+        assert!(create(root, "", "..", true).is_err());
+        assert!(create(root, "..", "fora", true).is_err());
+
+        assert_eq!(rename(root, "pasta/b.md", "c.md").unwrap(), "pasta/c.md");
+        assert!(root.join("pasta/c.md").exists());
+        assert!(rename(root, "pasta/c.md", "../c.md").is_err());
+        assert!(rename(root, "", "nova").is_err());
+
+        assert_eq!(trash_target(root, "pasta/c.md").unwrap(), root.canonicalize().unwrap().join("pasta/c.md"));
+        assert!(trash_target(root, "").is_err());
+        assert!(trash_target(root, "../x").is_err());
+        assert!(trash_target(root, "nada.txt").is_err());
+    }
+
+    #[test]
+    fn search_lists_files_without_ignored_ones() {
+        let d = project();
+        let root = d.path();
+        fs::write(root.join(".gitignore"), "segredo/\n").unwrap();
+        fs::create_dir_all(root.join("segredo")).unwrap();
+        fs::write(root.join("segredo/x.txt"), "").unwrap();
+        fs::create_dir_all(root.join("src")).unwrap();
+        fs::write(root.join("src/b.ts"), "").unwrap();
+        let all = all_files(root, 100).unwrap();
+        assert!(all.contains(&"src/b.ts".to_string()));
+        assert!(!all.iter().any(|p| p.starts_with("segredo")));
     }
 }

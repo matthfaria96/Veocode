@@ -1,23 +1,31 @@
-import { Activity, Bot, Box, ChevronDown, ChevronRight, Copy, Cpu, Database, FolderOpen, HardDrive, Info, Loader2, Package, Play, Power, Puzzle, RefreshCw, Search, Server, Square, Trash2, X, Zap, type LucideProps } from "lucide-solid";
+import { dismissable } from "../dismiss";
+import { BookOpen, ChevronDown, ChevronRight, Cpu, FolderOpen, HardDrive, Info, Loader2, Package, Play, Power, Puzzle, RefreshCw, Search, Server, Trash2, X, Zap, type LucideProps } from "lucide-solid";
 import { createMemo, createSignal, For, onCleanup, onMount, Show, type JSX } from "solid-js";
-import { api, copyText, isTauri, prettyPath, type AgentGroup, type AiInstall, type Machine } from "../api";
+import { api, isTauri, prettyPath } from "../api";
 import { accountById, fmtTokens } from "../accounts";
 import { formatBytes } from "../data/mock";
-import { absPathOf, projects, setView, showToast } from "../store";
+import { absPathOf, projects, showToast } from "../store";
 import { kindLabel, sk, type Item, type PluginInfo } from "../skills";
-import { agentColor, loadCaches, loadInstalls, loadMachines, toggleMachine, trashCaches, xray, type CacheRow } from "../xray";
+import { xray } from "../xray";
 import { inv, loadInventory, pluginAction, refreshRunning, removeMcp, trashItem, type McpRun } from "../inventory";
 import { AccountChip, CountUp, PageHeader } from "../components/ui";
 import { FolderIcon, ProjectIcon } from "../components/icons";
 import ConfirmDialog from "../components/ConfirmDialog";
+import Explainer from "../components/Explainer";
+import ComputerTabs from "../components/ComputerTabs";
+import { SkillDetail } from "./SkillDetail";
 
 // ---------------------------------------------------------------- modelo
 
-type Cat = "plugins" | "skills" | "mcp" | "programas" | "rodando" | "maquinas" | "caches";
+type Cat = "plugins" | "skills" | "mcp";
 type Tone = "on" | "off" | "run" | "warn" | "bad";
 
 /** Onde a coisa vale: numa conta inteira, numa pasta, ou no computador todo. */
 type Where = { kind: "conta"; accounts: string[] } | { kind: "projeto"; path: string } | { kind: "pc" };
+type Stored = { kind: "projeto" | "pc" | "nuvem"; text: string; tip: string };
+
+const storedPc = (what: string): Stored => ({ kind: "pc", text: "no computador", tip: `${what} Os arquivos ficam na pasta da conta do Claude neste computador, não dentro do projeto: não vão junto no git.` });
+const storedProject: Stored = { kind: "projeto", text: "dentro do projeto", tip: "Os arquivos estão dentro da pasta do projeto (em .claude/ ou .mcp.json). Vão junto no git: quem clonar o repositório também recebe." };
 
 interface Action {
   label: string;
@@ -35,6 +43,8 @@ interface Row {
   sub: string;
   accounts: string[];
   where: Where;
+  /** onde os arquivos ficam guardados: dentro da pasta do projeto (vão junto no git) ou no computador */
+  stored: Stored;
   status: { text: string; tone: Tone };
   weight: string | null;
   load?: { cpu: number; mem: number };
@@ -45,18 +55,13 @@ interface Row {
 }
 
 const cats: { id: Cat; label: string; icon: (p: LucideProps) => JSX.Element; hint: string }[] = [
-  { id: "rodando", label: "Rodando agora", icon: Activity, hint: "Agentes de IA abertos neste momento e o quanto pesam. Fechar o agente fecha o que ele abriu." },
-  { id: "plugins", label: "Plugins", icon: Package, hint: "Pacotes do Claude Code que trazem várias skills e servidores MCP de uma vez. Desligar tira tudo o que eles trazem." },
-  { id: "skills", label: "Skills, comandos e agentes", icon: Puzzle, hint: "Instruções extras que o Claude lê. O nome e a descrição entram em toda conversa (peso fixo); o resto só quando é usado." },
-  { id: "mcp", label: "Servidores MCP", icon: Server, hint: "Programas que dão ferramentas ao Claude. Cada conversa aberta liga a sua cópia; com o Claude fechado, não rodam." },
-  { id: "programas", label: "Programas instalados pela IA", icon: Box, hint: "Pacotes que o Claude Code instalou (brew, npm, pip…), lidos dos históricos. Remover é pelo comando, que o Veocode só copia." },
-  { id: "maquinas", label: "VMs e containers", icon: HardDrive, hint: "Máquinas virtuais e containers deste computador. Valem para tudo, não para um projeto." },
-  { id: "caches", label: "Caches", icon: Database, hint: "Pastas que as IAs e os gerenciadores de pacote enchem com o tempo. Limpar move para a Lixeira." },
+  { id: "skills", label: "Receitas, atalhos e ajudantes", icon: Puzzle, hint: "Instruções extras que o Claude lê. Cada uma ocupa um pouco de toda conversa, mesmo sem uso: apagar as que você não usa deixa o Claude mais leve." },
+  { id: "mcp", label: "Conexões (MCP)", icon: Server, hint: "Pontes para outros programas e sites (Figma, GitHub…). Cada conversa aberta liga a sua; com o Claude fechado, não rodam." },
+  { id: "plugins", label: "Pacotes (plugins)", icon: Package, hint: "Conjuntos prontos que trazem várias receitas e conexões de uma vez. Desligar tira tudo o que eles trazem." },
 ];
 
 const base = (p: string) => p.split(/[\\/]/).filter(Boolean).pop() ?? p;
 const pct = (n: number) => `${n < 10 ? n.toFixed(1).replace(".", ",") : Math.round(n)}%`;
-const uptime = (s: number) => (s < 3600 ? `${Math.max(1, Math.round(s / 60))} min` : s < 86400 ? `${Math.round(s / 3600)} h` : `${Math.round(s / 86400)} d`);
 const scopeLabel: Record<string, string> = { user: "conta", local: "conta, só nesta pasta", project: "arquivo do projeto", plugin: "plugin" };
 
 /** Mesma pasta ou dentro dela (barra de Windows ou de macOS). */
@@ -82,6 +87,7 @@ function pluginRow(p: PluginInfo): Row {
     sub: p.description || "Sem descrição",
     accounts: [p.account],
     where: p.project ? { kind: "projeto", path: p.project } : { kind: "conta", accounts: [p.account] },
+    stored: storedPc(p.project ? "Foi baixado para o computador, mas só está ligado neste projeto." : "Baixado e ligado para todos os projetos desta conta."),
     status: p.enabled ? { text: "ligado", tone: "on" } : { text: "desligado", tone: "off" },
     weight: `${formatBytes(p.bytes)} · ~${fmtTokens(p.alwaysTokens)} tokens fixos`,
     details: [
@@ -150,6 +156,7 @@ function itemRow(i: Item): Row {
     sub: i.description || "Sem descrição",
     accounts: i.accounts,
     where: inRepo && i.project ? { kind: "projeto", path: i.project } : { kind: "conta", accounts: i.accounts },
+    stored: inRepo ? storedProject : i.manage === "synced" ? { kind: "nuvem", text: "na conta claude.ai", tip: "Veio da sua conta no claude.ai e é sincronizado sozinho. Para tirar, use o site." } : storedPc("Vale em todos os projetos desta conta."),
     status: i.enabled ? { text: "ativa", tone: "on" } : { text: "desligada", tone: "off" },
     weight: `~${fmtTokens(i.alwaysTokens)} fixos · ~${fmtTokens(i.invokeTokens)} ao usar`,
     details: [
@@ -208,6 +215,7 @@ function mcpRow(i: Item, runs: McpRun[]): Row {
     sub: i.description || (m.command ? [m.command, ...m.args].join(" ") : m.url ?? ""),
     accounts: i.accounts,
     where: i.project ? { kind: "projeto", path: i.project } : { kind: "conta", accounts: i.accounts },
+    stored: i.mcp?.scope === "project" ? storedProject : storedPc(i.project ? "A configuração fica guardada no computador, ligada só a esta pasta." : "Vale em todos os projetos desta conta."),
     status,
     weight: runs.length ? `${pct(cpu)} CPU · ${formatBytes(mem)}` : remote ? "roda fora deste computador" : "só roda com o Claude aberto",
     load: runs.length ? { cpu, mem } : undefined,
@@ -223,108 +231,6 @@ function mcpRow(i: Item, runs: McpRun[]): Row {
   };
 }
 
-function installRow(a: AiInstall, n: number): Row {
-  return {
-    key: `inst:${n}:${a.manager}:${a.package}`,
-    cat: "programas",
-    name: a.package,
-    tag: a.manager,
-    sub: a.command,
-    accounts: [],
-    where: { kind: "projeto", path: a.project },
-    status: a.status === "instalado" ? { text: "instalado", tone: "on" } : a.status === "falhou" ? { text: "falhou", tone: "bad" } : { text: "não está mais", tone: "off" },
-    weight: a.version ? `v${a.version}` : null,
-    details: [
-      ["Quando", new Date(a.when).toLocaleString("pt-BR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })],
-      ["Quem", a.source],
-      ["Tentativas", String(a.attempts)],
-      ["Para remover", a.removeCmd],
-    ],
-    actions: a.status === "instalado" ? [{ label: "Copiar remoção", icon: Copy, run: () => copyText(a.removeCmd).then(() => showToast("Comando copiado: cole no Terminal se quiser rodar")) }] : [],
-  };
-}
-
-function agentRow(g: AgentGroup): Row {
-  const all = [g, ...g.children];
-  const cpu = all.reduce((s, p) => s + p.cpu, 0);
-  const mem = all.reduce((s, p) => s + p.mem, 0);
-  const ports = [...new Set(all.flatMap((p) => p.ports))];
-  return {
-    key: `agent:${g.pid}`,
-    cat: "rodando",
-    name: g.agent,
-    sub: g.cwd ? prettyPath(g.cwd) : "pasta desconhecida",
-    accounts: [],
-    where: g.cwd ? { kind: "projeto", path: g.cwd } : { kind: "pc" },
-    status: { text: "rodando", tone: "run" },
-    weight: `${pct(cpu)} CPU · ${formatBytes(mem)}`,
-    load: { cpu, mem },
-    details: [
-      ["Aberto há", uptime(g.runSecs)],
-      ["Processos", g.children.length ? g.children.map((c) => c.name).slice(0, 10).join(", ") + (g.children.length > 10 ? "…" : "") : "só ele"],
-      ...(ports.length ? ([["Portas", ports.join(", ")]] as [string, string][]) : []),
-      ["pid", String(g.pid)],
-    ],
-    actions: [{ label: "Ver no Raio-X", icon: Activity, run: () => setView("system") }],
-  };
-}
-
-function machineRow(m: Machine): Row {
-  const key = `m:${m.engine}:${m.id}`;
-  return {
-    key,
-    cat: "maquinas",
-    name: m.name,
-    tag: m.engine,
-    sub: m.detail ?? (m.kind === "vm" ? "Máquina virtual" : "Container"),
-    accounts: [],
-    where: { kind: "pc" },
-    status: m.running ? { text: "rodando", tone: "run" } : { text: m.statusText || "parada", tone: "off" },
-    weight: [m.cpu && `${m.cpu} CPU`, m.ram, m.disk].filter(Boolean).join(" · ") || null,
-    details: [["Estado", m.statusText], ...(m.ports ? ([["Portas", m.ports]] as [string, string][]) : [])],
-    actions: m.canToggle
-      ? [m.running ? { label: "Parar", icon: Square, run: () => toggleMachine(m.engine, m.id, false) } : { label: "Iniciar", icon: Play, run: () => toggleMachine(m.engine, m.id, true) }]
-      : [],
-  };
-}
-
-function cacheRow(c: CacheRow): Row {
-  return {
-    key: `cache:${c.id}`,
-    cat: "caches",
-    name: c.label,
-    tag: c.tool,
-    sub: c.displayPaths.join(" · "),
-    accounts: [],
-    where: { kind: "pc" },
-    status: c.size === null ? { text: "medindo", tone: "off" } : { text: c.size > 0 ? "ocupando" : "vazio", tone: c.size > 500 * 1024 ** 2 ? "warn" : "off" },
-    weight: c.size === null ? "…" : formatBytes(c.size),
-    details: c.warning ? [["Atenção", c.warning]] : [],
-    actions:
-      (c.size ?? 0) > 0
-        ? [
-            {
-              label: "Limpar",
-              icon: Trash2,
-              danger: true,
-              confirm: {
-                title: `Limpar ${c.label}?`,
-                label: "Mover para a Lixeira",
-                body: (
-                  <>
-                    <p>{formatBytes(c.size ?? 0)} em <code>{c.displayPaths.join(", ")}</code> vão para a Lixeira.</p>
-                    <Show when={c.warning}><p class="warn-text">{c.warning}</p></Show>
-                    <p class="muted">O programa baixa de novo o que precisar.</p>
-                  </>
-                ),
-              },
-              run: () => trashCaches([c.id]),
-            },
-          ]
-        : [],
-  };
-}
-
 // ---------------------------------------------------------------- tela
 
 export default function Inventory() {
@@ -333,30 +239,18 @@ export default function Inventory() {
   const [q, setQ] = createSignal("");
   const [open, setOpen] = createSignal<Record<string, boolean>>({});
   const [confirm, setConfirm] = createSignal<Action | null>(null);
+  const [reading, setReading] = createSignal<Item | null>(null);
 
   onMount(() => {
     loadInventory();
-    if (!xray.installs) loadInstalls();
-    if (!xray.machines) loadMachines();
-    if (!xray.cachesLoaded) loadCaches();
     const t = setInterval(refreshRunning, 3000);
     onCleanup(() => clearInterval(t));
   });
-  const refreshAll = () => {
-    loadInventory();
-    loadInstalls();
-    loadMachines();
-    loadCaches();
-  };
 
   const rows = createMemo<Row[]>(() => [
-    ...inv.agents.map(agentRow),
     ...sk.plugins.map(pluginRow),
     ...sk.items.filter((i) => i.kind !== "mcp" && i.layer !== "plugin").map(itemRow),
     ...sk.items.filter((i) => i.kind === "mcp").map((i) => mcpRow(i, inv.mcp[i.id] ?? [])),
-    ...(xray.installs?.aiInstalls ?? []).map(installRow),
-    ...(xray.machines?.machines ?? []).map(machineRow),
-    ...xray.caches.filter((c) => c.size === null || c.size > 0).map(cacheRow),
   ]);
 
   const selected = createMemo(() => realProjects().find((p) => p.id === proj()) ?? null);
@@ -376,17 +270,13 @@ export default function Inventory() {
   // as linhas são refeitas a cada leitura (3 s); a lista anda pela chave para não recriar nem repetir a animação
   const byKey = createMemo(() => new Map(rows().map((r) => [r.key, r])));
   const keys = (c: Cat) => shown(c).map((r) => r.key);
-  const visibleCats = () => cats.filter((c) => (cat() === "tudo" || cat() === c.id) && !(selected() && (c.id === "maquinas" || c.id === "caches")));
+  const visibleCats = () => cats.filter((c) => cat() === "tudo" || cat() === c.id);
 
   // ---- resumo
   const running = createMemo(() => scoped().filter((r) => r.load));
   const runCpu = () => running().reduce((s, r) => s + r.load!.cpu, 0);
   const runMem = () => running().reduce((s, r) => s + r.load!.mem, 0);
-  const runningVms = () => (selected() ? 0 : (xray.machines?.machines.filter((m) => m.running).length ?? 0));
-  const disk = createMemo(() => {
-    const plugins = sk.plugins.filter((p) => inProject(pluginRow(p))).reduce((s, p) => s + p.bytes, 0);
-    return plugins + (selected() ? 0 : xray.caches.reduce((s, c) => s + (c.size ?? 0), 0));
-  });
+  const disk = createMemo(() => sk.plugins.filter((p) => inProject(pluginRow(p))).reduce((s, p) => s + p.bytes, 0));
   /** Tokens que entram em toda conversa do projeto escolhido (nome + descrição das skills ligadas). */
   const fixed = createMemo(() => {
     const p = selected();
@@ -398,18 +288,53 @@ export default function Inventory() {
   });
 
   const toggle = (k: string) => setOpen((o) => ({ ...o, [k]: !o[k] }));
+  // receitas agrupadas por de onde vieram; com busca, os grupos abrem sozinhos
+  const skillFamilies = createMemo(() =>
+    families(keys("skills").map((key) => ({ key, item: sk.items.find((i) => `item:${i.id}` === key)! })).filter((x) => x.item)),
+  );
+  const famOpen = (f: Family) => !!open()[`fam:${f.id}`] || q().trim().length > 0 || skillFamilies().length === 1;
   const runAction = (a: Action) => (a.confirm ? setConfirm(a) : a.run());
 
   return (
     <div class="page">
+      <ComputerTabs />
       <PageHeader
-        title="Inventário"
-        subtitle={isTauri ? "Tudo o que as IAs instalaram ou usam neste computador, para qual projeto vale, se está rodando e quanto pesa." : "Modo navegador: exemplo. Abra pelo app para ver o seu computador."}
+        title="Extras do Claude"
+        subtitle={isTauri ? "Habilidades a mais que o Claude ganhou, onde cada uma vale e quanto pesa. Daqui dá para desligar ou tirar." : "Modo navegador: exemplo. Abra pelo app para ver os seus."}
         actions={
-          <button class="ghost-btn" onClick={refreshAll}>
-            <RefreshCw size={14} classList={{ spinning: inv.loading || xray.installsLoading || xray.machinesLoading }} /> Atualizar
+          <button class="ghost-btn" onClick={loadInventory}>
+            <RefreshCw size={14} classList={{ spinning: inv.loading }} /> Atualizar
           </button>
         }
+      />
+
+      <Explainer
+        id="skills"
+        title="O que é esta tela?"
+        intro="O Claude já sabe programar sozinho. Aqui aparecem os extras que alguém instalou para ele. São quatro tipos:"
+        terms={[
+          { word: "Receitas (skills)", means: "Instruções prontas para um tipo de tarefa, como “fazer um PDF” ou “revisar código”. O Claude usa sozinho quando o pedido combina." },
+          { word: "Atalhos /", means: "Comandos que você digita no chat começando com barra, como /revisar. Cada um manda um pedido pronto." },
+          { word: "Ajudantes", means: "Mini-Claudes especializados que o Claude principal chama para uma parte do trabalho (pesquisar, testar…)." },
+          { word: "Conexões (MCP)", means: "Pontes para outros programas e sites, como Figma, GitHub ou um navegador. Deixam o Claude ler e mexer neles." },
+        ]}
+        calm={<>Você <strong>não precisa mexer em nada aqui</strong>. Clique numa linha para ver os detalhes. Antes de tirar algo, o Veocode pergunta, e o que sai vai para a <strong>Lixeira</strong>. Use o seletor de projeto para ver só o que vale numa pasta.</>}
+      />
+
+      <Explainer
+        id="onde-fica"
+        closed
+        openLabel="Instalei uma skill ou plugin (do GitHub, por exemplo): fica só no projeto ou no computador?"
+        title="Fica só no projeto ou no computador todo?"
+        intro={<>Depende de <strong>como</strong> foi instalado. São duas perguntas diferentes: <strong>onde os arquivos ficam guardados</strong> e <strong>em quais projetos valem</strong>. Cada linha da lista abaixo responde as duas (“vale em” e “guardado”).</>}
+        terms={[
+          { word: "Skill dentro do projeto", means: <>Pasta <code>.claude/skills</code> dentro do projeto, comum quando você baixa um repositório do GitHub que já vem com ela. <strong>Só vale naquele projeto</strong> e vai junto no git.</> },
+          { word: "Skill na conta", means: <>Pasta <code>~/.claude/skills</code>, fora dos projetos. <strong>Vale em todos os projetos</strong> daquela conta neste computador.</> },
+          { word: "Plugin (/plugin, do GitHub)", means: <><strong>Sempre é baixado para o computador</strong> (<code>~/.claude/plugins</code>). Na instalação você escolhe onde ele liga: <em>user</em> = todos os projetos; <em>project</em> ou <em>local</em> = só no projeto onde instalou.</> },
+          { word: "Conexão (claude mcp add)", means: <>Sem nada a mais, <strong>vale só na pasta</strong> onde você rodou o comando (guardada no computador). Com <code>--scope project</code> vai para <code>.mcp.json</code> no projeto; com <code>--scope user</code>, vale em todos.</> },
+          { word: "Programas que a skill instala", means: <>Coisas instaladas com npm, pip ou brew ficam <strong>no computador todo</strong>, para qualquer projeto. Veja em <em>Espaço e memória → Instalado pelas IAs</em>.</> },
+        ]}
+        calm={<>No Veocode, cada conta do Claude tem a sua pasta: o que foi instalado “no computador” por uma conta <strong>não aparece</strong> para outra. Quer ver só o que vale num projeto? Escolha ele no seletor logo abaixo.</>}
       />
 
       <div class="inv-bar">
@@ -422,13 +347,13 @@ export default function Inventory() {
       </div>
 
       <div class="inv-tiles">
-        <Tile icon={<Package size={15} />} label="Itens" hint={selected() ? `que valem em ${selected()!.name}` : "skills, plugins, MCP, programas…"}>
-          <CountUp value={scoped().filter((r) => r.cat !== "caches" && r.cat !== "rodando").length} />
+        <Tile icon={<Package size={15} />} label="Extras" hint={selected() ? `que valem em ${selected()!.name}` : "em todos os projetos"}>
+          <CountUp value={scoped().length} />
         </Tile>
-        <Tile icon={<Zap size={15} />} label="Rodando agora" hint={`${pct(runCpu())} CPU · ${formatBytes(runMem())}`} live={running().length > 0}>
-          <CountUp value={running().length + runningVms()} />
+        <Tile icon={<Zap size={15} />} label="Conexões abertas" hint={`${pct(runCpu())} CPU · ${formatBytes(runMem())}`} live={running().length > 0}>
+          <CountUp value={running().length} />
         </Tile>
-        <Tile icon={<HardDrive size={15} />} label="No disco" hint={selected() ? "plugins que valem aqui" : "plugins + caches"}>
+        <Tile icon={<HardDrive size={15} />} label="No disco" hint="pacotes instalados">
           <CountUp value={disk()} format={formatBytes} />
         </Tile>
         <Tile icon={<Cpu size={15} />} label="Contexto fixo" hint={selected() ? "tokens em toda conversa, antes de você escrever" : "escolha um projeto para ver"}>
@@ -440,7 +365,7 @@ export default function Inventory() {
 
       <div class="who-filter inv-cats">
         <button classList={{ active: cat() === "tudo" }} onClick={() => setCat("tudo")}>Tudo <small class="count">{scoped().length}</small></button>
-        <For each={cats.filter((c) => !(selected() && (c.id === "maquinas" || c.id === "caches")))}>
+        <For each={cats}>
           {(c) => (
             <button classList={{ active: cat() === c.id }} onClick={() => setCat(c.id)}>
               <c.icon size={12} /> {c.label} <small class="count">{shown(c.id).length}</small>
@@ -449,7 +374,7 @@ export default function Inventory() {
         </For>
       </div>
       <Show when={selected()}>
-        <p class="foot-note inv-scope-note"><Info size={12} /> Mostrando o que vale em <strong>{selected()!.name}</strong>: o da conta {accountById(selected()!.accountId).label} e o que está dentro da pasta. VMs e caches valem para o computador todo e ficam em "Todos os projetos".</p>
+        <p class="foot-note inv-scope-note"><Info size={12} /> Mostrando o que vale em <strong>{selected()!.name}</strong>: o da conta {accountById(selected()!.accountId).label} e o que está dentro da pasta.</p>
       </Show>
 
       <Show when={inv.loaded} fallback={<div class="loading-rows"><div /><div /><div /></div>}>
@@ -464,21 +389,43 @@ export default function Inventory() {
                     <small>{c.hint}</small>
                   </div>
                 </div>
-                <div class="inv-list">
-                  <For each={keys(c.id)} fallback={<div class="scope-empty">Nada aqui{q() ? " com essa busca" : ""}</div>}>
-                    {(k, n) => (
-                      <Show when={byKey().get(k)}>
-                        {(r) => <RowView r={r()} n={n()} open={!!open()[k]} onToggle={() => toggle(k)} onAction={runAction} />}
-                      </Show>
-                    )}
-                  </For>
-                </div>
+                <Show
+                  when={c.id === "skills" && keys(c.id).length > 0}
+                  fallback={
+                    <div class="inv-list">
+                      <For each={keys(c.id)} fallback={<div class="scope-empty">Nada aqui{q() ? " com essa busca" : ""}</div>}>
+                        {(k, n) => (
+                          <Show when={byKey().get(k)}>
+                            {(r) => <RowView r={r()} n={n()} open={!!open()[k]} onToggle={() => toggle(k)} onAction={runAction} onRead={setReading} />}
+                          </Show>
+                        )}
+                      </For>
+                    </div>
+                  }
+                >
+                  <div class="inv-list">
+                    <For each={skillFamilies()}>
+                      {(f) => (
+                        <FamilyView f={f} open={famOpen(f)} onToggle={() => toggle(`fam:${f.id}`)} first={byKey().get(f.keys[0])}>
+                          <For each={f.keys}>
+                            {(k, n) => (
+                              <Show when={byKey().get(k)}>
+                                {(r) => <RowView r={r()} n={n()} open={!!open()[k]} onToggle={() => toggle(k)} onAction={runAction} onRead={setReading} />}
+                              </Show>
+                            )}
+                          </For>
+                        </FamilyView>
+                      )}
+                    </For>
+                  </div>
+                </Show>
               </section>
             </Show>
           )}
         </For>
       </Show>
 
+      <Show when={reading()}>{(i) => <SkillDetail i={i()} onClose={() => setReading(null)} />}</Show>
       <Show when={confirm()}>
         {(a) => (
           <ConfirmDialog title={a().confirm!.title} confirmLabel={a().confirm!.label} danger={a().danger} onCancel={() => setConfirm(null)} onConfirm={() => { a().run(); setConfirm(null); }}>
@@ -507,7 +454,7 @@ function ProjectPicker(props: { value: string; onChange: (id: string) => void })
         <FolderOpen size={13} /> <span>{label()}</span> <ChevronDown size={12} />
       </button>
       <Show when={open()}>
-        <div class="inv-menu">
+        <div class="inv-menu" ref={(el) => dismissable(el, () => setOpen(false))}>
           <button classList={{ on: props.value === "todos" }} onClick={() => pick("todos")}>Todos os projetos</button>
           <For each={realProjects()} fallback={<small class="inv-menu-empty">Nenhum projeto adicionado ainda</small>}>
             {(p) => (
@@ -534,9 +481,10 @@ function Tile(props: { icon: JSX.Element; label: string; hint: string; live?: bo
 }
 
 /** "Vale em": conta inteira (com os projetos dela), uma pasta, ou o computador. */
-function Linked(props: { where: Where }) {
+function Linked(props: { where: Where; stored: Stored }) {
   return (
     <span class="inv-where">
+      <span class="inv-where-label">vale em</span>
       {(() => {
         const w = props.where;
         if (w.kind === "pc") return <span class="inv-where-chip pc">computador todo</span>;
@@ -556,20 +504,85 @@ function Linked(props: { where: Where }) {
           </span>
         );
       })()}
+      <span class="inv-where-label">guardado</span>
+      <span class={`inv-where-chip stored-${props.stored.kind}`} title={props.stored.tip}>{props.stored.text}</span>
     </span>
   );
 }
 
-function RowView(props: { r: Row; n: number; open: boolean; onToggle: () => void; onAction: (a: Action) => void }) {
+/** Nome bonito para um programa ou prefixo: "chatcut-desktop" → "ChatCut Desktop". */
+const known: Record<string, string> = { chatcut: "ChatCut", figma: "Figma", github: "GitHub", openai: "OpenAI", claude: "Claude" };
+const pretty = (s: string) => s.split(/[-_]/).filter(Boolean).map((w) => known[w.toLowerCase()] ?? w[0].toUpperCase() + w.slice(1)).join(" ");
+
+interface Family {
+  id: string;
+  label: string;
+  hint: string;
+  keys: string[];
+  tokens: number;
+}
+
+/**
+ * Junta receitas, atalhos e ajudantes por de onde vieram: o programa que instalou várias de uma
+ * vez (lista dele na pasta skills/), o projeto que as trouxe, o claude.ai, ou o mesmo começo de
+ * nome (3 ou mais). O resto fica em "Instaladas uma a uma".
+ */
+function families(list: { key: string; item: Item }[]): Family[] {
+  const prefix = (i: Item) => (i.name.includes("-") ? i.name.replace(/^\//, "").split("-")[0].toLowerCase() : null);
+  const count = new Map<string, number>();
+  for (const { item: i } of list) {
+    const p = prefix(i);
+    if (p && !i.group && i.layer === "conta" && i.manage !== "synced") count.set(p, (count.get(p) ?? 0) + 1);
+  }
+  const fams = new Map<string, Family>();
+  const add = (id: string, label: string, hint: string, key: string, tokens: number) => {
+    const f = fams.get(id) ?? { id, label, hint, keys: [], tokens: 0 };
+    f.keys.push(key);
+    f.tokens += tokens;
+    fams.set(id, f);
+  };
+  for (const { key, item: i } of list) {
+    const p = prefix(i);
+    if (i.group) add(`g:${i.group}`, pretty(i.group), `Instaladas juntas pelo programa ${pretty(i.group)}. Ficam na pasta da conta e valem em todos os projetos. Para tirar todas, desinstale ou reconfigure o ${pretty(i.group)}.`, key, i.alwaysTokens);
+    else if (i.layer === "projeto" && i.project) add(`p:${i.project}`, `Vieram com o projeto ${base(i.project)}`, `Estão dentro da pasta do projeto (.claude/). Só valem lá e vão junto no git.`, key, i.alwaysTokens);
+    else if (i.manage === "synced") add("claudeai", "Da sua conta claude.ai", "Sincronizadas do site claude.ai. Para tirar, use o site.", key, i.alwaysTokens);
+    else if (p && (count.get(p) ?? 0) >= 3) add(`x:${p}`, pretty(p), `Têm o mesmo começo de nome ("${p}-"), então provavelmente vieram juntas do mesmo lugar.`, key, i.alwaysTokens);
+    else add("soltas", "Instaladas uma a uma", "Cada uma foi colocada sozinha na pasta da conta. Valem em todos os projetos.", key, i.alwaysTokens);
+  }
+  return [...fams.values()].sort((a, b) => Number(a.id === "soltas") - Number(b.id === "soltas") || b.keys.length - a.keys.length);
+}
+
+function FamilyView(props: { f: Family; open: boolean; onToggle: () => void; first?: Row; children: JSX.Element }) {
+  return (
+    <div class="inv-family" classList={{ open: props.open }}>
+      <button class="inv-family-head" onClick={props.onToggle} aria-expanded={props.open}>
+        {props.open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        <span class="inv-family-icon"><Package size={14} /></span>
+        <span class="inv-family-text">
+          <strong>{props.f.label} <small class="count">{props.f.keys.length}</small></strong>
+          <small>{props.f.hint}</small>
+          <Show when={props.first}>{(r) => <Linked where={r().where} stored={r().stored} />}</Show>
+        </span>
+        <span class="inv-weight">~{fmtTokens(props.f.tokens)} tokens fixos</span>
+      </button>
+      <Show when={props.open}>
+        <div class="inv-family-body">{props.children}</div>
+      </Show>
+    </div>
+  );
+}
+
+function RowView(props: { r: Row; n: number; open: boolean; onToggle: () => void; onAction: (a: Action) => void; onRead: (i: Item) => void }) {
   const r = () => props.r;
-  const busy = () => !!inv.busy[r().key] || !!xray.busy[r().key] || (r().cat === "caches" && xray.caches.some((c) => `cache:${c.id}` === r().key && c.trashing));
-  const color = () => (r().cat === "rodando" ? agentColor(r().name) : r().accounts[0] ? accountById(r().accounts[0]).color : "var(--text-3)");
+  const busy = () => !!inv.busy[r().key] || !!xray.busy[r().key];
+  const color = () => (r().accounts[0] ? accountById(r().accounts[0]).color : "var(--text-3)");
   const Icon = () => {
     const c = cats.find((x) => x.id === r().cat)!;
-    return r().cat === "rodando" ? <Bot size={15} /> : <c.icon size={15} />;
+    return <c.icon size={15} />;
   };
+  const item = () => (r().cat === "skills" ? sk.items.find((i) => `item:${i.id}` === r().key) : undefined);
   return (
-    <div class="inv-row" classList={{ open: props.open, off: r().status.tone === "off" && r().cat !== "caches", running: r().status.tone === "run" }} style={{ "--c": color(), "animation-delay": `${Math.min(props.n, 12) * 30}ms` }}>
+    <div class="inv-row" classList={{ open: props.open, off: r().status.tone === "off", running: r().status.tone === "run" }} style={{ "--c": color(), "animation-delay": `${Math.min(props.n, 12) * 30}ms` }}>
       <div class="inv-row-main" onClick={props.onToggle}>
         <span class="inv-row-icon"><Icon /></span>
         <div class="inv-row-text">
@@ -579,7 +592,7 @@ function RowView(props: { r: Row; n: number; open: boolean; onToggle: () => void
             <For each={r().accounts}>{(a) => <AccountChip id={a} />}</For>
           </div>
           <small class="inv-row-sub">{r().sub}</small>
-          <Linked where={r().where} />
+          <Linked where={r().where} stored={r().stored} />
         </div>
         <span class="inv-status" classList={{ [r().status.tone]: true }}>
           <Show when={r().status.tone === "run"}><i class="pulse-dot" /></Show>
@@ -617,7 +630,12 @@ function RowView(props: { r: Row; n: number; open: boolean; onToggle: () => void
               const path = r().cat === "plugins" ? sk.plugins.find((p) => `plugin:${p.id}` === r().key)?.path : sk.items.find((i) => `item:${i.id}` === r().key)?.path;
               return (
                 <Show when={path}>
-                  <button class="ghost-btn small" onClick={() => api.reveal(path!).catch((e) => showToast(String(e)))}><FolderOpen size={12} /> Mostrar a pasta</button>
+                  <div class="inv-detail-actions">
+                    <Show when={item()?.path?.endsWith(".md")}>
+                      <button class="ghost-btn small" onClick={() => props.onRead(item()!)}><BookOpen size={12} /> Ler o que ela diz</button>
+                    </Show>
+                    <button class="ghost-btn small" onClick={() => api.reveal(path!).catch((e) => showToast(String(e)))}><FolderOpen size={12} /> Mostrar a pasta</button>
+                  </div>
                 </Show>
               );
             })()}

@@ -205,6 +205,11 @@ async function tick() {
   timer = window.setTimeout(tick, 450);
 }
 
+/** Nova conversa no Painel: limpa o que o canto mostra (o histórico no disco continua). */
+export function clearFeed(pid: string) {
+  if (feeds[pid]) setFeeds(pid, { items: [], loaded: true, activeAt: 0 });
+}
+
 /** Projeto removido: esquece a conversa guardada aqui. */
 export function forgetFeed(pid: string) {
   setFeeds(produce((f) => delete f[pid]));

@@ -23,6 +23,8 @@ pub struct Machine {
     pub ports: Option<String>,
     /// Dá para ligar/desligar pelo Veocode.
     pub can_toggle: bool,
+    /// Pasta do projeto que criou (Docker Compose grava isso no container).
+    pub project: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -47,6 +49,11 @@ fn gb(bytes: f64) -> String {
     format!("{:.1} GB", bytes / 1024f64.powi(3)).replace('.', ",")
 }
 
+/// `a=b,c=d` → valor de uma chave.
+fn label(labels: &str, key: &str) -> Option<String> {
+    labels.split(',').find_map(|kv| kv.strip_prefix(key)?.strip_prefix('=')).map(str::to_string).filter(|v| !v.is_empty())
+}
+
 pub fn parse_docker_ps(out: &str) -> Vec<Machine> {
     out.lines()
         .filter_map(|l| serde_json::from_str::<Value>(l).ok())
@@ -66,6 +73,7 @@ pub fn parse_docker_ps(out: &str) -> Vec<Machine> {
                 disk: Some(s("Size")).filter(|x| !x.is_empty()),
                 ports: Some(s("Ports")).filter(|x| !x.is_empty()),
                 can_toggle: true,
+                project: label(&s("Labels"), "com.docker.compose.project.working_dir"),
             }
         })
         .collect()
@@ -108,6 +116,7 @@ pub fn parse_lima(out: &str) -> Vec<Machine> {
                 detail: v.get("arch").and_then(Value::as_str).map(String::from),
                 ports: None,
                 can_toggle: true,
+                project: None,
             }
         })
         .collect()
@@ -134,13 +143,14 @@ pub fn parse_utm(out: &str) -> Vec<Machine> {
                 disk: None,
                 ports: None,
                 can_toggle: false,
+                project: None,
             })
         })
         .collect()
 }
 
 fn simple_vm(engine: &'static str, id: String, name: String, running: bool) -> Machine {
-    Machine { id, name, kind: "vm", engine, running, status_text: if running { "running".into() } else { "stopped".into() }, detail: None, cpu: None, ram: None, disk: None, ports: None, can_toggle: false }
+    Machine { id, name, kind: "vm", engine, running, status_text: if running { "running".into() } else { "stopped".into() }, detail: None, cpu: None, ram: None, disk: None, ports: None, can_toggle: false, project: None }
 }
 
 fn parallels() -> Option<Result<Vec<Machine>, ()>> {

@@ -1,13 +1,15 @@
-import { AlertTriangle, Box, Copy, Cpu, HardDrive, Monitor, Play, Power, RefreshCw, Square, Trash2 } from "lucide-solid";
+import { AlertTriangle, Box, Brain, Copy, Cpu, FolderOpen, HardDrive, Monitor, Play, Power, RefreshCw, Square, Trash2 } from "lucide-solid";
 import { createMemo, createSignal, For, Match, onCleanup, onMount, Show, Switch } from "solid-js";
-import { copyText, isTauri, type AgentGroup, type Proc } from "../api";
+import { api, copyText, isTauri, type AgentGroup, type Proc } from "../api";
 import { formatBytes } from "../data/mock";
 import { showToast } from "../store";
-import { agentColor, killProc, loadCaches, loadInstalls, loadMachines, refreshProcs, setXray, toggleMachine, trashCaches, xray, type CacheRow } from "../xray";
+import { agentColor, killProc, loadCaches, loadInstalls, loadMachines, loadModels, refreshProcs, setXray, toggleMachine, trashCaches, xray, type CacheRow } from "../xray";
 import { CountUp, PageHeader, Sparkline, Stagger } from "../components/ui";
 import ConfirmDialog from "../components/ConfirmDialog";
+import Explainer from "../components/Explainer";
+import ComputerTabs from "../components/ComputerTabs";
 
-type Tab = "caches" | "installed" | "machines" | "processes";
+type Tab = "caches" | "installed" | "models" | "machines" | "processes";
 const [tab, setTab] = createSignal<Tab>("caches");
 
 const base = (p: string) => p.split(/[\\/]/).filter(Boolean).pop() ?? p;
@@ -27,6 +29,7 @@ export default function System() {
     if (!xray.cachesLoaded) loadCaches();
     if (!xray.installs) loadInstalls();
     if (!xray.machines) loadMachines();
+    if (!xray.models) loadModels();
     refreshProcs();
     // processos "respiram": atualiza a cada 2 s enquanto a tela está aberta
     const t = setInterval(refreshProcs, 2000);
@@ -37,6 +40,7 @@ export default function System() {
     loadCaches();
     loadInstalls();
     loadMachines();
+    loadModels();
     refreshProcs();
   };
 
@@ -48,10 +52,11 @@ export default function System() {
   const busyProcs = createMemo(() => xray.procs.filter((g) => g.children.length > 0));
 
   const tabs: { id: Tab; label: string; count: () => string }[] = [
-    { id: "caches", label: "Caches e pastas grandes", count: () => (xray.cachesLoaded ? formatBytes(total()) + (measuring() ? "…" : "") : "…") },
+    { id: "caches", label: "Espaço ocupado", count: () => (xray.cachesLoaded ? formatBytes(total()) + (measuring() ? "…" : "") : "…") },
     { id: "installed", label: "Instalado pelas IAs", count: () => (xray.installs ? String(xray.installs.aiInstalls.length) : "…") },
-    { id: "machines", label: "VMs e containers", count: () => (xray.machines ? (xray.machines.machines.length ? `${running()} rodando` : "nenhum") : "…") },
-    { id: "processes", label: "Agentes rodando", count: () => (xray.procsLoaded ? String(xray.procs.length) : "…") },
+    { id: "models", label: "IAs locais", count: () => (xray.models ? (xray.models.models.length ? formatBytes(xray.models.models.reduce((s, m) => s + m.size, 0)) : "nenhuma") : "…") },
+    { id: "machines", label: "Máquinas virtuais", count: () => (xray.machines ? (xray.machines.machines.length ? `${running()} rodando` : "nenhum") : "…") },
+    { id: "processes", label: "IAs abertas agora", count: () => (xray.procsLoaded ? String(xray.procs.length) : "…") },
   ];
 
   const systemFiltered = createMemo(() => {
@@ -61,14 +66,29 @@ export default function System() {
 
   return (
     <div class="page">
+      <ComputerTabs />
       <PageHeader
-        title="Raio-X"
-        subtitle={isTauri ? "O que as IAs deixaram e estão rodando nesta máquina, lido agora." : "Modo navegador: dados fictícios. Abra pelo app para ver a máquina de verdade."}
+        title="Espaço e memória"
+        subtitle={isTauri ? "O que as IAs deixaram no disco e o que está aberto agora. Marque o que não quer e mande para a Lixeira." : "Modo navegador: dados fictícios. Abra pelo app para ver a máquina de verdade."}
         actions={
           <button class="ghost-btn" onClick={refreshAll}>
             <RefreshCw size={14} classList={{ spinning: measuring() || xray.installsLoading || xray.machinesLoading }} /> Atualizar
           </button>
         }
+      />
+
+      <Explainer
+        id="xray"
+        title="O que é esta tela?"
+        intro="Mostra o que as IAs estão fazendo no seu computador agora e o que deixaram para trás. As abas:"
+        terms={[
+          { word: "Espaço ocupado", means: "Arquivos temporários e históricos que crescem com o tempo. Marque e mova para a Lixeira para liberar espaço." },
+          { word: "Instalado pelas IAs", means: "Programas que o Claude instalou enquanto trabalhava. Valem para o computador todo, não só para o projeto que pediu." },
+          { word: "IAs locais", means: "Modelos de IA baixados para rodar no próprio computador (Ollama, LM Studio, Hugging Face). Ficam soltos na máquina, fora dos projetos, e costumam ocupar vários GB." },
+          { word: "Máquinas virtuais", means: "Computadores de mentira (Docker e afins) que podem estar gastando memória." },
+          { word: "IAs abertas agora", means: "Cada janela de IA aberta e quanta memória usa. Dá para fechar uma travada daqui." },
+        ]}
+        calm={<>Nada é apagado sem você confirmar, e tudo vai para a <strong>Lixeira</strong>.</>}
       />
 
       <div class="xray-tabs">
@@ -187,6 +207,56 @@ export default function System() {
           </Show>
         </Match>
 
+        {/* ------------------------------------------------ IAs locais */}
+        <Match when={tab() === "models"}>
+          <Show when={xray.models} fallback={<div class="loading-rows"><div /><div /><span>Procurando modelos do Ollama, LM Studio e Hugging Face…</span></div>}>
+            {(r) => (
+              <>
+                <p class="foot-note top">
+                  Modelos baixados ficam numa pasta da ferramenta (não dentro do projeto) e servem para qualquer projeto. Quando a IA baixou um deles, mostramos de qual projeto veio o pedido.
+                </p>
+                <Show
+                  when={r().models.length > 0}
+                  fallback={
+                    <div class="empty-state">
+                      <Brain size={22} /> Nenhuma IA local baixada nesta máquina.
+                      <small>{r().tools.length ? `Ferramentas encontradas: ${r().tools.join(", ")}.` : "Ollama, LM Studio e Hugging Face não têm modelos aqui."}</small>
+                    </div>
+                  }
+                >
+                  <div class="list">
+                    <Stagger each={r().models}>
+                      {(m) => (
+                        <div class="inst-row">
+                          <span class="mgr mgr-model">{m.tool}</span>
+                          <div class="cache-info">
+                            <strong>{m.name}</strong>
+                            <code title={m.path}>{m.path}</code>
+                          </div>
+                          <span class="proj-chip" classList={{ none: !m.project }} title={m.project ?? "Não achamos nos históricos quem pediu este download"}>
+                            {m.project ? base(m.project) : "sem projeto"}
+                          </span>
+                          <span class="when">{m.when ? when(m.when) : "—"}</span>
+                          <span class="size">{formatBytes(m.size)}</span>
+                          <button class="icon-btn" title="Mostrar no Finder" onClick={() => api.reveal(m.path)}><FolderOpen size={13} /></button>
+                          <button
+                            class="icon-btn"
+                            title={m.removeCmd ? `Copiar: ${m.removeCmd}` : "Apague pela própria ferramenta (ou mande a pasta para a Lixeira)"}
+                            disabled={!m.removeCmd}
+                            onClick={() => copyText(m.removeCmd!).then(() => showToast(`Copiado: ${m.removeCmd}`))}
+                          >
+                            <Copy size={13} />
+                          </button>
+                        </div>
+                      )}
+                    </Stagger>
+                  </div>
+                </Show>
+              </>
+            )}
+          </Show>
+        </Match>
+
         {/* ------------------------------------------------ máquinas */}
         <Match when={tab() === "machines"}>
           <Show when={xray.machines} fallback={<div class="loading-rows"><div /><div /></div>}>
@@ -211,6 +281,9 @@ export default function System() {
                             <div>
                               <strong>{m.name}</strong>
                               <small>{m.engine} · {m.kind === "vm" ? "máquina virtual" : "container"}{m.detail ? ` · ${m.detail}` : ""}</small>
+                              <Show when={m.project}>
+                                <span class="proj-chip" title={`Criado pelo projeto em ${m.project}`}>{base(m.project!)}</span>
+                              </Show>
                             </div>
                             <span class="status-pill" classList={{ live: m.running }}>{m.running ? "rodando" : "parada"}</span>
                           </div>
@@ -245,7 +318,7 @@ export default function System() {
           <Show when={xray.procsLoaded} fallback={<div class="loading-rows"><div /><div /></div>}>
             <Show when={xray.procs.length > 0} fallback={<div class="empty-state">Nenhum agente de IA rodando agora.</div>}>
               <p class="foot-note top">
-                {xray.procs.length} {xray.procs.length === 1 ? "agente" : "agentes"} · {busyProcs().length} com processos filhos. Atualiza a cada 2 s.
+                {xray.procs.length} {xray.procs.length === 1 ? "IA aberta" : "IAs abertas"} · {busyProcs().length} rodando programas. Atualiza a cada 2 s.
               </p>
               <div class="agent-list">
                 <For each={[...busyProcs(), ...xray.procs.filter((g) => g.children.length === 0)]}>
@@ -313,6 +386,7 @@ function AgentCard(props: { g: AgentGroup; onKill: (p: Proc) => void }) {
       <div class="agent-head">
         <span class="account-dot" />
         <strong>{props.g.agent}</strong>
+        <Show when={props.g.host}><span class="host-chip" title="Onde esta IA está aberta">{props.g.host}</span></Show>
         <span class="proj-chip" title={props.g.cwd ?? ""}>{props.g.cwd ? base(props.g.cwd) : "—"}</span>
         <small>pid {props.g.pid} · há {uptime(props.g.runSecs)} · {formatBytes(props.g.mem)}</small>
         <Sparkline data={xray.cpu[props.g.pid] ?? [0, 0]} color={color()} width={70} height={18} />

@@ -5,6 +5,7 @@ import { reconcile } from "solid-js/store";
 import { api, type FsChange } from "./api";
 import { openFile, projectId, pushEvent, resetWorkspace, setWs, showToast, ws } from "./store";
 import { touchedByAgent } from "./agentFeed";
+import { dropDraft, isUnsaved, savedByMe, saveNow } from "./editing";
 
 const parentOf = (path: string) => (path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "");
 const nameOf = (path: string) => path.split("/").pop() ?? path;
@@ -82,6 +83,12 @@ export function handleFsChange(e: FsChange) {
     if (listing) dirsToReload.add(parent);
     if (c.isDir && ws.tree[c.path]) dirsToReload.add(c.path);
 
+    // feito pela própria pessoa no Veocode (salvar, criar, renomear, apagar): a tela já mostra
+    if (savedByMe(e.projectId, c.path)) {
+      if (c.exists && !c.isDir && ws.marks[c.path] !== "new") setWs("marks", c.path, "edit");
+      continue;
+    }
+
     if (!c.exists) {
       if (!known && !ws.marks[c.path]) continue; // arquivo temporário que nasceu e morreu
       setWs("marks", c.path, "deleted");
@@ -104,7 +111,15 @@ export function handleFsChange(e: FsChange) {
     setWs("marks", c.path, isNew || prev === "new" ? "new" : "edit");
     // o agente acabou de mexer aqui: a linha dele na Atividade já conta a história
     if (!touchedByAgent(c.path)) pushEvent({ kind: isNew ? "create" : "edit", title: `${isNew ? "Criado" : "Alterado"}: ${c.path}`, detail: nameOf(c.path), agent: "disco", status: "ok", path: c.path });
-    if (ws.openTabs.includes(c.path)) loadContent(c.path, { diff: true });
+    if (ws.openTabs.includes(c.path)) {
+      if (isUnsaved(c.path)) {
+        showToast(`${nameOf(c.path)} mudou no disco enquanto você escrevia. Fica valendo o seu texto (salvando agora).`);
+        void saveNow(c.path);
+      } else {
+        dropDraft(c.path);
+        loadContent(c.path, { diff: true });
+      }
+    }
   }
 
   dirsToReload.forEach((d) => loadDir(d));

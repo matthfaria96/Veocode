@@ -1,27 +1,26 @@
-import { Bot, Boxes, LayoutDashboard, MessagesSquare, CircleHelp, FolderOpen, Network, Puzzle, Radar, Settings } from "lucide-solid";
+import { Bot, LayoutDashboard, MessagesSquare, CircleHelp, FolderOpen, Monitor, Settings } from "lucide-solid";
 import { For, type JSX } from "solid-js";
 import { helpOpen, setHelpOpen, setView, view, type View } from "../store";
 
-const items: { id: View; label: string; icon: () => JSX.Element }[] = [
-  { id: "home", label: "Mapa", icon: () => <Network size={19} /> },
-  { id: "board", label: "Painel (todos os projetos)", icon: () => <LayoutDashboard size={19} /> },
+// "also": telas que acendem o mesmo ícone (abas da mesma área)
+const items: { id: View; label: string; icon: () => JSX.Element; also?: View[] }[] = [
+  { id: "board", label: "Visão geral (todos os projetos e ao vivo)", icon: () => <LayoutDashboard size={19} /> },
   { id: "workspace", label: "Projetos", icon: () => <FolderOpen size={19} /> },
   { id: "livre", label: "Chat livre", icon: () => <MessagesSquare size={19} /> },
   { id: "accounts", label: "Contas e IAs", icon: () => <Bot size={19} /> },
-  { id: "inventory", label: "Inventário", icon: () => <Boxes size={19} /> },
-  { id: "system", label: "Raio-X", icon: () => <Radar size={19} /> },
-  { id: "skills", label: "Skills e MCP", icon: () => <Puzzle size={19} /> },
+  { id: "inventory", label: "Computador: extras do Claude, espaço e memória", icon: () => <Monitor size={19} />, also: ["system"] },
 ];
 
 export default function Rail() {
-  const index = () => items.findIndex((i) => i.id === view());
+  const on = (i: (typeof items)[number]) => i.id === view() || !!i.also?.includes(view());
+  const index = () => items.findIndex(on);
   return (
     <nav class="rail">
       <div class="rail-items">
         <span class="rail-indicator" style={{ transform: `translateY(${Math.max(0, index()) * 52}px)`, opacity: index() < 0 ? 0 : 1 }} />
         <For each={items}>
           {(item) => (
-            <button class="rail-btn" classList={{ active: view() === item.id }} onClick={() => setView(item.id)}>
+            <button class="rail-btn" classList={{ active: on(item) }} onClick={() => setView(item.id)}>
               {item.icon()}
               <span class="rail-tip">{item.label}</span>
             </button>

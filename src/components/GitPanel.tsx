@@ -26,6 +26,7 @@ import { createEffect, createMemo, createSignal, For, on, onCleanup, Show, type 
 import { api } from "../api";
 import { changeLabel, fetchGit, gitOf, loadGit, loadGithub, operationLabel, since, sinceIso, type GitChange, type GitCommit, type GhRun } from "../git";
 import { openRealFile } from "../realProject";
+import CommitGraph from "./CommitGraph";
 import { currentProject, showToast } from "../store";
 
 const open = (url: string | null | undefined) => url && void api.openUrl(url).catch(() => {});
@@ -86,7 +87,10 @@ export default function GitPanel() {
     };
   });
   const web = () => s()?.remotes.find((r) => r.web)?.web ?? null;
-  const commits = () => (showAll() ? s()?.commits ?? [] : (s()?.commits ?? []).slice(0, 12));
+  const graphCommits = () => {
+    const all = s()?.graph ?? s()?.commits ?? [];
+    return showAll() ? all : all.slice(0, 15);
+  };
   const unpushed = () => (s()?.commits ?? []).filter((c) => !c.pushed).length;
 
   return (
@@ -131,12 +135,17 @@ export default function GitPanel() {
                   <div class="git-legend">
                     <span><i class="dot local" /> só neste computador</span>
                     <span><i class="dot pushed" /> já está no remoto</span>
+                    <span>cada cor é um branch · clique num commit para ver os arquivos</span>
                   </div>
-                  <div class="git-commits">
-                    <For each={commits()}>{(c) => <CommitRow c={c} />}</For>
-                  </div>
-                  <Show when={(st().commits.length ?? 0) > 12 && !showAll()}>
-                    <button class="git-link" onClick={() => setShowAll(true)}>Mostrar os últimos {st().commits.length}</button>
+                  <CommitGraph
+                    pid={pid()}
+                    commits={graphCommits()}
+                    head={st().head}
+                    web={web()}
+                    uncommitted={st().changes.length + st().moreChanges}
+                  />
+                  <Show when={(st().graph ?? st().commits).length > 15 && !showAll()}>
+                    <button class="git-link" onClick={() => setShowAll(true)}>Mostrar os últimos {(st().graph ?? st().commits).length}</button>
                   </Show>
                 </Show>
               </Section>
@@ -182,6 +191,17 @@ export default function GitPanel() {
                     )}
                   </For>
                 </Show>
+              </Section>
+
+              <Section title="Letras na árvore de arquivos">
+                <div class="git-letters">
+                  <span><b class="lg read">L</b> a IA leu o arquivo</span>
+                  <span><b class="lg search">B</b> a IA buscou texto nele</span>
+                  <span><b class="lg edit">M</b> modificado (pela IA ou por você)</span>
+                  <span><b class="lg new">N</b> arquivo novo</span>
+                  <span><b class="lg deleted">A</b> apagado</span>
+                </div>
+                <div class="git-hint">As letras mostram o que aconteceu desde que você abriu o projeto. O que conta para o git são as "Mudanças não salvas no git", lá em cima.</div>
               </Section>
 
               <div class="git-foot">

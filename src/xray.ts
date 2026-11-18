@@ -1,7 +1,7 @@
 // Estado do Raio-X. No app (Tauri) vem do Rust; no navegador puro usa os dados fictícios.
 
 import { createStore, produce, reconcile } from "solid-js/store";
-import { isTauri, xrayApi, type AgentGroup, type CacheSpec, type InstallReport, type MachineReport } from "./api";
+import { isTauri, xrayApi, type AgentGroup, type CacheSpec, type InstallReport, type MachineReport, type ModelReport } from "./api";
 import { caches as mockCaches, installed as mockInstalled, machines as mockMachines, processes as mockProcs } from "./data/mock";
 import { showToast } from "./store";
 
@@ -18,6 +18,8 @@ interface XrayState {
   installsLoading: boolean;
   machines: MachineReport | null;
   machinesLoading: boolean;
+  models: ModelReport | null;
+  modelsLoading: boolean;
   procs: AgentGroup[];
   procsLoaded: boolean;
   /** pid → últimas leituras de CPU (para o gráfico). */
@@ -32,6 +34,8 @@ export const [xray, setXray] = createStore<XrayState>({
   installsLoading: false,
   machines: null,
   machinesLoading: false,
+  models: null,
+  modelsLoading: false,
   procs: [],
   procsLoaded: false,
   cpu: {},
@@ -152,6 +156,26 @@ export async function loadMachines() {
     showToast(`Raio-X: ${errMsg(e)}`);
   }
   setXray("machinesLoading", false);
+}
+
+export async function loadModels() {
+  if (!isTauri) {
+    setXray("models", {
+      tools: ["Ollama", "Hugging Face"],
+      models: [
+        { tool: "Ollama", name: "llama3.1:8b", size: 4_920_000_000, path: "~/.ollama/models", removeCmd: "ollama rm llama3.1:8b", project: "/Users/voce/Projetos/assistente", when: "2026-10-02T14:00:00Z" },
+        { tool: "Hugging Face", name: "openai/whisper-small", size: 967_000_000, path: "~/.cache/huggingface/hub/models--openai--whisper-small", removeCmd: "hf cache delete openai/whisper-small", project: null, when: null },
+      ],
+    });
+    return;
+  }
+  setXray("modelsLoading", true);
+  try {
+    setXray("models", await xrayApi.models());
+  } catch (e) {
+    showToast(`IAs locais: ${errMsg(e)}`);
+  }
+  setXray("modelsLoading", false);
 }
 
 export async function toggleMachine(engine: string, id: string, start: boolean) {

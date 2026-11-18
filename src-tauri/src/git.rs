@@ -38,6 +38,20 @@ pub struct Commit {
     pub refs: Vec<String>,
     /// já está no remoto (no upstream, ou em algum remoto quando não há upstream)
     pub pushed: bool,
+    /// hashes dos pais (para desenhar as linhas dos branches)
+    pub parents: Vec<String>,
+}
+
+/// Um arquivo mudado num commit.
+#[derive(Serialize, Default, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct CommitFile {
+    pub path: String,
+    pub from: Option<String>,
+    /// A, M, D, R…
+    pub status: String,
+    pub added: Option<u32>,
+    pub removed: Option<u32>,
 }
 
 #[derive(Serialize, Default, Debug, Clone)]
@@ -95,6 +109,8 @@ pub struct Status {
     pub commits: Vec<Commit>,
     /// commits do upstream que ainda não estão aqui (para baixar)
     pub incoming: Vec<Commit>,
+    /// todos os branches (locais e do remoto), do mais novo ao mais antigo, para o desenho
+    pub graph: Vec<Commit>,
     pub branches: Vec<Branch>,
     pub stashes: Vec<Stash>,
     pub remotes: Vec<Remote>,
@@ -231,6 +247,12 @@ pub fn status(root: &Path) -> Result<Status, String> {
         for c in &mut s.commits {
             c.pushed = has_remote && !unpushed.contains(&c.hash);
         }
+        // desenho: todos os branches; "só aqui" = em nenhum remoto
+        let local_only: HashSet<String> = if s.remotes.is_empty() { HashSet::new() } else { lines(g.out(&["rev-list", "--max-count=400", "--branches", "HEAD", "--not", "--remotes"])) };
+        s.graph = parse_log(&g.out(&["log", "-n", "80", "--topo-order", LOG_FORMAT, "HEAD", "--branches", "--remotes", "--tags"]).unwrap_or_default());
+        for c in &mut s.graph {
+            c.pushed = !s.remotes.is_empty() && !local_only.contains(&c.hash);
+        }
         if s.upstream.is_some() && s.behind > 0 {
             s.incoming = parse_log(&g.out(&["log", "-n", "20", LOG_FORMAT, "HEAD..@{u}"]).unwrap_or_default());
             for c in &mut s.incoming {
@@ -305,7 +327,72 @@ fn fetch_error(err: &str) -> String {
     }
 }
 
-const LOG_FORMAT: &str = "--format=%H%x1f%h%x1f%an%x1f%at%x1f%s%x1f%D%x1e";
+const LOG_FORMAT: &str = "--format=%H%x1f%h%x1f%an%x1f%at%x1f%s%x1f%D%x1f%P%x1e";
+
+/// Arquivos que um commit mudou, com linhas adicionadas/removidas.
+pub fn commit_files(root: &Path, hash: &str) -> Result<Vec<CommitFile>, String> {
+    if !hash.chars().all(|c| c.is_ascii_hexdigit()) || hash.is_empty() {
+        return Err("commit inválido".into());
+    }
+    let g = Git { bin: git_bin()?, root: root.to_path_buf() };
+    let names = g.out(&["show", "--format=", "--name-status", "-M", "-z", "--first-parent", hash]).ok_or("o git não achou esse commit")?;
+    let nums = g.out(&["show", "--format=", "--numstat", "-M", "--first-parent", hash]).unwrap_or_default();
+    Ok(parse_commit_files(&names, &nums))
+}
+
+fn parse_commit_files(names: &str, nums: &str) -> Vec<CommitFile> {
+    let mut out = Vec::new();
+    let mut it = names.split('\0').filter(|s| !s.is_empty());
+    while let Some(st) = it.next() {
+        let st = st.trim_start_matches('\n');
+        let letter: String = st.chars().take(1).collect();
+        if letter == "R" || letter == "C" {
+            let from = it.next().map(str::to_string);
+            let path = it.next().unwrap_or_default().to_string();
+            out.push(CommitFile { path, from, status: letter, ..Default::default() });
+        } else if let Some(p) = it.next() {
+            out.push(CommitFile { path: p.to_string(), status: letter, ..Default::default() });
+        }
+    }
+    for l in nums.lines() {
+        let f: Vec<&str> = l.splitn(3, '\t').collect();
+        if f.len() < 3 {
+            continue;
+        }
+        // renomeado aparece como "a => b" ou "dir/{a => b}"
+        let p = f[2];
+        let target = if let (Some(i), Some(j)) = (p.find('{'), p.find('}')) {
+            let inner = &p[i + 1..j];
+            let to = inner.split(" => ").nth(1).unwrap_or(inner);
+            format!("{}{}{}", &p[..i], to, &p[j + 1..]).replace("//", "/")
+        } else {
+            p.split(" => ").last().unwrap_or(p).to_string()
+        };
+        if let Some(cf) = out.iter_mut().find(|c| c.path == target) {
+            cf.added = f[0].parse().ok();
+            cf.removed = f[1].parse().ok();
+        }
+    }
+    out
+}
+
+/// O diff de um arquivo num commit (cortado em 200 KB).
+pub fn commit_diff(root: &Path, hash: &str, path: &str) -> Result<String, String> {
+    if !hash.chars().all(|c| c.is_ascii_hexdigit()) || hash.is_empty() {
+        return Err("commit inválido".into());
+    }
+    let g = Git { bin: git_bin()?, root: root.to_path_buf() };
+    let mut d = g.out(&["show", "--format=", "-M", "--first-parent", "--no-color", hash, "--", path]).ok_or("o git não mostrou esse arquivo")?;
+    if d.len() > 200_000 {
+        let mut cut = 200_000;
+        while !d.is_char_boundary(cut) {
+            cut -= 1;
+        }
+        d.truncate(cut);
+        d.push_str("\n… (diff muito grande, cortado aqui)");
+    }
+    Ok(d)
+}
 
 fn lines(o: Option<String>) -> HashSet<String> {
     o.unwrap_or_default().lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect()
@@ -432,6 +519,7 @@ fn parse_log(raw: &str) -> Vec<Commit> {
                 subject: f[4].to_string(),
                 refs: f[5].split(", ").map(|r| r.trim().trim_start_matches("HEAD -> ").to_string()).filter(|r| !r.is_empty() && r != "HEAD").collect(),
                 pushed: false,
+                parents: f.get(6).map(|p| p.split_whitespace().map(str::to_string).collect()).unwrap_or_default(),
             })
         })
         .collect()
@@ -724,6 +812,14 @@ up\tgit@github.com:outro/coisa.git (fetch)\nlab\tssh://git@gitlab.com/g/p.git (f
         assert!(b[1].gone);
         let l = parse_log("abc\u{1f}ab\u{1f}Ana\u{1f}1700000000\u{1f}Primeiro\u{1f}HEAD -> main, origin/main, tag: v1\u{1e}\n");
         assert_eq!(l[0].refs, vec!["main", "origin/main", "tag: v1"]);
+        let m = parse_log("abc\u{1f}ab\u{1f}Ana\u{1f}1\u{1f}Merge\u{1f}\u{1f}p1 p2\u{1e}\n");
+        assert_eq!(m[0].parents, vec!["p1", "p2"]);
+        let files = parse_commit_files("M\0src/a.rs\0R100\0old.txt\0new.txt\0A\0b.md\0", "3\t1\tsrc/a.rs\n0\t0\t{old.txt => new.txt}\n-\t-\tb.md\n");
+        assert_eq!(files.len(), 3);
+        assert_eq!((files[0].added, files[0].removed), (Some(3), Some(1)));
+        assert_eq!(files[1].from.as_deref(), Some("old.txt"));
+        assert_eq!(files[1].added, Some(0));
+        assert_eq!(files[2].added, None, "binário não tem contagem");
     }
 
     /// Repositório de verdade: um remoto local, um commit enviado e um não.

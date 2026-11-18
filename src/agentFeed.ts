@@ -27,8 +27,25 @@ export interface AgentEvent {
 }
 
 const POLL_MS = 900;
-/** Abre o arquivo que o agente está editando e expande a árvore até ele. */
-export const [follow, setFollow] = createSignal(true);
+/** Abre o arquivo que o agente está editando e expande a árvore até ele. Desligado por padrão:
+ *  a tela só muda de lugar se a pessoa pedir. */
+const FOLLOW_KEY = "veocode.follow";
+const [follow, setFollowRaw] = createSignal((() => {
+  try {
+    return localStorage.getItem(FOLLOW_KEY) === "1";
+  } catch {
+    return false;
+  }
+})());
+export { follow };
+export const setFollow = (on: boolean) => {
+  setFollowRaw(on);
+  try {
+    localStorage.setItem(FOLLOW_KEY, on ? "1" : "0");
+  } catch {
+    /* sem armazenamento */
+  }
+};
 
 // caminho → quando o agente mexeu (para o observador de disco não repetir a mesma linha)
 const touched = new Map<string, number>();
@@ -182,19 +199,14 @@ export function startAgentFeed(root: HTMLElement): () => void {
       return;
     }
 
+    // pensar e responder não mexem o cursor: ele só aparece onde algo acontece (arquivo, terminal)
     if (e.kind === "think") {
-      if (live) {
-        setWs("running", true);
-        moveTo(ensureCursor(e), point("chat"), false);
-      }
+      if (live) setWs("running", true);
       return;
     }
 
     // o que foi enviado/recebido pelo chat do Veocode já está na tela
-    if ((e.kind === "user" || e.kind === "say") && live && alreadyShown(e.kind, e.id, e.title)) {
-      if (e.kind === "say") moveTo(ensureCursor(e), point("chat"), false);
-      return;
-    }
+    if ((e.kind === "user" || e.kind === "say") && live && alreadyShown(e.kind, e.id, e.title)) return;
     if (e.kind === "user") {
       pushEvent({ kind: "user", title: e.title, agent: "Você", status: "ok", at: e.ts });
       if (live) setWs("running", true);
@@ -202,14 +214,14 @@ export function startAgentFeed(root: HTMLElement): () => void {
     }
     if (e.kind === "say") {
       pushEvent({ kind: "say", title: e.title, agent: who, color, status: "ok", at: e.ts });
-      if (live) moveTo(ensureCursor(e), point("chat"), false);
       return;
     }
     if (e.kind === "done") {
       pushEvent({ kind: "done", title: "Terminou", agent: who, color, status: "ok", at: e.ts });
       if (live) {
         setWs("running", false);
-        moveTo(ensureCursor(e), point("chat"), false);
+        // terminou: os cursores desta sessão somem
+        setWs("cursors", (c) => c.id.startsWith(`${e.session}:`), "visible", false);
       }
       return;
     }
@@ -235,7 +247,7 @@ export function startAgentFeed(root: HTMLElement): () => void {
     setWs("running", true);
     const cid = ensureCursor(e);
     if (e.kind === "run") return moveTo(cid, point("terminal"));
-    if (!e.path) return moveTo(cid, point("chat"), false);
+    if (!e.path) return; // ferramenta sem arquivo (busca na web, MCP…): fica só na Atividade
 
     cursorOf.set(e.id, cid);
     // edição: a árvore e o editor abrem quando o resultado chegar (o arquivo pode nem existir ainda)
@@ -276,11 +288,11 @@ export function startAgentFeed(root: HTMLElement): () => void {
     } catch {
       /* pasta sumiu ou conta sem histórico: tenta de novo no próximo ciclo */
     }
-    // cursores parados somem: subagente em 6 s, principal em 40 s
+    // cursores parados somem: subagente em 6 s, principal em 12 s
     const now = Date.now();
     for (const c of ws.cursors) {
       const idle = now - (lastSeen.get(c.id) ?? 0);
-      if (c.visible && idle > (c.main ? 40000 : 6000)) setWs("cursors", (x) => x.id === c.id, "visible", false);
+      if (c.visible && idle > (c.main ? 12000 : 6000)) setWs("cursors", (x) => x.id === c.id, "visible", false);
       if (!c.main && idle > 9000) setWs("cursors", (l) => l.filter((x) => x.id !== c.id));
     }
     if (ws.running && [...lastSeen.values()].every((t) => now - t > 60000)) setWs("running", false);

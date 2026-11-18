@@ -27,6 +27,16 @@ export interface GitCommit {
   subject: string;
   refs: string[];
   pushed: boolean;
+  /** hashes dos pais (o desenho usa para ligar as linhas) */
+  parents?: string[];
+}
+export interface CommitFile {
+  path: string;
+  from: string | null;
+  /** A, M, D, R… */
+  status: string;
+  added: number | null;
+  removed: number | null;
 }
 export interface GitBranch {
   name: string;
@@ -58,6 +68,8 @@ export interface GitStatus {
   moreChanges: number;
   commits: GitCommit[];
   incoming: GitCommit[];
+  /** todos os branches, para o desenho */
+  graph?: GitCommit[];
   branches: GitBranch[];
   stashes: { message: string; time: number }[];
   remotes: GitRemote[];
@@ -138,7 +150,7 @@ interface State {
 }
 
 /** Aba aberta no painel da direita (Agente, Acesso ou Git); a barra lateral também abre a do Git. */
-export const [gitTab, setGitTab] = createSignal<"chat" | "access" | "git">("chat");
+export const [gitTab, setGitTab] = createSignal<"chat" | "access" | "trail" | "git">("chat");
 
 export const [git, setGit] = createStore<State>({ byProject: {}, summaries: {} });
 
@@ -188,7 +200,7 @@ export async function loadGithub(pid: string, force = false) {
 }
 
 let summaryAt = 0;
-/** Resumo de todos os projetos (Mapa e barra lateral). No máximo a cada 10 s. */
+/** Resumo de todos os projetos (Visão geral e barra lateral). No máximo a cada 10 s. */
 export async function loadSummaries(force = false) {
   if (!isTauri || (!force && Date.now() - summaryAt < 10_000)) return;
   summaryAt = Date.now();
@@ -216,6 +228,23 @@ function toSummary(s: GitStatus): GitSummary {
     changed: s.changes.length + s.moreChanges,
     conflicts: s.changes.filter((c) => c.conflict).length,
   };
+}
+
+/** Arquivos que um commit mudou. */
+export async function commitFiles(pid: string, hash: string): Promise<CommitFile[]> {
+  if (!real(pid)) {
+    return [
+      { path: "src/components/GitPanel.tsx", from: null, status: "M", added: 42, removed: 7 },
+      { path: "src/git.ts", from: null, status: "A", added: 120, removed: 0 },
+    ];
+  }
+  return invoke<CommitFile[]>("git_commit_files", { projectId: pid, hash });
+}
+
+/** O diff de um arquivo num commit. */
+export async function commitDiff(pid: string, hash: string, path: string): Promise<string> {
+  if (!real(pid)) return `@@ -1,3 +1,4 @@\n import x from "y";\n-const velho = 1;\n+const novo = 2;\n+const outro = 3;\n export default x;`;
+  return invoke<string>("git_commit_diff", { projectId: pid, hash, path });
 }
 
 // ---------------------------------------------------------------- textos
@@ -266,7 +295,7 @@ export const operationLabel: Record<string, string> = {
 
 function demoStatus(): GitStatus {
   const now = Date.now() / 1000;
-  const c = (short: string, subject: string, ago: number, pushed: boolean, refs: string[] = []): GitCommit => ({ hash: short.repeat(5), short, author: "Você", time: now - ago, subject, refs, pushed });
+  const c = (short: string, subject: string, ago: number, pushed: boolean, refs: string[] = [], parents: string[] = []): GitCommit => ({ hash: short.repeat(5), short, author: "Você", time: now - ago, subject, refs, pushed, parents: parents.map((p) => p.repeat(5)) });
   return {
     repo: true,
     top: null,
@@ -285,6 +314,14 @@ function demoStatus(): GitStatus {
     moreChanges: 0,
     commits: [c("a1b2c3d", "Aba Git em cada projeto", 600, false, ["main"]), c("e4f5a6b", "Ícone do app", 5400, false), c("c7d8e9f", "Terminal por projeto", 86400, true, ["origin/main"]), c("0a1b2c3", "Chat livre", 86400 * 3, true)],
     incoming: [c("9f8e7d6", "Corrige o README (feito no GitHub)", 7200, true, ["origin/main"])],
+    graph: [
+      c("a1b2c3d", "Aba Git em cada projeto", 600, false, ["main"], ["e4f5a6b"]),
+      c("9f8e7d6", "Corrige o README (feito no GitHub)", 7200, true, ["origin/main"], ["c7d8e9f"]),
+      c("e4f5a6b", "Ícone do app", 5400, false, [], ["c7d8e9f"]),
+      c("b5c6d7e", "Começo do tema claro", 86400 * 2, false, ["tema-claro"], ["0a1b2c3"]),
+      c("c7d8e9f", "Terminal por projeto", 86400, true, [], ["0a1b2c3"]),
+      c("0a1b2c3", "Chat livre", 86400 * 3, true, [], []),
+    ],
     branches: [
       { name: "main", current: true, upstream: "origin/main", ahead: 2, behind: 1, gone: false, time: now - 600, subject: "Aba Git em cada projeto" },
       { name: "tema-claro", current: false, upstream: null, ahead: 0, behind: 0, gone: false, time: now - 86400 * 5, subject: "Começo do tema claro" },

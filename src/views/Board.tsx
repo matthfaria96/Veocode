@@ -1,8 +1,8 @@
-import { Columns2, FolderPlus, LayoutGrid, Plus, SquareTerminal } from "lucide-solid";
+import { Columns2, FolderPlus, LayoutGrid, MonitorPlay, Plus, SquareTerminal } from "lucide-solid";
 import { createEffect, createMemo, For, on, onCleanup, Show } from "solid-js";
 import { accountById } from "../accounts";
 import { isTauri, prettyPath } from "../api";
-import { boardMode, inGrid, MAX_PANES, maximized, panes, projectState, setBoardMode, setMaximized, toggleGrid, toneOrder } from "../board";
+import { boardMode, inGrid, layout, layouts, MAX_PANES, maximized, panes, projectState, replacePane, setBoardMode, setLayout, setMaximized, slots, toggleGrid, toneOrder, type Layout } from "../board";
 import { feedOf, watchFeeds } from "../feeds";
 import { git, loadSummaries, since } from "../git";
 import { accessLevels } from "../data/mock";
@@ -12,7 +12,7 @@ import ChatPane from "../components/ChatPane";
 import { ProjectIcon } from "../components/icons";
 import { PageHeader, ProviderMark } from "../components/ui";
 
-/** Todos os projetos de uma vez, e até 4 conversas lado a lado. */
+/** Visão geral: todos os projetos de uma vez (Panorama) e até 4 conversas ao vivo, divididas como a pessoa quiser. */
 export default function Board() {
   const real = () => projects.filter((p) => !p.demo);
 
@@ -39,20 +39,31 @@ export default function Board() {
   return (
     <div class="page board">
       <PageHeader
-        title="Painel"
+        title="Visão geral"
         subtitle={
           !real().length
             ? "Todos os seus projetos num lugar só, com o que cada IA está fazendo."
             : `${real().length} ${real().length === 1 ? "projeto" : "projetos"}${working() ? ` · ${working()} trabalhando` : ""}${asking() ? ` · ${asking()} esperando você` : ""}`
         }
         actions={
-          <div class="seg board-seg">
-            <button classList={{ active: boardMode() === "all" }} onClick={() => setBoardMode("all")}><LayoutGrid size={13} /> Todos</button>
-            <button classList={{ active: boardMode() === "grid" }} onClick={() => setBoardMode("grid")}><Columns2 size={13} /> Lado a lado <small class="count">{panes().length}</small></button>
-            <span class="seg-thumb" style={{ transform: `translateX(${boardMode() === "all" ? 0 : 100}%)` }} />
+          <div class="board-actions">
+            <div class="seg board-seg">
+              <button classList={{ active: boardMode() === "all" }} onClick={() => setBoardMode("all")} title="Um cartão por projeto, com a situação de cada um"><LayoutGrid size={13} /> Panorama</button>
+              <button classList={{ active: boardMode() === "grid" }} onClick={() => setBoardMode("grid")} title="As conversas rolando ao mesmo tempo, na divisão que você escolher"><MonitorPlay size={13} /> Ao vivo <small class="count">{panes().length}</small></button>
+              <span class="seg-thumb" style={{ transform: `translateX(${boardMode() === "all" ? 0 : 100}%)` }} />
+            </div>
+            <Show when={isTauri}>
+              <button class="ghost-btn" onClick={() => void addProjectFromPicker()}><FolderPlus size={14} /> Adicionar projeto</button>
+            </Show>
           </div>
         }
       />
+      <Show when={real().length && boardMode() === "all"}>
+        <p class="board-hint">Clique num cartão para abrir o projeto. O botão <Columns2 size={11} /> põe o projeto em <strong>Ao vivo</strong>, para acompanhar junto com outros.</p>
+      </Show>
+      <Show when={real().length && boardMode() === "grid"}>
+        <LayoutBar />
+      </Show>
       <Show when={real().length} fallback={<Empty />}>
         <Show when={boardMode() === "all"} fallback={<Grid />}>
           <All />
@@ -90,8 +101,8 @@ export default function Board() {
     };
     const grid = (e: MouseEvent) => {
       e.stopPropagation();
-      if (!toggleGrid(props.id)) return showToast(`A grade já tem ${MAX_PANES} projetos: tire um para pôr este`);
-      if (inGrid(props.id)) showToast(`${p().name} está lado a lado (${panes().length} de ${MAX_PANES})`);
+      if (!toggleGrid(props.id)) return showToast(`Ao vivo já tem ${MAX_PANES} projetos: tire um para pôr este`);
+      if (inGrid(props.id)) showToast(`${p().name} está em Ao vivo (${panes().length} de ${MAX_PANES})`);
     };
     return (
       <div class={`board-card ${st().tone}`} style={{ "--c": a().color }} onClick={open} title="Abrir o projeto">
@@ -101,7 +112,7 @@ export default function Board() {
             <strong>{p().name}</strong>
             <small title={p().path}>{prettyPath(p().path)}</small>
           </div>
-          <button class="board-pin" classList={{ on: inGrid(props.id) }} onClick={grid} title={inGrid(props.id) ? "Tirar do lado a lado" : "Pôr lado a lado com outros (até 4)"}>
+          <button class="board-pin" classList={{ on: inGrid(props.id) }} onClick={grid} title={inGrid(props.id) ? "Tirar do Ao vivo" : "Acompanhar em Ao vivo junto com outros (até 4)"}>
             <Columns2 size={13} />
           </button>
         </div>
@@ -134,8 +145,9 @@ export default function Board() {
   }
 
   function Grid() {
-    const shown = () => (maximized() && panes().includes(maximized()!) ? [maximized()!] : panes());
-    const canAdd = () => !maximized() && panes().length < MAX_PANES && real().length > panes().length;
+    // cada lugar da divisão escolhida mostra um projeto; lugar vazio mostra a lista para escolher
+    const shown = () => (maximized() && panes().includes(maximized()!) ? [maximized()!] : panes().slice(0, slots()));
+    const empty = () => (maximized() ? 0 : Math.max(0, Math.min(slots() - shown().length, real().length - panes().length)));
     return (
       <Show
         when={panes().length}
@@ -143,7 +155,7 @@ export default function Board() {
           <div class="board-grid-empty">
             <Columns2 size={26} />
             <strong>Escolha até {MAX_PANES} projetos para acompanhar ao mesmo tempo</strong>
-            <p>Cada um fica num canto da tela com a conversa rolando ao vivo, e dá para pedir, permitir e parar em qualquer um. Clique nos projetos abaixo ou no botão <Columns2 size={11} /> dos cartões em Todos.</p>
+            <p>Cada um ocupa um pedaço da tela com a conversa rolando ao vivo, e dá para pedir, permitir e parar em qualquer um. Escolha a divisão logo acima e clique nos projetos abaixo.</p>
             <div class="board-quick">
               <For each={real().slice(0, 8)}>
                 {(p) => (
@@ -156,13 +168,46 @@ export default function Board() {
           </div>
         }
       >
-        <div class={`board-grid n${shown().length + (canAdd() ? 1 : 0)}`} classList={{ "with-add": canAdd() }}>
+        <div class={`board-grid lay-${maximized() ? "1" : layout()}`}>
           <For each={shown()}>{(id, i) => <ChatPane pid={id} index={i()} />}</For>
-          <Show when={canAdd()}>
-            <AddPane />
-          </Show>
+          <For each={Array.from({ length: empty() })}>{() => <AddPane />}</For>
         </div>
       </Show>
+    );
+  }
+
+  function LayoutBar() {
+    // projetos escolhidos que não cabem na divisão atual: um clique traz para o último lugar
+    const off = () => panes().slice(slots());
+    return (
+      <div class="layout-bar">
+        <span class="layout-label">Dividir a tela em</span>
+        <div class="layout-picks" role="radiogroup">
+          <For each={layouts}>
+            {(l) => (
+              <button role="radio" aria-checked={layout() === l.id} classList={{ active: layout() === l.id }} title={l.label} onClick={() => { setMaximized(null); setLayout(l.id); }}>
+                <LayoutIcon id={l.id} />
+              </button>
+            )}
+          </For>
+        </div>
+        <Show when={off().length}>
+          <span class="layout-off">
+            Fora da tela:
+            <For each={off()}>
+              {(id) => {
+                const p = () => projects.find((x) => x.id === id);
+                return (
+                  <button class="ghost-btn small" title="Trazer para a tela (troca com o último)" onClick={() => replacePane(panes()[slots() - 1], id)}>
+                    <Show when={p()}>{(pp) => <ProjectIcon id={pp().id} name={pp().name} stack={pp().stack} size={13} />}</Show> {p()?.name}
+                  </button>
+                );
+              }}
+            </For>
+          </span>
+        </Show>
+        <span class="layout-tip">Dica: o botão de tela cheia em cada conversa põe ela em destaque (Esc volta).</span>
+      </div>
     );
   }
 
@@ -171,7 +216,7 @@ export default function Board() {
     return (
       <div class="pane pane-add">
         <Plus size={18} />
-        <strong>Mais um projeto aqui</strong>
+        <strong>Escolha um projeto para este espaço</strong>
         <div class="board-quick">
           <For each={rest()}>
             {(p) => (
@@ -194,5 +239,19 @@ function Empty() {
       <p>{isTauri ? "Adicione uma pasta: ela aparece aqui com o que a IA está fazendo, e dá para acompanhar até 4 ao mesmo tempo." : "No navegador não há projetos de verdade: abra pelo app."}</p>
       <Show when={isTauri}><button class="primary-btn small" onClick={() => void addProjectFromPicker()}><FolderPlus size={13} /> Adicionar projeto</button></Show>
     </div>
+  );
+}
+
+/** Desenho pequeno de cada divisão da tela. */
+function LayoutIcon(props: { id: Layout }) {
+  const r = (x: number, y: number, w: number, h: number) => <rect x={x} y={y} width={w} height={h} rx="1.5" />;
+  return (
+    <svg width="26" height="18" viewBox="0 0 26 18" class="layout-icon" aria-hidden="true">
+      {props.id === "1" && r(1, 1, 24, 16)}
+      {props.id === "2c" && [r(1, 1, 11.5, 16), r(13.5, 1, 11.5, 16)]}
+      {props.id === "2r" && [r(1, 1, 24, 7.5), r(1, 9.5, 24, 7.5)]}
+      {props.id === "3" && [r(1, 1, 13, 16), r(15, 1, 10, 7.5), r(15, 9.5, 10, 7.5)]}
+      {props.id === "4" && [r(1, 1, 11.5, 7.5), r(13.5, 1, 11.5, 7.5), r(1, 9.5, 11.5, 7.5), r(13.5, 9.5, 11.5, 7.5)]}
+    </svg>
   );
 }

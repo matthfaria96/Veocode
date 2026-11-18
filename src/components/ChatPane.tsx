@@ -1,9 +1,10 @@
-import { AlertTriangle, ArrowLeft, ArrowRight, Ban, Check, ChevronDown, Maximize2, Minimize2, PanelRightOpen, SendHorizontal, ShieldCheck, Square, X } from "lucide-solid";
+import { dismissable } from "../dismiss";
+import { AlertTriangle, ArrowLeft, ArrowRight, Ban, Check, ChevronDown, Maximize2, MessageSquarePlus, Minimize2, PanelRightOpen, SendHorizontal, ShieldCheck, Square, X } from "lucide-solid";
 import { createEffect, createMemo, createSignal, For, on, Show } from "solid-js";
 import { accountById } from "../accounts";
 import { maximized, movePane, panes, projectState, replacePane, setMaximized, toggleGrid } from "../board";
-import { answerPermission, chatOf, clearError, sendChat, setInput, stopChat } from "../chat";
-import { feedOf, type FeedItem } from "../feeds";
+import { answerPermission, chatOf, clearError, newChat, sendChat, setInput, stopChat } from "../chat";
+import { clearFeed, feedOf, type FeedItem } from "../feeds";
 import { git } from "../git";
 import { projects, setProjectId, setView } from "../store";
 import ActivityIcon, { kindColor } from "./ActivityIcon";
@@ -40,6 +41,7 @@ export default function ChatPane(props: { pid: string; index: number }) {
   const list = createMemo(() => blocks(feed().items.slice(-120)));
   const [pick, setPick] = createSignal(false);
   let scroller!: HTMLDivElement;
+  let titleBtn!: HTMLButtonElement;
   let stick = true;
 
   // fica colado no fim enquanto a conversa rola, a não ser que a pessoa tenha subido para ler
@@ -60,7 +62,7 @@ export default function ChatPane(props: { pid: string; index: number }) {
   return (
     <section class="pane" classList={{ ask: st().tone === "ask", work: st().tone === "work", max: maximized() === props.pid }} style={{ "--c": a().color }}>
       <header class="pane-head">
-        <button class="pane-title" onClick={() => setPick(!pick())} title="Trocar o projeto deste canto">
+        <button class="pane-title" ref={titleBtn} onClick={() => setPick(!pick())} title="Trocar o projeto deste canto">
           <ProjectIcon id={p().id} name={p().name} stack={p().stack} size={18} />
           <strong>{p().name}</strong>
           <ChevronDown size={12} />
@@ -80,15 +82,16 @@ export default function ChatPane(props: { pid: string; index: number }) {
             <button class="icon-btn small" title="Trocar de lugar com o próximo" disabled={props.index === panes().length - 1} onClick={() => movePane(props.pid, 1)}><ArrowRight size={12} /></button>
           </Show>
           <Show when={panes().length > 1}>
-            <button class="icon-btn small" title={maximized() === props.pid ? "Voltar para a grade" : "Ocupar a tela toda (os outros continuam rodando)"} onClick={() => setMaximized(maximized() === props.pid ? null : props.pid)}>
+            <button class="icon-btn small" title={maximized() === props.pid ? "Voltar para a divisão" : "Pôr em destaque na tela toda (os outros continuam rodando; Esc volta)"} onClick={() => setMaximized(maximized() === props.pid ? null : props.pid)}>
               {maximized() === props.pid ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
             </button>
           </Show>
+          <button class="icon-btn small" title="Nova conversa (a anterior fica guardada no projeto)" disabled={chat().busy} onClick={() => void newChat(props.pid).then(() => clearFeed(props.pid))}><MessageSquarePlus size={12} /></button>
           <button class="icon-btn small" title="Abrir o projeto completo (árvore, editor, terminal)" onClick={openFull}><PanelRightOpen size={12} /></button>
-          <button class="icon-btn small" title="Tirar da grade (a conversa continua)" onClick={() => toggleGrid(props.pid)}><X size={12} /></button>
+          <button class="icon-btn small" title="Tirar do Ao vivo (a conversa continua)" onClick={() => toggleGrid(props.pid)}><X size={12} /></button>
         </span>
         <Show when={pick()}>
-          <div class="menu pop-in pane-menu" onMouseLeave={() => setPick(false)}>
+          <div class="menu pop-in pane-menu" ref={(el) => dismissable(el, () => setPick(false), () => titleBtn)}>
             <small class="menu-title">Mostrar neste canto</small>
             <For each={others()} fallback={<small class="menu-title">Nenhum outro projeto</small>}>
               {(o) => (

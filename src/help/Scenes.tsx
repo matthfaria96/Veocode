@@ -60,60 +60,6 @@ function Inicio() {
   );
 }
 
-function Mapa() {
-  const accounts = [
-    { y: 52, c: C.claude, label: "Claude" },
-    { y: 132, c: C.deep, label: "DeepSeek" },
-  ];
-  const projs = [
-    { y: 28, from: 0, lv: 2 },
-    { y: 92, from: 0, lv: 1 },
-    { y: 156, from: 1, lv: 0 },
-  ];
-  return (
-    <Svg>
-      <For each={projs}>
-        {(p) => {
-          const a = accounts[p.from];
-          const y1 = a.y + 18;
-          const y2 = p.y + 18;
-          return (
-            <>
-              <path d={`M168 ${y1} C 260 ${y1}, 270 ${y2}, 352 ${y2}`} class="il-flow" style={{ "--c": a.c }} />
-              <g transform={`translate(${246} ${(y1 + y2) / 2 - 8})`}>
-                <rect width={44} height={16} rx={8} class="il-pill" style={{ "--c": levels[p.lv][1] }} />
-                <text x={22} y={11.5} class="il-t il-mid il-tiny" style={{ fill: levels[p.lv][1] }}>{levels[p.lv][0]}</text>
-              </g>
-            </>
-          );
-        }}
-      </For>
-      <For each={accounts}>
-        {(a, i) => (
-          <g class="il-rise" style={{ ...rise(i()), "--c": a.c }}>
-            <rect x={28} y={a.y} width={140} height={38} rx={10} class="il-card" />
-            <rect x={38} y={a.y + 8} width={22} height={22} rx={6} class="il-tint" />
-            <text x={49} y={a.y + 23} class="il-t il-mid il-c">{a.label[0]}</text>
-            <text x={68} y={a.y + 17} class="il-t">{a.label}</text>
-            <Bar x={68} y={a.y + 24} w={60} h={4} />
-            <circle cx={156} cy={a.y + 10} r={3.5} class="il-dot il-pulse" />
-          </g>
-        )}
-      </For>
-      <For each={projs}>
-        {(p, i) => (
-          <g class="il-rise" style={rise(i() + 2)}>
-            <rect x={352} y={p.y} width={140} height={36} rx={10} class="il-card" />
-            <FolderOpen x={362} y={p.y + 10} size={16} class="il-ico-dim" />
-            <Bar x={386} y={p.y + 11} w={70} />
-            <Bar x={386} y={p.y + 21} w={44} h={4} />
-          </g>
-        )}
-      </For>
-    </Svg>
-  );
-}
-
 function Painel() {
   // quatro cantos, cada um com uma conta trabalhando; o de baixo à direita pede permissão
   const cells = [
@@ -516,7 +462,6 @@ function Palavras() {
 
 export const scenes: Record<TopicId, () => JSX.Element> = {
   inicio: Inicio,
-  mapa: Mapa,
   painel: Painel,
   projetos: Projetos,
   nivel: Nivel,

@@ -119,7 +119,7 @@ export default function Settings() {
 
       <Section icon={<Sparkles size={15} />} title="Animações" desc="Cursores, entradas das listas, pulsos e gráficos." delay={80}>
         <div class="set-cards" role="radiogroup" aria-label="Animações">
-          <Choice value="completa" current={settings.motion} title="Completas" desc="Tudo se mexe: é assim que o Veocode mostra o que as IAs estão fazendo." onPick={(v) => updateSettings({ motion: v })}>
+          <Choice value="completa" current={settings.motion} title="Completas" desc="Movimento só onde ajuda: o cursor da IA no arquivo que ela mexe, a espera da resposta e os pedidos de permissão. Nada fica piscando à toa." onPick={(v) => updateSettings({ motion: v })}>
             <MotionPreview motion="completa" />
           </Choice>
           <Choice value="reduzida" current={settings.motion} title="Reduzidas" desc="Sem laços nem deslizes: as mudanças aparecem direto. Bom para quem se incomoda com movimento." onPick={(v) => updateSettings({ motion: v })}>
@@ -160,7 +160,9 @@ export default function Settings() {
           <div class="set-row keys">
             <span><kbd>⌘K</kbd> / <kbd>Ctrl+K</kbd> buscar projetos, arquivos e ações</span>
             <span><kbd>F1</kbd> ou <kbd>?</kbd> ajuda</span>
-            <span><kbd>Esc</kbd> fechar janelas</span>
+            <span><kbd>Esc</kbd> fechar janelas e menus</span>
+            <span><kbd>⌘S</kbd> / <kbd>Ctrl+S</kbd> salvar o arquivo agora (o editor também grava sozinho)</span>
+            <span><kbd>F2</kbd> renomear o item escolhido na árvore · clique direito ou <kbd>⋯</kbd> para mais ações</span>
           </div>
           <div class="set-row">
             <div>

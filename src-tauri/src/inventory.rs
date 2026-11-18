@@ -218,6 +218,7 @@ mod tests {
             project: project.map(String::from),
             plugin: None,
             origin: None,
+            group: None,
             path: None,
             enabled: true,
             mcp: Some(McpInfo {
@@ -255,8 +256,8 @@ mod tests {
         let items = probes(&[mcp("pw", "npx", &["-y", "@playwright/mcp"], None), mcp("db", "uvx", &["mcp-server-sqlite"], Some("/p/app")), mcp("x", "npx", &["•••"], None)]);
         assert_eq!(items.len(), 2);
         let groups = vec![
-            AgentGroup { pid: 1, agent: "Claude Code".into(), cwd: Some("/p/app".into()), cpu: 0.0, mem: 0, run_secs: 0, ports: vec![], children: vec![proc_(10, "node npx -y @playwright/mcp"), proc_(11, "uv tool run mcp-server-sqlite")] },
-            AgentGroup { pid: 2, agent: "Claude Code".into(), cwd: Some("/p/outro".into()), cpu: 0.0, mem: 0, run_secs: 0, ports: vec![], children: vec![proc_(20, "node @playwright/mcp"), proc_(21, "mcp-server-sqlite")] },
+            AgentGroup { pid: 1, agent: "Claude Code".into(), cwd: Some("/p/app".into()), cpu: 0.0, mem: 0, run_secs: 0, ports: vec![], host: "Terminal", children: vec![proc_(10, "node npx -y @playwright/mcp"), proc_(11, "uv tool run mcp-server-sqlite")] },
+            AgentGroup { pid: 2, agent: "Claude Code".into(), cwd: Some("/p/outro".into()), cpu: 0.0, mem: 0, run_secs: 0, ports: vec![], host: "Terminal", children: vec![proc_(20, "node @playwright/mcp"), proc_(21, "mcp-server-sqlite")] },
         ];
         let r = mcp_running(&items, &groups);
         assert_eq!(r["pw"].iter().map(|x| x.pid).collect::<Vec<_>>(), [10, 20]);

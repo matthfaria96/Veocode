@@ -1,3 +1,4 @@
+import { dismissable } from "../dismiss";
 import { AlertTriangle, ArrowLeft, Ban, Check, ChevronDown, FileCode2, History, Lock, MessageSquarePlus, Paperclip, SendHorizontal, ShieldCheck, Square, TerminalSquare, X } from "lucide-solid";
 import { createEffect, createMemo, createResource, createSignal, For, Match, on, Show, Switch } from "solid-js";
 import { accessLevels } from "../data/mock";
@@ -9,6 +10,7 @@ import { answerPermission, chatOf, clearError, isClaudeChat, listConversations, 
 import { isTauri } from "../api";
 import AccessLevel from "./AccessLevel";
 import GitPanel from "./GitPanel";
+import TrailPanel from "./TrailPanel";
 import { git, gitTab, setGitTab } from "../git";
 import ActivityIcon, { kindColor } from "./ActivityIcon";
 import { ProviderMark } from "./ui";
@@ -409,11 +411,11 @@ export default function ChatPanel() {
             <History size={15} />
           </button>
         </Show>
-        <button class="level-pill" classList={{ unapplied: unapplied() }} title={unapplied() ? "Ainda não vale no Claude Code: abra para gravar" : "Valendo no Claude Code"} style={{ "--lc": level().color }} onClick={() => setTab("access")}>
+        <button class="level-pill" classList={{ unapplied: unapplied() }} title={unapplied() ? "Nível de acesso: ainda não vale no Claude Code, clique para gravar" : "Nível de acesso: o que a IA pode fazer aqui (clique para mudar)"} style={{ "--lc": level().color }} onClick={() => setTab(tab() === "access" ? "chat" : "access")}>
           {level().short}
         </button>
         <Show when={pickAccount()}>
-          <div class="menu pop-in">
+          <div class="menu pop-in" ref={(el) => dismissable(el, () => setPickAccount(false))}>
             <small class="menu-title">Usar neste projeto</small>
             <For each={accts.list}>
               {(a) => (
@@ -437,10 +439,10 @@ export default function ChatPanel() {
       </div>
 
       <div class="seg three">
-        <button classList={{ active: tab() === "chat" }} onClick={() => setTab("chat")}>Agente</button>
-        <button classList={{ active: tab() === "access" }} onClick={() => setTab("access")}>Acesso</button>
+        <button classList={{ active: tab() === "chat" || tab() === "access" }} onClick={() => setTab("chat")} title="Conversa com a IA e o que ela pode fazer">Agente</button>
+        <button classList={{ active: tab() === "trail" }} onClick={() => setTab("trail")} title="O que a IA deixou: pastas fora do projeto, sobras, sites consultados e o que instalou">Rastro</button>
         <button classList={{ active: tab() === "git" }} onClick={() => setTab("git")} title="Git e GitHub deste projeto">Git <GitBadge /></button>
-        <span class="seg-thumb" style={{ transform: `translateX(${["chat", "access", "git"].indexOf(tab()) * 100}%)` }} />
+        <span class="seg-thumb" style={{ transform: `translateX(${(tab() === "access" ? 0 : ["chat", "trail", "git"].indexOf(tab())) * 100}%)` }} />
       </div>
 
       <Switch>
@@ -460,7 +462,7 @@ export default function ChatPanel() {
               }
             >
               <Show when={ws.events.length === 0}>
-                <div class="chat-empty">O agente vai começar em instantes…</div>
+                <div class="chat-empty">{ws.paused ? "Simulação parada: aperte Assistir (em cima do editor) para ver um agente de exemplo trabalhando." : "O agente de exemplo vai começar em instantes…"}</div>
               </Show>
               <For each={userMsgs()}>{(m) => <div class="bubble user pop-in">{m.title}</div>}</For>
               <Show when={work().length > 0}>
@@ -488,7 +490,7 @@ export default function ChatPanel() {
               <Show when={done()}>
                 {(d) => (
                   <div class="bubble agent pop-in">
-                    <strong>{d().title}.</strong> {d().detail}. Quer que eu ligue o Raio-X aos dados reais do disco?
+                    <strong>{d().title}.</strong> {d().detail}. Quer ver os dados reais do disco em Computador → Espaço e memória?
                   </div>
                 )}
               </Show>
@@ -498,7 +500,13 @@ export default function ChatPanel() {
         </Match>
         <Match when={tab() === "access"}>
           <div class="chat-scroll">
+            <button class="back-link" onClick={() => setTab("chat")}><ArrowLeft size={14} /> Voltar para a conversa</button>
             <AccessLevel projectId={project().id} />
+          </div>
+        </Match>
+        <Match when={tab() === "trail"}>
+          <div class="chat-scroll">
+            <TrailPanel />
           </div>
         </Match>
         <Match when={tab() === "git"}>

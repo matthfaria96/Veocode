@@ -3,9 +3,9 @@ import { createStore, reconcile } from "solid-js/store";
 import { demoProject, type Project } from "./data/mock";
 import { api, prettyPath, type FileContent, type DirListing, type ProjectInfo } from "./api";
 
-export type View = "home" | "board" | "workspace" | "accounts" | "system" | "skills" | "inventory" | "settings" | "livre";
+export type View = "board" | "workspace" | "accounts" | "system" | "inventory" | "settings" | "livre";
 
-export const [view, setView] = createSignal<View>("home");
+export const [view, setView] = createSignal<View>("board");
 export const [paletteOpen, setPaletteOpen] = createSignal(false);
 export const [helpOpen, setHelpOpen] = createSignal(false);
 export const [toast, setToast] = createSignal<string | null>(null);
@@ -45,7 +45,8 @@ export async function loadProjects() {
   try {
     const list = await api.listProjects();
     list.forEach((i) => absPaths.set(i.id, i.path));
-    setProjects(reconcile([structuredClone(demoProject), ...list.map(fromInfo)], { key: "id" }));
+    // a simulação só aparece enquanto não há nenhuma pasta de verdade (para não confundir com o real)
+    setProjects(reconcile(list.length ? list.map(fromInfo) : [structuredClone(demoProject)], { key: "id" }));
     if (list.length > 0) setProjectId(list[0].id);
   } catch (e) {
     showToast(`Erro ao carregar projetos: ${e}`);
@@ -54,12 +55,16 @@ export async function loadProjects() {
 
 /** Abre o seletor de pastas e adiciona a escolhida como projeto. */
 export async function addProjectFromPicker() {
+  const path = await api.pickFolder().catch(() => null);
+  if (path) await addProjectPath(path);
+}
+
+/** Põe uma pasta como projeto (ou só abre, se já é) e vai para a tela Projetos. */
+export async function addProjectPath(path: string) {
   try {
-    const path = await api.pickFolder();
-    if (!path) return;
     const info = await api.addProject(path);
     absPaths.set(info.id, info.path);
-    if (!projects.some((p) => p.id === info.id)) setProjects(projects.length, fromInfo(info));
+    if (!projects.some((p) => p.id === info.id)) setProjects((l) => [...l.filter((p) => !p.demo), fromInfo(info)]);
     setProjectId(info.id);
     setView("workspace");
     showToast(`${info.name} adicionado em modo Leitura`);
@@ -71,8 +76,9 @@ export async function addProjectFromPicker() {
 export async function removeProject(id: string) {
   try {
     await api.removeProject(id);
-    if (projectId() === id) setProjectId("demo");
-    setProjects((list) => list.filter((p) => p.id !== id));
+    const rest = projects.filter((p) => p.id !== id && !p.demo);
+    setProjects(rest.length ? rest : [structuredClone(demoProject)]);
+    if (projectId() === id) setProjectId(rest[0]?.id ?? "demo");
     showToast("Removido da lista (a pasta continua no disco)");
   } catch (e) {
     showToast(String(e));

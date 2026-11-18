@@ -67,6 +67,9 @@ pub struct Item {
     pub plugin: Option<String>,
     /// De onde veio, em palavras: "sincronizada do claude.ai", "plugin figma"…
     pub origin: Option<String>,
+    /// Programa que instalou junto com outras (lista própria na pasta skills/, como
+    /// `.chatcut-desktop-skills.json`): o nome dele, para a tela agrupar.
+    pub group: Option<String>,
     /// Arquivo para abrir/mostrar (SKILL.md, .md do comando, .mcp.json…).
     pub path: Option<String>,
     pub enabled: bool,
@@ -259,6 +262,7 @@ impl Ctx<'_> {
             project: self.project.map(str::to_string),
             plugin: self.plugin.map(str::to_string),
             origin,
+            group: None,
             path: Some(path.to_string_lossy().to_string()),
             enabled: self.enabled,
             mcp: None,
@@ -277,10 +281,41 @@ fn weigh(it: &mut Item, text: &str, fm: &HashMap<String, String>, file: &Path) {
     it.invoke_tokens = tokens(len);
 }
 
+/// Listas que programas deixam na pasta skills/ dizendo quais pastas são deles
+/// (ex.: `.chatcut-desktop-skills.json` com `{"entries": {"chatcut-music": "…"}}`).
+/// Devolve pasta → nome do programa ("chatcut-desktop").
+fn installer_lists(dir: &Path) -> HashMap<String, String> {
+    let mut out = HashMap::new();
+    let Ok(rd) = fs::read_dir(dir) else { return out };
+    for e in rd.flatten() {
+        let name = e.file_name().to_string_lossy().to_string();
+        if !name.starts_with('.') || !name.ends_with(".json") || name.len() > 80 {
+            continue;
+        }
+        let Ok(meta) = e.metadata() else { continue };
+        if !meta.is_file() || meta.len() > 512 * 1024 {
+            continue;
+        }
+        let Ok(v) = fs::read_to_string(e.path()).map(|t| serde_json::from_str::<serde_json::Value>(&t)) else { continue };
+        let Ok(v) = v else { continue };
+        let owner = name.trim_start_matches('.').trim_end_matches(".json").trim_end_matches("-skills").to_string();
+        let keys: Vec<String> = match v.get("entries").or_else(|| v.get("skills")) {
+            Some(serde_json::Value::Object(m)) => m.keys().cloned().collect(),
+            Some(serde_json::Value::Array(a)) => a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect(),
+            _ => continue,
+        };
+        for k in keys {
+            out.insert(k, owner.clone());
+        }
+    }
+    out
+}
+
 /// skills/, commands/ e agents/ de uma pasta `.claude` (de conta, projeto ou plugin).
 fn scan_claude_dir(base: &Path, skills_dirs: &[PathBuf], ctx: &Ctx, out: &mut Vec<Item>) {
     let mut seen_synced = HashSet::new();
     for sd in skills_dirs {
+        let owners = installer_lists(sd);
         let mut found = Vec::new();
         find_skills(sd, 3, &mut found);
         for md in found {
@@ -294,6 +329,7 @@ fn scan_claude_dir(base: &Path, skills_dirs: &[PathBuf], ctx: &Ctx, out: &mut Ve
             let origin = if synced { Some("sincronizada do claude.ai".to_string()) } else { fm.get("name").filter(|n| **n != folder).map(|n| format!("chamada de “{n}”")) };
             let mut it = ctx.item(Kind::Skill, folder, describe(&text, &fm), origin, &md);
             weigh(&mut it, &text, &fm, &md);
+            it.group = owners.get(&it.name).cloned();
             if synced && ctx.plugin.is_none() {
                 it.manage = "synced";
             }
@@ -388,6 +424,7 @@ fn mcp_item(name: &str, v: &Value, defined_in: &Path, ctx: &Ctx, enabled: bool, 
         project: ctx.project.map(str::to_string),
         plugin: ctx.plugin.map(str::to_string),
         origin: None,
+        group: None,
         path: Some(defined_in.to_string_lossy().to_string()),
         enabled: enabled && ctx.enabled,
         mcp: Some(McpInfo {

@@ -68,7 +68,9 @@ export function startAgentSim(root: HTMLElement) {
   const agentColor = () => accountById(currentProject().accountId).color;
 
   async function run() {
+    const paused = ws.paused; // começa parada até a pessoa pedir para assistir
     resetWorkspace();
+    setWs("paused", paused);
     setWs("running", true);
     setWs("cursors", [{ id: "main", label: agentLabel(), color: agentColor(), x: 40, y: 40, visible: false, clicking: false, main: true }]);
     await wait(500);

@@ -53,6 +53,20 @@ export const api = {
     isTauri ? invoke("update_project", { projectId, ...change }) : needsApp(),
   listDir: (projectId: string, path: string): Promise<DirListing> => (isTauri ? invoke("list_dir", { projectId, path }) : needsApp()),
   readFile: (projectId: string, path: string): Promise<FileContent> => (isTauri ? invoke("read_file", { projectId, path }) : needsApp()),
+  /** Grava o texto num arquivo que já existe. Devolve o tamanho gravado. */
+  writeFile: (projectId: string, path: string, text: string): Promise<number> => (isTauri ? invoke("write_file", { projectId, path, text }) : needsApp()),
+  /** Cria um arquivo vazio ou uma pasta dentro de `parent` ("" = raiz). Devolve o caminho novo. */
+  createEntry: (projectId: string, parent: string, name: string, dir: boolean): Promise<string> =>
+    isTauri ? invoke("create_entry", { projectId, parent, name, dir }) : needsApp(),
+  renameEntry: (projectId: string, path: string, name: string): Promise<string> => (isTauri ? invoke("rename_entry", { projectId, path, name }) : needsApp()),
+  trashEntry: (projectId: string, path: string): Promise<void> => (isTauri ? invoke("trash_entry", { projectId, path }) : needsApp()),
+  projectTrail: (projectId: string): Promise<Trail> => (isTauri ? invoke("project_trail", { projectId }) : needsApp()),
+  trailLink: (projectId: string, path: string): Promise<void> => (isTauri ? invoke("trail_link", { projectId, path }) : needsApp()),
+  trailForget: (projectId: string, path: string): Promise<void> => (isTauri ? invoke("trail_forget", { projectId, path }) : needsApp()),
+  /** Todos os arquivos do projeto (para a busca). */
+  listFiles: (projectId: string): Promise<string[]> => (isTauri ? invoke("list_files", { projectId }) : Promise.resolve([])),
+  /** Abre com o programa padrão do sistema. */
+  openEntry: (projectId: string, path: string): Promise<void> => (isTauri ? invoke("open_entry", { projectId, path }) : needsApp()),
 
   /** Abre o seletor de pastas do sistema. Devolve null se a pessoa cancelar. */
   pickFolder: async (): Promise<string | null> => {
@@ -129,6 +143,23 @@ export interface Machine {
   disk: string | null;
   ports: string | null;
   canToggle: boolean;
+  /** pasta do projeto que criou o container (Docker Compose) */
+  project?: string | null;
+}
+
+export interface LocalModel {
+  tool: "Ollama" | "LM Studio" | "Hugging Face";
+  name: string;
+  size: number;
+  path: string;
+  removeCmd: string | null;
+  project: string | null;
+  when: string | null;
+}
+
+export interface ModelReport {
+  models: LocalModel[];
+  tools: string[];
 }
 
 export interface MachineReport {
@@ -155,6 +186,8 @@ export interface AgentGroup {
   runSecs: number;
   ports: number[];
   children: Proc[];
+  /** onde está aberto: "VS Code", "Cursor", "app do Claude", "Veocode", "Terminal" ou "outro" */
+  host?: string;
 }
 
 export const xrayApi = {
@@ -163,6 +196,7 @@ export const xrayApi = {
   trash: (id: string): Promise<void> => invoke("xray_trash", { id }),
   installs: (): Promise<InstallReport> => invoke("xray_installs"),
   machines: (): Promise<MachineReport> => invoke("xray_machines"),
+  models: (): Promise<ModelReport> => invoke("xray_models"),
   toggleMachine: (engine: string, id: string, start: boolean): Promise<void> => invoke("xray_toggle_machine", { engine, id, start }),
   processes: (): Promise<AgentGroup[]> => invoke("xray_processes"),
   kill: (pid: number): Promise<void> => invoke("xray_kill", { pid }),
@@ -179,4 +213,47 @@ export async function copyText(text: string) {
     document.execCommand("copy");
     ta.remove();
   }
+}
+
+// ---------------------------------------------------------------- Rastro do projeto (src-tauri/src/trail.rs)
+
+export interface TrailOutside {
+  path: string;
+  exists: boolean;
+  isDir: boolean;
+  bytes: number;
+  files: number;
+  how: string;
+  last: number;
+  manual: boolean;
+  temporary: boolean;
+}
+export interface TrailSource {
+  kind: "pagina" | "busca" | "conexao";
+  label: string;
+  examples: string[];
+  count: number;
+  last: number;
+}
+export interface TrailLeftover {
+  path: string;
+  kind: "depuracao" | "copia" | "temporario" | "ia";
+  why: string;
+  bytes: number;
+  isDir: boolean;
+  modified: number;
+}
+export interface TrailModel {
+  name: string;
+  tool: "ollama" | "huggingface" | "lmstudio";
+  command: string;
+  last: number;
+}
+export interface Trail {
+  outside: TrailOutside[];
+  sources: TrailSource[];
+  leftovers: TrailLeftover[];
+  leftoversBytes: number;
+  models: TrailModel[];
+  sessions: number;
 }
