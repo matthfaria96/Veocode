@@ -1,8 +1,7 @@
-import { dismissable } from "../dismiss";
 import { AlertTriangle, Eye, ArrowLeft, Ban, Check, ChevronDown, FileCode2, History, MessageSquarePlus, Pencil, Paperclip, Plus, SendHorizontal, ShieldCheck, Square, TerminalSquare, X } from "lucide-solid";
 import { createEffect, createMemo, createResource, createSignal, For, Match, on, Show, Switch } from "solid-js";
 import { accessLevels } from "../data/mock";
-import { accountById, accountSub, accts } from "../accounts";
+import { accountById } from "../accounts";
 import { currentProject, showToast, ws, type ActivityEvent } from "../store";
 import { seenAgent } from "../agentFeed";
 import { acc, loadAccess, openClaude } from "../access";
@@ -18,15 +17,14 @@ import { panelAt, setPanelAt } from "../layoutMode";
 import BottomPanel from "./BottomPanel";
 import { MicButton } from "./Mic";
 import { stepsSummary } from "../steps";
-import { LimitChip, LimitHitCard, requestSwitch, UsageRing } from "./Limits";
+import { LimitHitCard, requestSwitch, UsageRing } from "./Limits";
 import { limitHit } from "../limits";
 import { listeningTo, voiceKey } from "../voice";
-import { claudeModels, efforts, niceModel, prefsLabel, prefsOf, setPref } from "../chatPrefs";
 import { attsOf, dropPid, pasteFiles, pickFiles } from "../attachments";
 import AttachBar from "./AttachBar";
 import { MediaStrip, SentThumbs } from "./Media";
 import ActivityIcon, { kindColor } from "./ActivityIcon";
-import { ProviderMark } from "./ui";
+import { AgentChipButton, AgentMenu } from "./AgentMenu";
 import MsgTools, { focusComposer } from "./MsgTools";
 import Markdown from "./Markdown";
 
@@ -347,63 +345,6 @@ function ChatTail() {
   );
 }
 
-/** "claude-opus-5-5" vira "Opus 5.5" (o resto fica como está). */
-
-/** Conta, modelo e força do raciocínio: abre para cima, saindo da caixa de mensagem. */
-function AgentMenu(props: { onClose: () => void }) {
-  const project = currentProject;
-  const account = () => accountById(project().accountId);
-  return (
-    <div class="menu pop-in agent-menu" ref={(el) => dismissable(el, props.onClose)}>
-      <small class="menu-title">Conta neste projeto</small>
-      <For each={accts.list}>
-        {(a) => (
-          <button
-            class="menu-item"
-            classList={{ sel: a.id === account().id }}
-            onClick={() => {
-              if (a.id === account().id) return;
-              props.onClose();
-              requestSwitch(project().id, a.id);
-            }}
-          >
-            <ProviderMark id={a.id} size={20} />
-            <span>{a.label}</span>
-            <small>{accountSub(a)}</small>
-            <LimitChip id={a.id} />
-            <Show when={a.id === account().id}><Check size={14} class="menu-check" /></Show>
-          </button>
-        )}
-      </For>
-      <Show when={account().provider === "claude"}>
-        <div class="menu-sep" />
-        <small class="menu-title">Modelo</small>
-        <div class="agent-chips">
-          <For each={claudeModels}>
-            {(m) => (
-              <button class="agent-chip" classList={{ on: (prefsOf(project().id).model ?? null) === m.id }} title={m.id ? `${m.label}: ${m.hint}` : `Usa o modelo da conta (${accountSub(account())})`} onClick={() => setPref(project().id, { model: m.id })}>
-                {m.label}
-              </button>
-            )}
-          </For>
-        </div>
-        <small class="menu-title">Força do raciocínio</small>
-        <div class="agent-chips effort">
-          <For each={efforts}>
-            {(e, i) => (
-              <button class="agent-chip" classList={{ on: (prefsOf(project().id).effort ?? null) === e.id }} data-lvl={i()} title={e.id ? `Pensa ${e.label.toLowerCase()}: ${i() <= 2 ? "responde mais rápido e gasta menos" : "pensa mais antes de responder e gasta mais"}` : "Usa o padrão do Claude Code"} onClick={() => setPref(project().id, { effort: e.id })}>
-                <Show when={e.id}><i class="effort-bars"><b /><b /><b /><b /><b /></i></Show>
-                {e.label}
-              </button>
-            )}
-          </For>
-        </div>
-        <p class="agent-menu-note">Vale a partir da próxima mensagem; a conversa continua de onde parou.</p>
-      </Show>
-    </div>
-  );
-}
-
 /** Caixa de mensagem: Enter envia, Shift+Enter quebra linha. */
 function Composer(props: { onLevel: () => void; levelOn?: boolean }) {
   const p = currentProject;
@@ -482,12 +423,7 @@ function Composer(props: { onLevel: () => void; levelOn?: boolean }) {
         <button class="icon-btn" classList={{ on: attsOf(k()).length > 0 }} disabled={demo()} title="Anexar arquivos ou imagens (ou cole com ⌘V, ou arraste do Finder)" onClick={() => void pickFiles(k())}>
           <Paperclip size={14} />
         </button>
-        <button class="agent-chip-btn" classList={{ on: menu() }} title="Conta, modelo e força do raciocínio deste projeto" onClick={() => setMenu(!menu())}>
-          <ProviderMark id={a().id} size={18} />
-          <span class="agent-chip-name">{a().label}</span>
-          <small>{niceModel(a().provider === "claude" ? prefsLabel(p().id) ?? accountSub(a()) : accountSub(a()))}</small>
-          <ChevronDown size={12} />
-        </button>
+        <AgentChipButton prefKey={p().id} accountId={a().id} open={menu()} title="Conta, modelo e força do raciocínio deste projeto" onClick={() => setMenu(!menu())} />
         <button class="composer-chip" classList={{ on: props.levelOn, unapplied: unapplied() }} style={{ "--lc": level().color }} title={unapplied() ? "Nível de acesso: ainda não vale no Claude Code, clique para gravar" : "Nível de acesso: o que a IA pode fazer aqui (clique para mudar)"} onClick={props.onLevel}>
           <ShieldCheck size={12} /> {level().short}
         </button>
@@ -508,7 +444,7 @@ function Composer(props: { onLevel: () => void; levelOn?: boolean }) {
         </Show>
       </div>
       <Show when={menu()}>
-        <AgentMenu onClose={() => setMenu(false)} />
+        <AgentMenu prefKey={p().id} accountId={a().id} title="Conta neste projeto" onPick={(id) => requestSwitch(p().id, id)} onClose={() => setMenu(false)} />
       </Show>
     </div>
     </>

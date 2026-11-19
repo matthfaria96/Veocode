@@ -1,7 +1,6 @@
-import { dismissable } from "../dismiss";
-import { AlertTriangle, ArrowLeft, Ban, Check, ChevronDown, Eye, History, HardDrive, MessageSquarePlus, MessagesSquare, Paperclip, SendHorizontal, ShieldCheck, Square, X } from "lucide-solid";
+import { AlertTriangle, ArrowLeft, Ban, Check, Eye, History, HardDrive, MessageSquarePlus, MessagesSquare, Paperclip, SendHorizontal, ShieldCheck, Square, X } from "lucide-solid";
 import { createEffect, createResource, createSignal, For, Match, on, onMount, Show, Switch } from "solid-js";
-import { accountById, accountSub, accts } from "../accounts";
+import { accountById, accts } from "../accounts";
 import type { ActivityEvent } from "../store";
 import { isTauri } from "../api";
 import { settings } from "../settings";
@@ -17,8 +16,8 @@ import Markdown from "../components/Markdown";
 import { ProviderMark } from "../components/ui";
 import MsgTools, { focusComposer } from "../components/MsgTools";
 import { MicButton } from "../components/Mic";
-import { LimitChip, LimitHitCard, UsageRing } from "../components/Limits";
-import { niceModel } from "../chatPrefs";
+import { LimitHitCard, UsageRing } from "../components/Limits";
+import { AgentChipButton, AgentMenu } from "../components/AgentMenu";
 import { limitHit } from "../limits";
 import { listeningTo, voiceKey } from "../voice";
 
@@ -36,33 +35,6 @@ const ideas = {
     "Quais projetos de código eu tenho em Documents?",
   ],
 };
-
-/** Menu da conta, aberto pelo botão da IA na barra da caixa (igual ao dos projetos). */
-function AccountMenu(props: { onClose: () => void }) {
-  return (
-    <div class="menu pop-in agent-menu" ref={(el) => dismissable(el, props.onClose)}>
-      <small class="menu-title">Conta no Chat livre</small>
-      <For each={accts.list} fallback={<small class="inv-menu-empty">Nenhuma conta ainda: adicione em Contas e IAs</small>}>
-        {(x) => (
-          <button
-            class="menu-item"
-            classList={{ sel: x.id === freeAccountId() }}
-            onClick={() => {
-              props.onClose();
-              if (x.id !== freeAccountId()) void setFreeAccount(x.id);
-            }}
-          >
-            <ProviderMark id={x.id} size={20} />
-            <span>{x.label}</span>
-            <small>{accountSub(x)}</small>
-            <LimitChip id={x.id} />
-            <Show when={x.id === freeAccountId()}><Check size={14} class="menu-check" /></Show>
-          </button>
-        )}
-      </For>
-    </div>
-  );
-}
 
 function Empty() {
   const list = () => (settings.freePc ? ideas.pc : ideas.conversa);
@@ -327,12 +299,7 @@ export default function Livre() {
               <button class="icon-btn" classList={{ on: attsOf(LIVRE).length > 0 }} title="Anexar arquivos ou imagens (ou cole com ⌘V, ou arraste do Finder)" onClick={() => void pickFiles(LIVRE)}>
                 <Paperclip size={14} />
               </button>
-              <button class="agent-chip-btn" classList={{ on: menu() }} disabled={livre.busy} title={livre.busy ? "Espere a resposta terminar para trocar" : "Conta do Chat livre"} onClick={() => setMenu(!menu())}>
-                <ProviderMark id={a().id} size={18} />
-                <span class="agent-chip-name">{a().label}</span>
-                <small>{niceModel(accountSub(a()))}</small>
-                <ChevronDown size={12} />
-              </button>
+              <AgentChipButton prefKey={LIVRE} accountId={a().id} open={menu()} disabled={livre.busy} title={livre.busy ? "Espere a resposta terminar para trocar" : "Conta, modelo e força do raciocínio do Chat livre"} onClick={() => setMenu(!menu())} />
               <button
                 class="composer-chip"
                 style={{ "--lc": settings.freePc ? "var(--info)" : "var(--text-2)" }}
@@ -361,7 +328,7 @@ export default function Livre() {
               </Show>
             </div>
             <Show when={menu()}>
-              <AccountMenu onClose={() => setMenu(false)} />
+              <AgentMenu prefKey={LIVRE} accountId={a().id} title="Conta no Chat livre" onPick={(id) => void setFreeAccount(id)} onClose={() => setMenu(false)} />
             </Show>
           </div>
           <div class="livre-foot">
