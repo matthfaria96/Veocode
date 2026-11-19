@@ -85,8 +85,6 @@ export const accountSub = (a: Account) => {
   return a.model ?? s?.models[0] ?? s?.plan ?? providers[a.provider].name;
 };
 
-export const isWorking = (id: string) => !!accts.status[id]?.active;
-
 // ---------------------------------------------------------------- dados fictícios (navegador)
 
 const mockList = (): Account[] =>
@@ -169,9 +167,48 @@ export async function removeAccount(id: string) {
   setAccts("list", (l) => l.filter((a) => a.id !== id));
 }
 
+/** Abre o Claude Code no terminal com esta conta. */
 export async function loginAccount(id: string) {
   if (!isTauri) needsApp();
   await invoke("account_login", { id });
+}
+
+// ---------------------------------------------------------------- login pelo navegador
+
+/** Logins em andamento: o endereço da página (quando o Claude Code já mandou) e desde quando. */
+export const [logins, setLogins] = createStore<Record<string, { url: string | null; since: number } | undefined>>({});
+let urlListen: Promise<unknown> | null = null;
+
+/**
+ * Login pelo navegador, pelo próprio Claude Code (`claude auth login`): a página da Anthropic abre,
+ * a pessoa entra e o login fica no chaveiro do sistema. Resolve quando termina.
+ */
+export async function browserLogin(id: string): Promise<boolean> {
+  setLogins(id, { url: null, since: Date.now() });
+  if (!isTauri) return new Promise(() => void 0); // demonstração: fica esperando até cancelar
+  urlListen ??= import("@tauri-apps/api/event").then(({ listen }) =>
+    listen<{ id: string; url: string }>("login-url", (e) => {
+      // a primeira é a que abre no navegador; a segunda é a de "copie o código"
+      if (logins[e.payload.id]) setLogins(e.payload.id, "url", (u) => u ?? e.payload.url);
+    }),
+  );
+  try {
+    await invoke("account_browser_login", { id });
+    setAccts("checking", id, false);
+    await checkAccount(id);
+    return true;
+  } finally {
+    setLogins(id, undefined);
+  }
+}
+
+export async function sendLoginCode(id: string, code: string) {
+  await invoke("account_login_code", { id, code });
+}
+
+export function cancelLogin(id: string) {
+  setLogins(id, undefined);
+  if (isTauri) void invoke("account_login_cancel", { id });
 }
 
 // ---------------------------------------------------------------- formatação

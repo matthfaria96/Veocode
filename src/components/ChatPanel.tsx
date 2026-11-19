@@ -1,21 +1,30 @@
 import { dismissable } from "../dismiss";
-import { AlertTriangle, ArrowLeft, Ban, Check, ChevronDown, FileCode2, History, MessageSquarePlus, Paperclip, Plus, SendHorizontal, ShieldCheck, Square, TerminalSquare, X } from "lucide-solid";
+import { AlertTriangle, Eye, ArrowLeft, Ban, Check, ChevronDown, FileCode2, History, MessageSquarePlus, Pencil, Paperclip, Plus, SendHorizontal, ShieldCheck, Square, TerminalSquare, X } from "lucide-solid";
 import { createEffect, createMemo, createResource, createSignal, For, Match, on, Show, Switch } from "solid-js";
 import { accessLevels } from "../data/mock";
 import { accountById, accountSub, accts } from "../accounts";
-import { currentProject, setProjectAccount, showToast, ws, type ActivityEvent } from "../store";
+import { currentProject, showToast, ws, type ActivityEvent } from "../store";
 import { seenAgent } from "../agentFeed";
 import { acc, loadAccess, openClaude } from "../access";
-import { answerPermission, chatOf, clearError, deleteConvos, isClaudeChat, listConversations, newChat, openConversation, sendChat, setAttach, setInput, stopChat, type Convo } from "../chat";
+import { answerPermission, chatOf, clearError, deleteConvos, listConversations, ofChat, resendEdited, sendChat, setAttach, setInput, stopChat, type Convo } from "../chat";
+import { activeKey, nameFromPrompt, newTab, openInTab, syncRunning, tabsOf, wakeActive } from "../convTabs";
+import { ConvTabsBar, EconomyHint } from "./ConvBar";
+import { MemoryPanel } from "./Memory";
 import { isTauri } from "../api";
 import AccessLevel from "./AccessLevel";
-import GitPanel from "./GitPanel";
-import TrailPanel from "./TrailPanel";
 import ConvoRow from "./ConvoRow";
-import { git, gitTab, setGitTab } from "../git";
-import { claudeModels, efforts, prefsLabel, prefsOf, setPref } from "../chatPrefs";
+import { gitTab, setChatTab } from "../git";
+import { panelAt, setPanelAt } from "../layoutMode";
+import BottomPanel from "./BottomPanel";
+import { MicButton } from "./Mic";
+import { stepsSummary } from "../steps";
+import { LimitChip, LimitHitCard, requestSwitch, UsageRing } from "./Limits";
+import { limitHit } from "../limits";
+import { listeningTo, voiceKey } from "../voice";
+import { claudeModels, efforts, niceModel, prefsLabel, prefsOf, setPref } from "../chatPrefs";
 import { attsOf, dropPid, pasteFiles, pickFiles } from "../attachments";
 import AttachBar from "./AttachBar";
+import { MediaStrip, SentThumbs } from "./Media";
 import ActivityIcon, { kindColor } from "./ActivityIcon";
 import { ProviderMark } from "./ui";
 import MsgTools, { focusComposer } from "./MsgTools";
@@ -80,14 +89,25 @@ const fileName = (p: string) => p.slice(p.lastIndexOf("/") + 1);
 type Block = { t: "user" | "say" | "done"; e: ActivityEvent } | { t: "work"; items: ActivityEvent[] };
 
 /** Conversa real: pedidos, respostas e os passos do Claude (lidos do histórico dele). */
-function RealConversation() {
-  const p = currentProject;
+function RealConversation(props: { events: () => ActivityEvent[]; tail?: boolean }) {
+  // editar um pedido já mandado (como no Claude): o texto volta na própria bolha
+  const key = () => activeKey(currentProject().id);
+  const [editing, setEditing] = createSignal<number | null>(null);
+  const [draft, setDraft] = createSignal("");
+  const clean = (t: string) => t.replace(/\n📎[^\n]*/g, "").trim();
+  const startEdit = (e: ActivityEvent) => (setDraft(clean(e.title)), setEditing(e.id));
+  const lastUser = () => [...props.events()].reverse().find((e) => e.kind === "user");
+  const confirmEdit = async (e: ActivityEvent) => {
+    const text = draft().trim();
+    if (!text) return;
+    setEditing(null);
+    await resendEdited(key(), e, text);
+  };
   // chaves estáveis por bloco: o DOM de cada bloco não é recriado a cada leitura
   const blocks = createMemo(() => {
     const map = new Map<string, Block>();
     let work: string | null = null;
-    for (const e of ws.events) {
-      if (e.agent === "disco") continue;
+    for (const e of props.events()) {
       if (e.kind === "user" || e.kind === "say" || e.kind === "done") {
         map.set(`${e.kind}:${e.id}`, { t: e.kind, e });
         work = null;
@@ -102,62 +122,107 @@ function RealConversation() {
   });
   const keys = createMemo(() => [...blocks().keys()].slice(-16), undefined, { equals: (a, b) => a.length === b.length && a.every((k, i) => k === b[i]) });
 
-  const a = () => accountById(p().accountId);
-  const chat = () => chatOf(p().id);
-  const head = () =>
-    isClaudeChat(p().id)
-      ? ws.running ? "O Claude está trabalhando nesta pasta" : chat().conv?.title ?? "Claude nesta pasta"
-      : chat().busy ? `${a().label} está trabalhando nesta pasta` : chat().conv?.title ?? `${a().label} nesta pasta`;
 
   return (
     <>
-      <div class="live-head">
-        <span class="work-dot" classList={{ live: ws.running || chat().busy }} />
-        <span class="live-title" title={chat().conv ? `Conversa retomada: ${chat().conv!.title}` : undefined}>{head()}</span>
-        <button class="icon-btn small" title="Nova conversa" disabled={chat().busy} onClick={() => newChat(p().id)}>
-          <MessageSquarePlus size={13} />
-        </button>
-        <Show when={isClaudeChat(p().id)}>
-          <button class="icon-btn small" title="Abrir o Claude no Terminal" onClick={() => openClaude(p().id)}>
-            <TerminalSquare size={13} />
-          </button>
-        </Show>
-      </div>
       <For each={keys()}>
         {(k) => {
           const b = () => blocks().get(k);
           return (
             <Switch>
-              <Match when={b()?.t === "user" && (b() as { e: ActivityEvent }).e}>{(e) => <div class="bubble user pop-in">{e().title}<MsgTools text={e().title} onReuse={() => (setInput(currentProject().id, e().title), focusComposer(document.querySelector(".chat-panel")))} /></div>}</Match>
-              <Match when={b()?.t === "say" && (b() as { e: ActivityEvent }).e}>
-                {(e) => <div class="bubble agent pop-in say md-bubble" style={{ "--c": e().color ?? "var(--accent)" }}><Markdown text={e().title} /><MsgTools text={e().title} /></div>}
+              <Match when={b()?.t === "user" && (b() as { e: ActivityEvent }).e}>
+                {(e) => (
+                  <Show
+                    when={editing() === e().id}
+                    fallback={
+                      <div class="bubble user pop-in">
+                        {e().title}
+                        <SentThumbs text={e().title} />
+                        <MsgTools
+                          text={e().title}
+                          onEdit={props.tail && e().anchor !== undefined ? () => startEdit(e()) : undefined}
+                          onReuse={() => (setInput(key(), e().title), focusComposer(document.querySelector(".chat-panel")))}
+                        />
+                      </div>
+                    }
+                  >
+                    <div class="bubble user editing pop-in">
+                      <textarea
+                        value={draft()}
+                        rows={Math.min(10, Math.max(2, draft().split("\n").length))}
+                        ref={(el) => requestAnimationFrame(() => (el.focus(), el.setSelectionRange(el.value.length, el.value.length)))}
+                        onInput={(ev) => setDraft(ev.currentTarget.value)}
+                        onKeyDown={(ev) => {
+                          if (ev.key === "Escape") (ev.preventDefault(), setEditing(null));
+                          if (ev.key === "Enter" && !ev.shiftKey && !ev.isComposing) (ev.preventDefault(), void confirmEdit(e()));
+                        }}
+                      />
+                      <div class="edit-bar">
+                        <small>{chatOf(key()).busy ? "Para a resposta atual e " : ""}O Claude esquece esta versão e o que veio depois</small>
+                        <button class="ghost-btn small" onClick={() => setEditing(null)}>Cancelar</button>
+                        <button class="primary-btn small" disabled={!draft().trim()} onClick={() => void confirmEdit(e())}><SendHorizontal size={12} /> Enviar</button>
+                      </div>
+                    </div>
+                  </Show>
+                )}
               </Match>
-              <Match when={b()?.t === "done" && (b() as { e: ActivityEvent }).e}>{(e) => <div class="done-line pop-in"><span>✓</span> {e().agent} terminou · {e().time}</div>}</Match>
+              <Match when={b()?.t === "say" && (b() as { e: ActivityEvent }).e}>
+                {(e) => (
+                  <Show when={limitHit(e().title)} fallback={<div class="bubble agent pop-in say md-bubble" style={{ "--c": e().color ?? "var(--accent)" }}><Markdown text={e().title} /><MsgTools text={e().title} /></div>}>
+                    {(h) => <LimitHitCard accountId={currentProject().accountId} win={h().win} raw={h().raw} onPick={(id) => requestSwitch(currentProject().id, id)} />}
+                  </Show>
+                )}
+              </Match>
+              <Match when={b()?.t === "done" && (b() as { e: ActivityEvent }).e}>
+                {(e) => (
+                  <Show when={e().status === "error"} fallback={<div class="done-line pop-in"><span>✓</span> {e().agent} terminou · {e().time}</div>}>
+                    <div class="done-line stopped pop-in">
+                      <span>■</span> Você parou · {e().time}
+                      <Show when={props.tail && lastUser()?.anchor !== undefined}>
+                        <button class="link-btn" onClick={() => startEdit(lastUser()!)}><Pencil size={11} /> Editar o pedido</button>
+                      </Show>
+                    </div>
+                  </Show>
+                )}
+              </Match>
               <Match when={b()?.t === "work" && (b() as { items: ActivityEvent[] }).items}>
                 {(items) => {
-                  const shown = () => items().slice(-8);
+                  // fechado por padrão: uma linha só ("Executou 2 comandos, leu 1 arquivo ›"); abre com um clique
+                  const [open, setOpen] = createSignal(false);
+                  const [all, setAll] = createSignal(false);
+                  const shown = () => (all() ? items() : items().slice(-8));
                   const running = () => items().some((x) => x.status === "running");
+                  const now = () => [...items()].reverse().find((x) => x.status === "running") ?? items()[items().length - 1];
+                  const failed = () => items().filter((x) => x.status === "error").length;
                   return (
-                    <div class="work-card pop-in">
-                      <div class="work-head">
-                        <span class="work-dot" classList={{ live: running() }} />
-                        {running() ? "Trabalhando…" : "Passos"}
-                        <small>{items().length} {items().length === 1 ? "passo" : "passos"}</small>
-                      </div>
-                      <Show when={items().length > 8}><div class="work-more">+{items().length - 8} antes</div></Show>
-                      <For each={shown()}>
-                        {(x) => (
-                          <div class="work-row slide-in" classList={{ running: x.status === "running", error: x.status === "error" }} title={x.detail ?? x.title}>
-                            <span class="work-icon" style={{ color: kindColor[x.kind] }}>
-                              <ActivityIcon kind={x.kind} />
-                            </span>
-                            <span class="work-title">{x.title}</span>
-                            <Show when={x.status === "running"} fallback={<small class="work-detail">{x.status === "error" ? "falhou" : x.kind === "run" ? "" : x.detail}</small>}>
-                              <span class="spinner" />
-                            </Show>
-                          </div>
-                        )}
-                      </For>
+                    <div class="work-fold pop-in" classList={{ open: open(), live: running() }}>
+                      <button class="work-sum" aria-expanded={open()} onClick={() => setOpen(!open())}>
+                        <Show when={running()} fallback={<span class="work-sum-text">{stepsSummary(items().map((x) => x.kind))}</span>}>
+                          <span class="spinner" />
+                          <span class="work-sum-text now">{now()?.title}</span>
+                          <small class="work-sum-count">{items().length} {items().length === 1 ? "passo" : "passos"}</small>
+                        </Show>
+                        <Show when={failed() > 0}><small class="work-sum-fail">{failed()} falhou</small></Show>
+                        <ChevronDown size={13} class="work-chev" />
+                      </button>
+                      <Show when={open()}>
+                        <div class="work-card slide-in">
+                          <Show when={items().length > 8 && !all()}><button class="work-more" onClick={() => setAll(true)}>+{items().length - 8} antes · mostrar tudo</button></Show>
+                          <For each={shown()}>
+                            {(x) => (
+                              <div class="work-row" classList={{ running: x.status === "running", error: x.status === "error" }} title={x.detail ?? x.title}>
+                                <span class="work-icon" style={{ color: kindColor[x.kind] }}>
+                                  <ActivityIcon kind={x.kind} />
+                                </span>
+                                <span class="work-title">{x.title}</span>
+                                <Show when={x.status === "running"} fallback={<small class="work-detail">{x.status === "error" ? "falhou" : x.kind === "run" ? "" : x.detail}</small>}>
+                                  <span class="spinner" />
+                                </Show>
+                              </div>
+                            )}
+                          </For>
+                        </div>
+                      </Show>
                     </div>
                   );
                 }}
@@ -166,7 +231,7 @@ function RealConversation() {
           );
         }}
       </For>
-      <ChatTail />
+      <Show when={props.tail !== false}><ChatTail /></Show>
     </>
   );
 }
@@ -181,7 +246,7 @@ function Conversations(props: { onClose: () => void }) {
   const open = async (c: Convo) => {
     if (!usable(c)) return showToast(`Esta conversa é da conta ${accountById(c.account).label}. Troque a conta do projeto para continuar nela.`);
     setOpening(`${c.kind}:${c.id}`);
-    await openConversation(pid, c);
+    await openInTab(pid, c);
     setOpening(null);
     props.onClose();
   };
@@ -192,9 +257,8 @@ function Conversations(props: { onClose: () => void }) {
         <strong>Conversas deste projeto</strong>
         <button
           class="ghost-btn small"
-          disabled={chatOf(pid).busy}
-          onClick={async () => {
-            await newChat(pid);
+          onClick={() => {
+            newTab(pid);
             props.onClose();
           }}
         >
@@ -210,7 +274,7 @@ function Conversations(props: { onClose: () => void }) {
             {(c, i) => {
               const key = `${c.kind}:${c.id}`;
               // a conversa aberta de outra conta (o projeto trocou de conta) não vale mais: mostra o cadeado
-              const current = () => data()?.current === key && usable(c);
+              const current = () => usable(c) && tabsOf(pid).some((t) => (chatOf(t.key).session ?? t.session) === c.id || chatOf(t.key).conv?.id === c.id);
               return (
                 <ConvoRow
                   c={c}
@@ -219,7 +283,7 @@ function Conversations(props: { onClose: () => void }) {
                   locked={!usable(c)}
                   opening={opening() === key}
                   disabled={!!opening()}
-                  title={usable(c) ? (current() ? "Conversa aberta no chat" : "Continuar esta conversa") : `Da conta ${accountById(c.account).label}: troque a conta do projeto para continuar`}
+                  title={usable(c) ? (current() ? "Aberta numa aba: clique para ir até ela" : "Continuar esta conversa numa aba") : `Da conta ${accountById(c.account).label}: troque a conta do projeto para continuar`}
                   extra={<Show when={c.origin}><span>· {c.origin}</span></Show>}
                   onOpen={() => open(c)}
                   onDelete={async () => (await deleteConvos(pid, [c], data()?.current ?? null)) && refetch()}
@@ -242,7 +306,7 @@ function Conversations(props: { onClose: () => void }) {
 /** Texto chegando, pedidos de permissão e erro da conversa. */
 function ChatTail() {
   const p = currentProject;
-  const chat = () => chatOf(p().id);
+  const chat = () => chatOf(activeKey(p().id));
   const a = () => accountById(p().accountId);
   return (
     <>
@@ -262,10 +326,10 @@ function ChatTail() {
             <strong>{q.title}</strong>
             <Show when={q.detail}><pre>{q.detail}</pre></Show>
             <div class="perm-ask-actions">
-              <button class="ghost-btn" disabled={q.answering} onClick={() => answerPermission(p().id, q.requestId, false)}>
+              <button class="ghost-btn" disabled={q.answering} onClick={() => answerPermission(activeKey(p().id), q.requestId, false)}>
                 <Ban size={13} /> Recusar
               </button>
-              <button class="primary-btn small" disabled={q.answering} onClick={() => answerPermission(p().id, q.requestId, true)}>
+              <button class="primary-btn small" disabled={q.answering} onClick={() => answerPermission(activeKey(p().id), q.requestId, true)}>
                 <Check size={13} /> Permitir
               </button>
             </div>
@@ -276,44 +340,110 @@ function ChatTail() {
         <div class="bubble chat-error pop-in">
           <AlertTriangle size={14} />
           <span>{chat().error}</span>
-          <button class="icon-btn small" title="Fechar" onClick={() => clearError(p().id)}><X size={12} /></button>
+          <button class="icon-btn small" title="Fechar" onClick={() => clearError(activeKey(p().id))}><X size={12} /></button>
         </div>
       </Show>
     </>
   );
 }
 
+/** "claude-opus-5-5" vira "Opus 5.5" (o resto fica como está). */
+
+/** Conta, modelo e força do raciocínio: abre para cima, saindo da caixa de mensagem. */
+function AgentMenu(props: { onClose: () => void }) {
+  const project = currentProject;
+  const account = () => accountById(project().accountId);
+  return (
+    <div class="menu pop-in agent-menu" ref={(el) => dismissable(el, props.onClose)}>
+      <small class="menu-title">Conta neste projeto</small>
+      <For each={accts.list}>
+        {(a) => (
+          <button
+            class="menu-item"
+            classList={{ sel: a.id === account().id }}
+            onClick={() => {
+              if (a.id === account().id) return;
+              props.onClose();
+              requestSwitch(project().id, a.id);
+            }}
+          >
+            <ProviderMark id={a.id} size={20} />
+            <span>{a.label}</span>
+            <small>{accountSub(a)}</small>
+            <LimitChip id={a.id} />
+            <Show when={a.id === account().id}><Check size={14} class="menu-check" /></Show>
+          </button>
+        )}
+      </For>
+      <Show when={account().provider === "claude"}>
+        <div class="menu-sep" />
+        <small class="menu-title">Modelo</small>
+        <div class="agent-chips">
+          <For each={claudeModels}>
+            {(m) => (
+              <button class="agent-chip" classList={{ on: (prefsOf(project().id).model ?? null) === m.id }} title={m.id ? `${m.label}: ${m.hint}` : `Usa o modelo da conta (${accountSub(account())})`} onClick={() => setPref(project().id, { model: m.id })}>
+                {m.label}
+              </button>
+            )}
+          </For>
+        </div>
+        <small class="menu-title">Força do raciocínio</small>
+        <div class="agent-chips effort">
+          <For each={efforts}>
+            {(e, i) => (
+              <button class="agent-chip" classList={{ on: (prefsOf(project().id).effort ?? null) === e.id }} data-lvl={i()} title={e.id ? `Pensa ${e.label.toLowerCase()}: ${i() <= 2 ? "responde mais rápido e gasta menos" : "pensa mais antes de responder e gasta mais"}` : "Usa o padrão do Claude Code"} onClick={() => setPref(project().id, { effort: e.id })}>
+                <Show when={e.id}><i class="effort-bars"><b /><b /><b /><b /><b /></i></Show>
+                {e.label}
+              </button>
+            )}
+          </For>
+        </div>
+        <p class="agent-menu-note">Vale a partir da próxima mensagem; a conversa continua de onde parou.</p>
+      </Show>
+    </div>
+  );
+}
+
 /** Caixa de mensagem: Enter envia, Shift+Enter quebra linha. */
-function Composer(props: { onLevel: () => void }) {
+function Composer(props: { onLevel: () => void; levelOn?: boolean }) {
   const p = currentProject;
-  const chat = () => chatOf(p().id);
+  const k = () => activeKey(p().id);
+  const chat = () => chatOf(k());
   const a = () => accountById(p().accountId);
   const level = () => accessLevels[p().access];
   const demo = () => p().demo || !isTauri;
   const canAttach = () => !demo() && !!ws.activeFile;
+  const [menu, setMenu] = createSignal(false);
+  // bolinha no nível enquanto ele não vale de verdade no projeto
+  const unapplied = () => isTauri && !p().demo && acc.reports[p().id]?.fileState.state !== "aplicado";
   let box!: HTMLTextAreaElement;
 
   const send = () => {
     if (demo()) return showToast("Projeto de demonstração: abra uma pasta sua para conversar de verdade");
-    sendChat(p().id);
+    nameFromPrompt(k(), chat().input);
+    sendChat(k());
     requestAnimationFrame(() => fit());
   };
   const fit = () => {
     box.style.height = "auto";
     box.style.height = `${Math.min(box.scrollHeight, 160)}px`;
   };
-  createEffect(on(() => p().id, () => requestAnimationFrame(() => box && fit())));
+  createEffect(on(k, () => requestAnimationFrame(() => box && fit())));
+  createEffect(on(() => listeningTo(k()) && chat().input, () => box && fit(), { defer: true }));
 
   return (
-    <div class="composer" classList={{ busy: chat().busy, dropping: dropPid() === p().id }} data-attach-pid={demo() ? undefined : p().id}>
+    <>
+    <Show when={!demo()}><MediaStrip pid={p().id} /></Show>
+    <Show when={!demo()}><EconomyHint pid={p().id} /></Show>
+    <div class="composer" classList={{ busy: chat().busy, dropping: dropPid() === k(), listening: listeningTo(k()) }} data-attach-pid={demo() ? undefined : k()}>
       <AttachBar
-        pid={p().id}
+        pid={k()}
         extra={
           <Show when={canAttach()}>
             <Show
               when={chat().attach}
               fallback={
-                <button class="att-suggest" title="Mandar junto o arquivo aberto no editor" onClick={() => setAttach(p().id, true)}>
+                <button class="att-suggest" title="Mandar junto o arquivo aberto no editor" onClick={() => setAttach(k(), true)}>
                   <Plus size={11} /> {fileName(ws.activeFile)}
                 </button>
               }
@@ -321,7 +451,7 @@ function Composer(props: { onLevel: () => void }) {
               <div class="att text open-file" title={ws.activeFile}>
                 <span class="att-icon"><FileCode2 size={14} /></span>
                 <span class="att-text"><strong>{fileName(ws.activeFile)}</strong><small>aberto no editor</small></span>
-                <button class="att-x" title="Não mandar o arquivo aberto" onClick={() => setAttach(p().id, false)}><X size={11} /></button>
+                <button class="att-x" title="Não mandar o arquivo aberto" onClick={() => setAttach(k(), false)}><X size={11} /></button>
               </div>
             </Show>
           </Show>
@@ -331,13 +461,17 @@ function Composer(props: { onLevel: () => void }) {
         ref={box}
         rows={2}
         value={chat().input}
-        placeholder={`Pedir algo a ${a().label}… (Enter envia, ⌘V cola imagens)`}
-        onPaste={(e) => !demo() && void pasteFiles(p().id, e)}
+        readOnly={listeningTo(k())}
+        placeholder={listeningTo(k()) ? "Pode falar… (Enter para, Esc cancela)" : `Pedir algo a ${a().label}… (Enter envia, ⌥ Espaço para falar)`}
+        onPaste={(e) => !demo() && void pasteFiles(k(), e)}
         onInput={(e) => {
-          setInput(p().id, e.currentTarget.value);
+          setInput(k(), e.currentTarget.value);
           fit();
         }}
         onKeyDown={(e) => {
+          if (!demo() && voiceKey(k(), e)) return;
+          // Esc para a resposta (como no Claude Code)
+          if (e.key === "Escape" && chat().busy) return (e.preventDefault(), void stopChat(k()));
           if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
             e.preventDefault();
             if (!chat().busy) send();
@@ -345,45 +479,89 @@ function Composer(props: { onLevel: () => void }) {
         }}
       />
       <div class="composer-bar">
-        <button class="icon-btn" classList={{ on: attsOf(p().id).length > 0 }} disabled={demo()} title="Anexar arquivos ou imagens (ou cole com ⌘V, ou arraste do Finder)" onClick={() => void pickFiles(p().id)}>
+        <button class="icon-btn" classList={{ on: attsOf(k()).length > 0 }} disabled={demo()} title="Anexar arquivos ou imagens (ou cole com ⌘V, ou arraste do Finder)" onClick={() => void pickFiles(k())}>
           <Paperclip size={14} />
         </button>
-        <button class="composer-chip" style={{ "--lc": level().color }} title="Nível de acesso deste projeto" onClick={props.onLevel}>
-          {level().name}
+        <button class="agent-chip-btn" classList={{ on: menu() }} title="Conta, modelo e força do raciocínio deste projeto" onClick={() => setMenu(!menu())}>
+          <ProviderMark id={a().id} size={18} />
+          <span class="agent-chip-name">{a().label}</span>
+          <small>{niceModel(a().provider === "claude" ? prefsLabel(p().id) ?? accountSub(a()) : accountSub(a()))}</small>
+          <ChevronDown size={12} />
         </button>
+        <button class="composer-chip" classList={{ on: props.levelOn, unapplied: unapplied() }} style={{ "--lc": level().color }} title={unapplied() ? "Nível de acesso: ainda não vale no Claude Code, clique para gravar" : "Nível de acesso: o que a IA pode fazer aqui (clique para mudar)"} onClick={props.onLevel}>
+          <ShieldCheck size={12} /> {level().short}
+        </button>
+        <span class="composer-gap" />
+        <UsageRing id={a().id} />
+        <Show when={!demo()}><MicButton target={k()} /></Show>
         <Show
           when={chat().busy}
           fallback={
-            <button class="send-btn" disabled={!demo() && !chat().input.trim() && !attsOf(p().id).length} title="Enviar (Enter)" onClick={send}>
+            <button class="send-btn" disabled={!demo() && !chat().input.trim() && !attsOf(k()).length} title="Enviar (Enter)" onClick={send}>
               <SendHorizontal size={14} />
             </button>
           }
         >
-          <button class="send-btn stop" title="Parar a resposta" onClick={() => stopChat(p().id)}>
+          <button class="send-btn stop" title="Parar (Esc). Depois dá para editar o pedido e mandar de novo" onClick={() => stopChat(k())}>
             <Square size={11} fill="currentColor" />
           </button>
         </Show>
       </div>
+      <Show when={menu()}>
+        <AgentMenu onClose={() => setMenu(false)} />
+      </Show>
     </div>
+    </>
   );
 }
 
+type Pane = "chat" | "ext" | "mem" | "hist";
+export type View = Pane | "act";
+
 export default function ChatPanel() {
-  const [tab, setTab] = [gitTab, setGitTab];
-  const [pickAccount, setPickAccount] = createSignal(false);
-  const [convos, setConvos] = createSignal(false);
+  const [tab, setTab] = [gitTab, setChatTab];
   const project = currentProject;
-  createEffect(on(() => project().id, () => setConvos(false)));
+  // o que aparece no lugar da conversa: ela mesma, sessões de fora, histórico, memória ou atividade (aba fixa)
+  const [pane, setPane] = createSignal<Pane>("chat");
+  const view = (): View => (panelAt() === "tab" ? "act" : pane());
+  const go = (v: View) => {
+    if (v === "act") {
+      setPane("chat");
+      return setPanelAt(panelAt() === "tab" ? "none" : "tab");
+    }
+    if (panelAt() === "tab") setPanelAt("none");
+    setPane(pane() === v ? "chat" : v);
+  };
+  const ext = () => view() === "ext";
+  // a memória fica montada depois da 1ª vez: voltar nela não recarrega
+  const [memSeen, setMemSeen] = createSignal(false);
+  createEffect(() => view() === "mem" && setMemSeen(true));
+  const mem = () => view() === "mem";
+  const convos = () => view() === "hist";
+  const setConvos = (v: boolean) => (v ? go("hist") : pane() === "hist" && setPane("chat"));
+  const setMem = (_: false) => pane() === "mem" && setPane("chat");
+  createEffect(on(() => project().id, (id) => {
+    setPane("chat");
+    if (isTauri && !project().demo) {
+      wakeActive(id);
+      syncRunning(id);
+    }
+  }));
   const real = () => isTauri && !project().demo;
+  const key = () => activeKey(project().id);
+  const tabEvents = createMemo(() => ws.events.filter((e) => ofChat(key(), e)));
+  // sessões do Claude nesta pasta que não são de nenhuma aba (Terminal, editor, app do Claude)
+  const extEvents = createMemo(() => {
+    const owned = new Set(tabsOf(project().id).map((t) => chatOf(t.key).session ?? t.session).filter(Boolean));
+    return ws.events.filter((e) => e.agent !== "disco" && !e.tab && !!e.session && !owned.has(e.session));
+  });
+  const shown = () => (ext() ? extEvents() : tabEvents());
   const account = () => accountById(project().accountId);
-  const level = () => accessLevels[project().access];
-  // bolinha no selo do nível enquanto ele não vale de verdade no projeto
-  const unapplied = () => isTauri && !project().demo && acc.reports[project().id]?.fileState.state !== "aplicado";
   createEffect(on(() => project().id, (id) => isTauri && loadAccess(id)));
   let scroller!: HTMLDivElement;
 
   // rola o chat junto com a atividade
-  createEffect(on(() => [ws.events.length, chatOf(project().id).draft.length >> 6, chatOf(project().id).perms.length, chatOf(project().id).error], () => setTimeout(() => scroller && scroller.scrollTo({ top: scroller.scrollHeight, behavior: "smooth" }), 30)));
+  createEffect(on(() => [shown().length, key(), ext(), chatOf(key()).draft.length >> 6, chatOf(key()).perms.length, chatOf(key()).error], () => setTimeout(() => scroller && scroller.scrollTo({ top: scroller.scrollHeight, behavior: "smooth" }), 30)));
 
   const userMsgs = () => ws.events.filter((e) => e.kind === "user");
   const work = () => ws.events.filter((e) => e.kind !== "user" && e.kind !== "done");
@@ -391,101 +569,42 @@ export default function ChatPanel() {
 
   return (
     <aside class="chat-panel" style={{ "--c": account().color }}>
-      <div class="chat-head">
-        <button class="agent-picker" onClick={() => setPickAccount(!pickAccount())}>
-          <ProviderMark id={account().id} size={26} />
-          <div>
-            <strong>{account().label}</strong>
-            <small>{account().provider === "claude" ? prefsLabel(project().id) ?? accountSub(account()) : accountSub(account())}</small>
-          </div>
-          <ChevronDown size={14} />
-        </button>
-        <Show when={real()}>
-          <button
-            class="icon-btn head-btn"
-            classList={{ on: convos() && tab() === "chat" }}
-            title="Conversas anteriores"
-            onClick={() => {
-              setTab("chat");
-              setConvos(!convos());
-            }}
-          >
-            <History size={15} />
-          </button>
-        </Show>
-        <button class="level-pill" classList={{ unapplied: unapplied() }} title={unapplied() ? "Nível de acesso: ainda não vale no Claude Code, clique para gravar" : "Nível de acesso: o que a IA pode fazer aqui (clique para mudar)"} style={{ "--lc": level().color }} onClick={() => setTab(tab() === "access" ? "chat" : "access")}>
-          {level().short}
-        </button>
-        <Show when={pickAccount()}>
-          <div class="menu pop-in agent-menu" ref={(el) => dismissable(el, () => setPickAccount(false))}>
-            <small class="menu-title">Conta neste projeto</small>
-            <For each={accts.list}>
-              {(a) => (
-                <button
-                  class="menu-item"
-                  classList={{ sel: a.id === account().id }}
-                  onClick={() => {
-                    if (a.id === account().id) return;
-                    setProjectAccount(project().id, a.id);
-                    showToast(`${project().name} agora usa ${a.label}`);
-                  }}
-                >
-                  <ProviderMark id={a.id} size={20} />
-                  <span>{a.label}</span>
-                  <small>{accountSub(a)}</small>
-                  <Show when={a.id === account().id}><Check size={14} class="menu-check" /></Show>
-                </button>
-              )}
-            </For>
-            <Show when={account().provider === "claude"}>
-              <div class="menu-sep" />
-              <small class="menu-title">Modelo</small>
-              <div class="agent-chips">
-                <For each={claudeModels}>
-                  {(m) => (
-                    <button class="agent-chip" classList={{ on: (prefsOf(project().id).model ?? null) === m.id }} title={m.id ? `${m.label}: ${m.hint}` : `Usa o modelo da conta (${accountSub(account())})`} onClick={() => setPref(project().id, { model: m.id })}>
-                      {m.label}
-                    </button>
-                  )}
-                </For>
-              </div>
-              <small class="menu-title">Força do raciocínio</small>
-              <div class="agent-chips effort">
-                <For each={efforts}>
-                  {(e, i) => (
-                    <button class="agent-chip" classList={{ on: (prefsOf(project().id).effort ?? null) === e.id }} data-lvl={i()} title={e.id ? `Pensa ${e.label.toLowerCase()}: ${i() <= 2 ? "responde mais rápido e gasta menos" : "pensa mais antes de responder e gasta mais"}` : "Usa o padrão do Claude Code"} onClick={() => setPref(project().id, { effort: e.id })}>
-                      <Show when={e.id}><i class="effort-bars"><b /><b /><b /><b /><b /></i></Show>
-                      {e.label}
-                    </button>
-                  )}
-                </For>
-              </div>
-              <p class="agent-menu-note">Vale a partir da próxima mensagem; a conversa continua de onde parou.</p>
-            </Show>
-          </div>
-        </Show>
-      </div>
-
-      <div class="seg three">
-        <button classList={{ active: tab() === "chat" || tab() === "access" }} onClick={() => setTab("chat")} title="Conversa com a IA e o que ela pode fazer">Agente</button>
-        <button classList={{ active: tab() === "git" }} onClick={() => setTab("git")} title="Git e GitHub deste projeto">Git <GitBadge /></button>
-        <button classList={{ active: tab() === "trail" }} onClick={() => setTab("trail")} title="O que a IA deixou: sobras para limpar, pastas fora do projeto e o que instalou">Rastro</button>
-        <span class="seg-thumb" style={{ transform: `translateX(${(tab() === "access" ? 0 : ["chat", "git", "trail"].indexOf(tab())) * 100}%)` }} />
-      </div>
-
       <Switch>
         <Match when={tab() === "chat"}>
-          <Show when={convos() && real()}>
+          <Show when={real()}>
+            <ConvTabsBar pid={project().id} view={view()} onView={go} extCount={new Set(extEvents().map((e) => e.session)).size} />
+          </Show>
+          <Show when={memSeen() && real()}>
+            <div class="chat-scroll mem-scroll" classList={{ hidden: !mem() }}>
+              <MemoryPanel pid={project().id} onClose={() => setMem(false)} />
+            </div>
+          </Show>
+          <Show when={convos() && real() && !mem()}>
             <div class="chat-scroll">
               <Conversations onClose={() => setConvos(false)} />
             </div>
           </Show>
-          <div class="chat-scroll" ref={scroller} data-target="chat" classList={{ hidden: convos() && real() }}>
+          <Show when={view() === "act"}>
+            <div class="act-view pop-in">
+              <BottomPanel asTab />
+            </div>
+          </Show>
+          <div class="chat-scroll" ref={scroller} data-target="chat" classList={{ hidden: ((convos() || mem()) && real()) || view() === "act" }}>
+            <Show when={ext() && real()}>
+              <div class="ext-head pop-in">
+                <span class="ext-head-icon"><Eye size={15} /></span>
+                <div>
+                  <strong>Fora do Veocode</strong>
+                  <span>O Claude rodando nesta pasta por fora (Terminal, editor ou o app do Claude) aparece aqui ao vivo. É só para acompanhar: para pedir algo, use as abas de conversa.</span>
+                </div>
+                <button class="icon-btn small" title="Voltar para a conversa" onClick={() => go("chat")}><X size={13} /></button>
+              </div>
+            </Show>
             <Show
               when={project().demo}
               fallback={
-                <Show when={(seenAgent() && ws.events.some((e) => e.agent !== "disco")) || chatOf(project().id).busy || chatOf(project().id).error} fallback={<RealIdle onAccess={() => setTab("access")} onConvos={() => setConvos(true)} />}>
-                  <RealConversation />
+                <Show when={(seenAgent() && shown().length > 0) || (!ext() && (chatOf(key()).busy || chatOf(key()).error))} fallback={<Show when={!ext()} fallback={<div class="chat-empty ext-empty"><strong>Nada rodando por fora agora</strong><span>Abra o Claude nesta pasta pelo Terminal ou pelo editor e ele aparece aqui.</span></div>}><RealIdle onAccess={() => setTab("access")} onConvos={() => setConvos(true)} /></Show>}>
+                  <RealConversation events={shown} tail={!ext()} />
                 </Show>
               }
             >
@@ -524,7 +643,9 @@ export default function ChatPanel() {
               </Show>
             </Show>
           </div>
-          <Composer onLevel={() => setTab("access")} />
+          <Show when={view() === "chat" || view() === "hist"} fallback={<Show when={ext()}><p class="ext-note">Sessões do Claude abertas fora do Veocode nesta pasta (Terminal, editor, app do Claude). Aqui é só para acompanhar: para conversar, use uma aba sua.</p></Show>}>
+            <Composer onLevel={() => setTab("access")} />
+          </Show>
         </Match>
         <Match when={tab() === "access"}>
           <div class="chat-scroll">
@@ -532,29 +653,7 @@ export default function ChatPanel() {
             <AccessLevel projectId={project().id} />
           </div>
         </Match>
-        <Match when={tab() === "trail"}>
-          <div class="chat-scroll">
-            <TrailPanel />
-          </div>
-        </Match>
-        <Match when={tab() === "git"}>
-          <div class="chat-scroll">
-            <GitPanel />
-          </div>
-        </Match>
       </Switch>
     </aside>
-  );
-}
-
-/** Na aba Git: quantos commits faltam enviar ou baixar, ou um ponto quando há mudanças. */
-function GitBadge() {
-  const sum = () => git.summaries[currentProject().id];
-  return (
-    <Show when={sum()?.repo}>
-      <Show when={sum()!.ahead || sum()!.behind} fallback={<Show when={sum()!.changed}><i class="seg-dot" title={`${sum()!.changed} arquivos mudados`} /></Show>}>
-        <span class="seg-badge" title="Commits para enviar / baixar">{sum()!.ahead ? `↑${sum()!.ahead}` : ""}{sum()!.behind ? `↓${sum()!.behind}` : ""}</span>
-      </Show>
-    </Show>
   );
 }

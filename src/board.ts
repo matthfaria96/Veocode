@@ -1,7 +1,7 @@
 // Visão geral: até 4 conversas ao vivo, escolhidas sozinhas a partir dos projetos, e a situação de cada projeto.
 
 import { createEffect, createRoot, createSignal, untrack } from "solid-js";
-import { chatOf } from "./chat";
+import { projectChat } from "./chat";
 import { feedOf } from "./feeds";
 import { absPathOf, projects } from "./store";
 import { xray } from "./xray";
@@ -24,11 +24,15 @@ const save = (key: string, v: unknown) => {
 
 /** Projetos fixados pela pessoa: ficam sempre na tela, no mesmo lugar. */
 const [pinsRaw, setPinsRaw] = createSignal<string[]>(load("veocode.board.pins", []));
+/** Modo foco da tela Início: some o banner, os painéis ocupam a tela e os outros projetos viram uma faixa embaixo. */
+const [focusRaw, setFocusRaw] = createSignal<boolean>(load("veocode.home.focus", false));
+export const homeFocus = focusRaw;
+export const setHomeFocus = (v: boolean) => (setFocusRaw(v), save("veocode.home.focus", v));
 /** Um painel aberto em tela cheia (os outros continuam rodando). */
 export const [maximized, setMaximized] = createSignal<string | null>(null);
 
 const realIds = () => projects.filter((p) => !p.demo).map((p) => p.id);
-export const pins = () => pinsRaw().filter((id) => realIds().includes(id));
+const pins = () => pinsRaw().filter((id) => realIds().includes(id));
 export const isPinned = (id: string) => pinsRaw().includes(id);
 const setPins = (l: string[]) => {
   setPinsRaw(l);
@@ -48,7 +52,7 @@ export const layouts: { id: Layout; slots: number; label: string }[] = [
   { id: "4", slots: 4, label: "Quatro, um em cada canto" },
 ];
 const [layoutRaw, setLayoutRaw] = createSignal<Layout>(load("veocode.board.layout", "2c"));
-export const slots = () => layouts.find((l) => l.id === layoutRaw())?.slots ?? 2;
+const slots = () => layouts.find((l) => l.id === layoutRaw())?.slots ?? 2;
 export const setLayout = (l: Layout) => {
   setLayoutRaw(l);
   save("veocode.board.layout", l);
@@ -69,13 +73,32 @@ const [shown, setShown] = createSignal<string[]>(load("veocode.board.shown", [])
 export const panes = shown;
 export const inGrid = (id: string) => shown().includes(id);
 
+/** Projetos que a pessoa tirou da tela: não voltam sozinhos (só pelo "Pôr na tela" ou arrastando). */
+const [closed, setClosedRaw] = createSignal<string[]>(load("veocode.board.closed", []));
+const setClosed = (l: string[]) => {
+  setClosedRaw(l);
+  save("veocode.board.closed", l);
+};
+const isClosed = (id: string) => closed().includes(id);
+
+/** Tira um painel da tela (o projeto continua na lista e rodando). */
+export function closePane(id: string) {
+  if (maximized() === id) setMaximized(null);
+  if (isPinned(id)) setPins(pinsRaw().filter((x) => x !== id));
+  if (!isClosed(id)) setClosed([...closed(), id]);
+  const next = shown().filter((x) => x !== id);
+  setShown(next);
+  save("veocode.board.shown", next);
+}
+
 function rank(ids: string[]) {
   const st = new Map(ids.map((id) => [id, projectState(id)]));
   return [...ids].sort((a, b) => toneOrder[st.get(a)!.tone] - toneOrder[st.get(b)!.tone] || st.get(b)!.at - st.get(a)!.at);
 }
 
 function settle() {
-  const ids = realIds();
+  const off = closed();
+  const ids = realIds().filter((id) => !off.includes(id));
   const n = Math.min(slots(), ids.length);
   const pinned = pins();
   let next = untrack(shown).filter((id) => ids.includes(id));
@@ -110,7 +133,16 @@ function settle() {
 
 /** Põe um projeto na tela no lugar de outro (e fixa, para não sair sozinho). */
 export function replacePane(oldId: string | undefined, newId: string) {
+  if (isClosed(newId)) setClosed(closed().filter((x) => x !== newId));
   const l = shown();
+  // tem lugar sobrando (alguém foi tirado da tela): só entra, sem tirar ninguém
+  if ((!oldId || !l.includes(oldId)) && !l.includes(newId) && l.length < slots()) {
+    const next = [...l, newId];
+    setShown(next);
+    save("veocode.board.shown", next);
+    if (!isPinned(newId)) setPins([...pinsRaw(), newId]);
+    return;
+  }
   if (!oldId || !l.includes(oldId)) {
     // sem lugar indicado: entra no lugar do não fixado mais parado
     const pinned = pins();
@@ -122,17 +154,6 @@ export function replacePane(oldId: string | undefined, newId: string) {
   save("veocode.board.shown", next);
   if (oldId && isPinned(oldId)) setPins(pinsRaw().filter((x) => x !== oldId));
   if (!isPinned(newId)) setPins([...pinsRaw(), newId]);
-}
-
-/** Leva um painel um lugar para trás ou para frente. */
-export function movePane(id: string, dir: -1 | 1) {
-  const l = [...shown()];
-  const i = l.indexOf(id);
-  const j = i + dir;
-  if (i < 0 || j < 0 || j >= l.length) return;
-  [l[i], l[j]] = [l[j], l[i]];
-  setShown(l);
-  save("veocode.board.shown", l);
 }
 
 // ---------------------------------------------------------------- situação de cada projeto
@@ -155,7 +176,7 @@ const inside = (cwd: string | null, root: string | undefined) => {
 };
 
 export function projectState(pid: string): ProjectState {
-  const c = chatOf(pid);
+  const c = projectChat(pid);
   const f = feedOf(pid);
   const root = absPathOf(pid);
   const procs = xray.procs.filter((g) => inside(g.cwd, root));

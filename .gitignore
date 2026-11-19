@@ -16,3 +16,4 @@ src-tauri/gen/schemas
 .env.*
 *.pem
 *.key
+src-tauri/binaries

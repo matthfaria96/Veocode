@@ -71,7 +71,7 @@ const fileKinds: [RegExp, string, string, string?][] = [
   [/\.(txt|log|csv)$/i, "#94a3b8", "TXT", "#1a1a1a"],
 ];
 
-export function fileKind(name: string): { color: string; label: string; ink: string } {
+function fileKind(name: string): { color: string; label: string; ink: string } {
   for (const [re, color, label, ink] of fileKinds) if (re.test(name)) return { color, label, ink: ink ?? "#fff" };
   const ext = name.includes(".") ? name.split(".").pop()!.slice(0, 4).toUpperCase() : "";
   return { color: "#64748b", label: ext, ink: "#fff" };

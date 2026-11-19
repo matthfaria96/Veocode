@@ -51,7 +51,7 @@ export function edit(path: string, text: string) {
 }
 
 /** Grava agora (⌘S, fechar a aba, trocar de projeto). */
-export async function save(pid: string, path: string): Promise<boolean> {
+async function save(pid: string, path: string): Promise<boolean> {
   const k = key(pid, path);
   clearTimeout(timers.get(k));
   timers.delete(k);

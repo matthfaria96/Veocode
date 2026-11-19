@@ -1,5 +1,7 @@
 import { AlertTriangle, Check, ExternalLink, FileText, MessageSquare, Search, X } from "lucide-solid";
 import { FileIcon } from "./icons";
+import { ImageView } from "./Media";
+import { isImagePath } from "../media";
 import { createMemo, For, Index, Match, Show, Switch } from "solid-js";
 import { api, formatSize } from "../api";
 import { ask } from "../dialogs";
@@ -93,6 +95,9 @@ function RealCode(props: { ext: string }) {
       </Match>
       <Match when={view()!.kind === "error" && view()} keyed>
         {(v) => <div class="editor-empty">{(v as { message: string }).message}</div>}
+      </Match>
+      <Match when={(view()!.kind === "binary" || view()!.kind === "tooLarge") && isImagePath(path())}>
+        <ImageView pid={projectId()} path={path()} size={(view() as { size: number }).size} />
       </Match>
       <Match when={view()!.kind === "binary" || view()!.kind === "tooLarge"}>
         <div class="editor-empty">
@@ -239,9 +244,9 @@ function EditorHome() {
     <div class="editor-empty editor-home">
       <div class="eh-glow" aria-hidden="true" />
       <strong>{p().name}</strong>
-      <p>{p().demo ? "Nenhum arquivo aberto." : "Converse com a IA no painel à direita, ou abra um arquivo para ler e editar."}</p>
+      <p>{p().demo ? "Nenhum arquivo aberto." : "Converse com a IA no centro, ou abra um arquivo para ler e editar."}</p>
       <div class="eh-tips">
-        <span style={{ "--i": 0 }}><MessageSquare size={14} /> Peça algo à IA <em>painel à direita →</em></span>
+        <span style={{ "--i": 0 }}><MessageSquare size={14} /> Peça algo à IA <em>no centro</em></span>
         <span style={{ "--i": 1 }}><FileText size={14} /> Abra um arquivo <em>na árvore à esquerda</em></span>
         <span style={{ "--i": 2 }}><Search size={14} /> Busque qualquer coisa <kbd>⌘K</kbd></span>
       </div>

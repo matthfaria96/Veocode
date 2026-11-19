@@ -3,15 +3,17 @@
 // Os passos do Claude (ler, editar, comandos) chegam pelo histórico dele (agentFeed.ts);
 // aqui ficam o texto sendo escrito, os pedidos de permissão e o estado da conversa.
 
+import { applyLimits, type Limits } from "./limits";
 import { invoke } from "@tauri-apps/api/core";
 import { sendPrefs } from "./chatPrefs";
 import { attLabel, attsOf, clearAtts, setAttsOf } from "./attachments";
+import { rememberSent } from "./media";
 import { listen } from "@tauri-apps/api/event";
 import { createStore, produce } from "solid-js/store";
 import { accountById } from "./accounts";
 import { isTauri } from "./api";
 import { feedAgentEvent, setSeenAgent, type AgentEvent } from "./agentFeed";
-import { absPathOf, projectId, projects, pushEvent, setWs, showToast, ws } from "./store";
+import { absPathOf, projectId, projects, pushEvent, setWs, showToast, ws, type ActivityEvent } from "./store";
 import { handleLivre, LIVRE, newLivre } from "./livre";
 import { confirmAction } from "./dialogs";
 import { feedChat, feedUser } from "./feeds";
@@ -37,6 +39,11 @@ interface ProjectChat {
   attach: boolean;
   /** conversa retomada pela lista (null: a que começou neste chat, ou nenhuma) */
   conv: { kind: "claude" | "api"; id: string; title: string } | null;
+  /** sessão do Claude desta conversa (os passos lidos do histórico são filtrados por ela) */
+  session: string | null;
+  /** tokens que a conversa carrega (relidos a cada mensagem) e quando ela mexeu por último */
+  context: number | null;
+  lastAt: number | null;
 }
 
 /** Conversa anterior do projeto (sessão do Claude ou conversa com API guardada pelo Veocode). */
@@ -49,6 +56,8 @@ export interface Convo {
   origin: string | null;
   updated: number;
   bytes: number;
+  /** tokens que a conversa carrega (o Claude relê isso a cada mensagem) */
+  context?: number | null;
 }
 
 type ChatEvent =
@@ -59,9 +68,32 @@ type ChatEvent =
   | { kind: "permissionGone"; requestId: string }
   | { kind: "done"; ok: boolean; detail: string | null }
   | { kind: "step"; event: AgentEvent }
+  | { kind: "usage"; context: number }
+  | { kind: "limits"; account: string; limits: Limits }
   | { kind: "error"; message: string };
 
-const blank = (): ProjectChat => ({ busy: false, draft: "", perms: [], error: null, input: "", attach: false, conv: null });
+const blank = (): ProjectChat => ({ busy: false, draft: "", perms: [], error: null, input: "", attach: false, conv: null, session: null, context: null, lastAt: null });
+
+/** Projeto de uma chave de conversa ("projeto" ou "projeto~aba"). */
+const baseOf = (key: string) => key.split("~")[0];
+/** Chaves de conversa abertas de um projeto. */
+const keysOf = (pid: string) => Object.keys(chats).filter((k) => baseOf(k) === pid);
+/** Situação somada das conversas de um projeto (para a tela inicial e os avisos). */
+export const projectChat = (pid: string): ProjectChat => {
+  const list = keysOf(pid).map((k) => chats[k]);
+  if (list.length <= 1) return list[0] ?? blank();
+  const busy = list.find((c) => c.busy);
+  return { ...blank(), busy: !!busy, draft: busy?.draft ?? "", perms: list.flatMap((c) => c.perms), error: list.find((c) => c.error)?.error ?? null };
+};
+/** Algum Claude deste projeto está trabalhando? */
+export const anyBusy = (pid: string) => keysOf(pid).some((k) => chats[k].busy);
+/** Eventos que pertencem a esta conversa. */
+export const ofChat = (key: string, e: { tab?: string; session?: string; agent: string }) =>
+  e.agent !== "disco" && (e.tab === key || (!!e.session && e.session === chats[key]?.session));
+
+// a aba guarda a sessão para reabrir depois (convTabs.ts registra aqui, sem import circular)
+let sessionHook: ((key: string, session: string) => void) | null = null;
+export const onChatSession = (f: (key: string, session: string) => void) => (sessionHook = f);
 export const [chats, setChats] = createStore<Record<string, ProjectChat>>({});
 
 export const chatOf = (pid: string): ProjectChat => chats[pid] ?? blank();
@@ -69,9 +101,9 @@ const ensure = (pid: string) => {
   if (!chats[pid]) setChats(pid, blank());
 };
 
-const projectOf = (pid: string) => projects.find((p) => p.id === pid);
+const projectOf = (pid: string) => projects.find((p) => p.id === baseOf(pid));
 const accountOf = (pid: string) => accountById(projectOf(pid)?.accountId ?? "");
-export const isClaudeChat = (pid: string) => accountOf(pid).provider === "claude";
+const isClaudeChat = (pid: string) => accountOf(pid).provider === "claude";
 
 // ---------------------------------------------------------------- não repetir o que o histórico traz de novo
 
@@ -96,16 +128,31 @@ let listening = false;
 export function startChatEvents() {
   if (!isTauri || listening) return;
   listening = true;
-  listen<{ projectId: string } & ChatEvent>("chat-event", ({ payload: e }) => (e.projectId === LIVRE ? handleLivre(e) : handle(e.projectId, e)));
+  listen<{ projectId: string } & ChatEvent>("chat-event", ({ payload: e }) => {
+    // uso do plano que o Claude Code manda junto com a resposta: vale para a conta, não para a conversa
+    if (e.kind === "limits") return applyLimits(e.account, e.limits);
+    return e.projectId === LIVRE ? handleLivre(e) : handle(e.projectId, e);
+  });
 }
 
 function handle(pid: string, e: ChatEvent) {
   ensure(pid);
-  feedChat(pid, e as Parameters<typeof feedChat>[1]); // conversa guardada para o Painel
-  const here = projectId() === pid;
+  feedChat(baseOf(pid), e as Parameters<typeof feedChat>[1]); // conversa guardada para o Painel
+  const here = projectId() === baseOf(pid);
   const acc = accountOf(pid);
   switch (e.kind) {
     case "session":
+      setChats(pid, produce((c) => {
+        c.session = e.sessionId;
+        c.lastAt = Date.now();
+      }));
+      sessionHook?.(pid, e.sessionId);
+      return;
+    case "usage":
+      setChats(pid, produce((c) => {
+        c.context = e.context;
+        c.lastAt = Date.now();
+      }));
       return;
     case "delta":
       setChats(pid, "draft", (d) => d + e.text);
@@ -116,7 +163,7 @@ function handle(pid: string, e: ChatEvent) {
       echoes.push({ text: norm(e.text), at: Date.now() });
       // o histórico pode ter chegado antes com o mesmo texto
       if (here && !ws.events.slice(-6).some((x) => x.kind === "say" && norm(x.title) === norm(e.text))) {
-        pushEvent({ kind: "say", title: e.text, agent: acc.label, color: acc.color, status: "ok" });
+        pushEvent({ kind: "say", title: e.text, agent: acc.label, color: acc.color, status: "ok", tab: pid });
       }
       return;
     case "permission": {
@@ -130,7 +177,7 @@ function handle(pid: string, e: ChatEvent) {
     }
     case "step":
       // passos das contas por API: mesma animação dos passos do Claude
-      if (here) feedAgentEvent(e.event);
+      if (here) feedAgentEvent({ ...e.event, tab: pid });
       return;
     case "permissionGone":
       setChats(pid, "perms", (l) => l.filter((p) => p.requestId !== e.requestId));
@@ -140,12 +187,13 @@ function handle(pid: string, e: ChatEvent) {
         c.busy = false;
         c.draft = "";
         c.perms = [];
+        c.lastAt = Date.now();
       }));
       if (here) {
-        setWs("running", false);
+        setWs("running", anyBusy(baseOf(pid)));
         // o Claude registra o "Terminou" no histórico; para as APIs, registramos aqui
         if (!isClaudeChat(pid) || !e.ok) {
-          pushEvent({ kind: "done", title: e.ok ? "Terminou" : "Parou", detail: e.detail ?? undefined, agent: acc.label, color: acc.color, status: e.ok ? "ok" : "error" });
+          pushEvent({ kind: "done", title: e.ok ? "Terminou" : "Parou", detail: e.detail ?? undefined, agent: acc.label, color: acc.color, status: e.ok ? "ok" : "error", tab: pid });
         }
       }
       return;
@@ -156,7 +204,7 @@ function handle(pid: string, e: ChatEvent) {
         c.perms = [];
         c.error = e.message;
       }));
-      if (here) setWs("running", false);
+      if (here) setWs("running", anyBusy(baseOf(pid)));
       return;
   }
 }
@@ -165,18 +213,20 @@ function handle(pid: string, e: ChatEvent) {
 
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
+/** Tamanho e última atividade conhecidos de uma conversa (medidor de contexto). */
+export const setChatMeta = (key: string, context: number | null, lastAt: number | null) => (ensure(key), setChats(key, produce((c) => ((c.context = context), (c.lastAt = lastAt)))));
 export const setInput = (pid: string, text: string) => (ensure(pid), setChats(pid, "input", text));
 export const setAttach = (pid: string, on: boolean) => (ensure(pid), setChats(pid, "attach", on));
 export const clearError = (pid: string) => chats[pid] && setChats(pid, "error", null);
 
-export async function sendChat(pid: string) {
+export async function sendChat(pid: string, rewind?: string) {
   ensure(pid);
   const c = chats[pid];
   const files = attsOf(pid);
   const text = c.input.trim() || (files.length ? "Veja os anexos." : "");
   if (!text || c.busy) return;
   // pode vir do Painel, de um projeto que não é o aberto na tela Projetos
-  const here = projectId() === pid;
+  const here = projectId() === baseOf(pid);
   const attach = here && c.attach && ws.activeFile ? ws.activeFile : null;
   setChats(pid, produce((x) => {
     x.busy = true;
@@ -187,14 +237,18 @@ export async function sendChat(pid: string) {
   clearAtts(pid);
   echoes.push({ text: norm(text), at: Date.now() });
   const shown = [text, attach ? `📎 ${attach}` : "", attLabel(files)].filter(Boolean).join("\n");
-  feedUser(pid, shown);
+  rememberSent(shown, files.map((f) => f.thumb));
+  feedUser(baseOf(pid), shown);
+  let evId = 0;
   if (here) {
-    pushEvent({ kind: "user", title: shown, agent: "Você", status: "ok" });
+    evId = pushEvent({ kind: "user", title: shown, agent: "Você", status: "ok", tab: pid });
     setSeenAgent(true);
     setWs("running", true);
   }
   try {
-    await invoke("chat_send", { projectId: pid, text, attach, files: files.map((f) => f.path), ...sendPrefs(pid) });
+    const anchor = await invoke<string | null>("chat_send", { projectId: pid, text, attach, files: files.map((f) => f.path), rewind: rewind ?? null, ...sendPrefs(baseOf(pid)) });
+    // guarda de onde este pedido saiu: dá para editá-lo depois e recomeçar dali
+    if (evId && anchor != null) setWs("events", (x) => x.id === evId, "anchor", anchor);
   } catch (e) {
     setChats(pid, produce((x) => {
       x.busy = false;
@@ -202,8 +256,26 @@ export async function sendChat(pid: string) {
       x.input = text; // devolve o texto para tentar de novo
     }));
     setAttsOf(pid, files);
-    if (projectId() === pid) setWs("running", false);
+    if (projectId() === baseOf(pid)) setWs("running", anyBusy(baseOf(pid)));
   }
+}
+
+/**
+ * Editar um pedido já mandado (como no Claude): para o que estiver rodando, tira da tela esse
+ * pedido e tudo depois dele, e manda o texto novo. O Claude esquece a versão antiga.
+ */
+export async function resendEdited(pid: string, ev: ActivityEvent, text: string) {
+  if (ev.anchor === undefined || !text.trim()) return;
+  if (chatOf(pid).busy) {
+    await stopChat(pid);
+    for (let i = 0; i < 60 && chatOf(pid).busy; i++) await new Promise((r) => setTimeout(r, 100));
+    if (chatOf(pid).busy) return showToast("Não deu para parar a resposta. Tente de novo.");
+  }
+  const idx = ws.events.findIndex((x) => x.id === ev.id);
+  if (idx >= 0) setWs("events", (list) => list.filter((x, i) => i < idx || !ofChat(pid, x)));
+  setChats(pid, produce((c) => ((c.error = null), (c.draft = ""))));
+  setInput(pid, text);
+  await sendChat(pid, ev.anchor);
 }
 
 export async function stopChat(pid: string) {
@@ -235,10 +307,17 @@ export async function newChat(pid: string) {
     c.error = null;
     c.conv = null;
   }));
-  if (projectId() === pid) {
-    setWs("events", (l) => l.filter((e) => e.agent === "disco"));
-    setWs("running", false);
+  if (projectId() === baseOf(pid)) {
+    // só os passos desta conversa saem da tela (as outras abas continuam)
+    const mine = new Set(ws.events.filter((e) => ofChat(pid, e)).map((e) => e.id));
+    setWs("events", (l) => l.filter((e) => !mine.has(e.id)));
+    setWs("running", anyBusy(baseOf(pid)));
   }
+  setChats(pid, produce((c) => {
+    c.session = null;
+    c.context = null;
+    c.lastAt = null;
+  }));
 }
 
 /** Conversas anteriores do projeto e qual está aberta agora no chat. */
@@ -282,9 +361,12 @@ export async function deleteConvos(pid: string, list: Convo[], current: string |
 }
 
 /** Retoma uma conversa: o fim dela aparece no painel e o próximo pedido continua dela. */
-export async function openConversation(pid: string, c: Convo) {
+export async function openConversation(pid: string, c: Convo, quiet = false): Promise<boolean> {
   ensure(pid);
-  if (chats[pid].busy) return showToast("Espere a IA terminar (ou pare a resposta) antes de trocar de conversa");
+  if (chats[pid].busy) {
+    if (!quiet) showToast("Espere a IA terminar (ou pare a resposta) antes de trocar de conversa");
+    return false;
+  }
   try {
     const evs = await invoke<AgentEvent[]>("chat_open", { projectId: pid, kind: c.kind, id: c.id, account: c.account });
     setChats(pid, produce((x) => {
@@ -293,14 +375,25 @@ export async function openConversation(pid: string, c: Convo) {
       x.error = null;
       x.conv = { kind: c.kind, id: c.id, title: c.title };
     }));
-    if (projectId() !== pid) return;
-    // a conversa que estava na tela sai; as mudanças no disco ficam
-    setWs("events", (l) => l.filter((e) => e.agent === "disco"));
-    setWs("running", false);
+    // a conversa que estava nesta aba sai da tela; as outras abas e o disco ficam
+    const mine = new Set(ws.events.filter((e) => ofChat(pid, e)).map((e) => e.id));
+    setChats(pid, produce((x) => {
+      x.session = c.kind === "claude" ? c.id : null;
+      x.context = c.context ?? null;
+      x.lastAt = c.updated || null;
+    }));
+    if (c.kind === "claude") sessionHook?.(pid, c.id);
+    if (projectId() !== baseOf(pid)) return true;
+    // reabrindo a aba ao abrir o projeto: se o histórico já trouxe os passos, não repete
+    if (quiet && c.kind === "claude" && ws.events.some((e) => e.session === c.id)) return true;
+    setWs("events", (l) => l.filter((e) => !mine.has(e.id)));
+    setWs("running", anyBusy(baseOf(pid)));
     setSeenAgent(true);
-    for (const e of evs) feedAgentEvent(e);
+    for (const e of evs) feedAgentEvent({ ...e, tab: pid });
+    return true;
   } catch (e) {
-    showToast(errMsg(e));
+    if (!quiet) showToast(errMsg(e));
+    return false;
   }
 }
 

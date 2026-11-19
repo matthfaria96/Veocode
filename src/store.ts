@@ -43,8 +43,11 @@ export const absPathOf = (id: string) => absPaths.get(id);
 
 /** A lista de projetos já veio do disco? (até lá a tela inicial não diz "nenhum projeto") */
 export const [projectsReady, setProjectsReady] = createSignal(!isTauri);
+/** Demorando: quase sempre é o macOS esperando você liberar o acesso à pasta (pede de novo após atualizar o app). */
+export const [projectsSlow, setProjectsSlow] = createSignal(false);
 
 export async function loadProjects() {
+  const slow = window.setTimeout(() => setProjectsSlow(true), 2500);
   try {
     const list = await api.listProjects();
     list.forEach((i) => absPaths.set(i.id, i.path));
@@ -54,6 +57,8 @@ export async function loadProjects() {
   } catch (e) {
     showToast(`Não deu para abrir a lista de projetos: ${e}`);
   } finally {
+    window.clearTimeout(slow);
+    setProjectsSlow(false);
     setProjectsReady(true);
   }
 }
@@ -96,14 +101,15 @@ export async function removeProject(id: string, trashFolder = false): Promise<bo
   }
 }
 
-const persist = (id: string, change: { accountId?: string; access?: number }) => {
+const persist = (id: string, change: { accountId?: string; access?: number }): Promise<void> => {
   const p = projects.find((x) => x.id === id);
-  if (p && !p.demo) api.updateProject(id, change).catch((e) => showToast(`Não salvou: ${e}`));
+  if (!p || p.demo) return Promise.resolve();
+  return Promise.resolve(api.updateProject(id, change)).then(() => undefined, (e) => showToast(`Não salvou: ${e}`));
 };
 
-export function setProjectAccount(id: string, accountId: string) {
+export function setProjectAccount(id: string, accountId: string): Promise<void> {
   setProjects((p) => p.id === id, "accountId", accountId);
-  persist(id, { accountId });
+  return persist(id, { accountId });
 }
 
 // ---------- Estado do workspace ----------
@@ -125,6 +131,12 @@ export interface ActivityEvent {
   /** cor de quem fez (conta), para os eventos reais */
   color?: string;
   path?: string;
+  /** pedido da pessoa: de onde a conversa recomeça se ela editar ("" = do começo) */
+  anchor?: string;
+  /** sessão do Claude que fez (passos lidos do histórico) */
+  session?: string;
+  /** aba do chat (pedidos e respostas enviados por ela) */
+  tab?: string;
 }
 
 export interface Cursor {
@@ -196,7 +208,7 @@ export function pushEvent(e: Omit<ActivityEvent, "id" | "time" | "status"> & { s
   delete e.at;
   const time = now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
   const ev: ActivityEvent = { status: "running", ...e, id, time };
-  setWs("events", (list) => [...list, ev].slice(-60));
+  setWs("events", (list) => [...list, ev].slice(-400));
   return id;
 }
 export function finishEvent(id: number, detail?: string) {

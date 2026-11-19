@@ -35,6 +35,15 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "externalBin": [
+      "binaries/veocode-voice"
+    ],
+    "category": "DeveloperTool",
+    "shortDescription": "See and control what your AI coding agents are doing",
+    "copyright": "© 2026 Matheus Faria · MIT",
+    "macOS": {
+      "minimumSystemVersion": "13.0"
+    }
   }
 }

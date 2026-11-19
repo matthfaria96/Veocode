@@ -1,14 +1,23 @@
 import { dismissable } from "../dismiss";
-import { AlertTriangle, ArrowLeft, ArrowRight, Ban, Check, ChevronDown, Maximize2, MessageSquarePlus, Minimize2, PanelRightOpen, Pin, GripVertical, GitBranch, Sparkles, SendHorizontal, ShieldCheck, Square, X } from "lucide-solid";
+import { AlertTriangle, ArrowLeftRight, Ban, Check, ChevronDown, Maximize2, MessageSquarePlus, Minimize2, MoreHorizontal, PanelRightOpen, Paperclip, Pin, GripVertical, GitBranch, Sparkles, SendHorizontal, ShieldCheck, Square, X } from "lucide-solid";
 import { createEffect, createMemo, createSignal, For, on, Show } from "solid-js";
 import { accountById } from "../accounts";
-import { isPinned, maximized, movePane, panes, projectState, replacePane, setMaximized, swapPanes, togglePin } from "../board";
+import { closePane, isPinned, maximized, panes, projectState, replacePane, setMaximized, swapPanes, togglePin } from "../board";
+import { attsOf, dropPid, pasteFiles, pickFiles } from "../attachments";
+import AttachBar from "./AttachBar";
+import { activeKey, nameFromPrompt } from "../convTabs";
+import { MicButton } from "./Mic";
+import { listeningTo, voiceKey } from "../voice";
+import { MediaStrip, SentThumbs } from "./Media";
 import { drag, dropOver, startDrag } from "../drag";
 import { answerPermission, chatOf, clearError, newChat, sendChat, setInput, stopChat } from "../chat";
 import { clearFeed, feedOf, type FeedItem } from "../feeds";
 import { git, gitWords } from "../git";
 import { projects, setProjectId, setView } from "../store";
 import ActivityIcon, { kindColor } from "./ActivityIcon";
+import { stepsSummary } from "../steps";
+import { LimitHitCard, requestSwitch, UsageRing } from "./Limits";
+import { limitHit } from "../limits";
 import { ProjectIcon } from "./icons";
 import Markdown from "./Markdown";
 import { ProviderMark } from "./ui";
@@ -35,15 +44,19 @@ const stepKind = (k?: string) => (k && STEP_KINDS.has(k) ? k : "tool") as keyof 
 /** Um canto da grade: a conversa de um projeto rolando ao vivo, com a caixa para pedir. */
 export default function ChatPane(props: { pid: string; index: number }) {
   const p = () => projects.find((x) => x.id === props.pid)!;
+  // conversa da frente deste projeto (a mesma aba aberta na tela Projetos)
+  const ck = () => activeKey(props.pid);
   const a = () => accountById(p().accountId);
-  const chat = () => chatOf(props.pid);
+  const chat = () => chatOf(ck());
   const feed = () => feedOf(props.pid);
   const st = () => projectState(props.pid);
   const g = () => git.summaries[props.pid];
   const list = createMemo(() => blocks(feed().items.slice(-120)));
   const [pick, setPick] = createSignal(false);
+  const [more, setMore] = createSignal(false);
   let scroller!: HTMLDivElement;
   let titleBtn!: HTMLButtonElement;
+  let moreBtn!: HTMLButtonElement;
   let stick = true;
 
   // fica colado no fim enquanto a conversa rola, a não ser que a pessoa tenha subido para ler
@@ -58,7 +71,7 @@ export default function ChatPane(props: { pid: string; index: number }) {
     setProjectId(props.pid);
     setView("workspace");
   };
-  const send = () => void sendChat(props.pid);
+  const send = () => (nameFromPrompt(ck(), chat().input), void sendChat(ck()));
   const others = () => projects.filter((x) => !x.demo && x.id !== props.pid);
 
   return (
@@ -94,19 +107,25 @@ export default function ChatPane(props: { pid: string; index: number }) {
         </Show>
         <span class="pane-tools">
           <span class="pane-acc" title={`Conta: ${a().label}`}><ProviderMark id={a().id} size={16} /></span>
-          <Show when={panes().length > 1 && !maximized()}>
-            <button class="icon-btn small" title="Trocar de lugar com o anterior" disabled={props.index === 0} onClick={() => movePane(props.pid, -1)}><ArrowLeft size={12} /></button>
-            <button class="icon-btn small" title="Trocar de lugar com o próximo" disabled={props.index === panes().length - 1} onClick={() => movePane(props.pid, 1)}><ArrowRight size={12} /></button>
-          </Show>
+          <Show when={isPinned(props.pid)}><span class="pane-pinned" title="Fixado neste lugar"><Pin size={11} /></span></Show>
           <Show when={panes().length > 1}>
-            <button class="icon-btn small" title={maximized() === props.pid ? "Voltar para a divisão" : "Pôr em destaque na tela toda (os outros continuam rodando; Esc volta)"} onClick={() => setMaximized(maximized() === props.pid ? null : props.pid)}>
+            <button class="icon-btn small" title={maximized() === props.pid ? "Voltar para a divisão (Esc)" : "Ampliar na tela toda (os outros continuam rodando)"} onClick={() => setMaximized(maximized() === props.pid ? null : props.pid)}>
               {maximized() === props.pid ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
             </button>
           </Show>
-          <button class="icon-btn small" title="Nova conversa (a anterior fica guardada no projeto)" disabled={chat().busy} onClick={() => void newChat(props.pid).then(() => clearFeed(props.pid))}><MessageSquarePlus size={12} /></button>
-          <button class="icon-btn small" title="Abrir o projeto completo (árvore, editor, terminal)" onClick={openFull}><PanelRightOpen size={12} /></button>
-          <button class="icon-btn small pane-pin" classList={{ on: isPinned(props.pid) }} title={isPinned(props.pid) ? "Fixado: fica sempre na tela, neste lugar. Clique para soltar" : "Fixar na tela (sem fixar, um projeto parado dá lugar a quem pedir você)"} onClick={() => togglePin(props.pid)}><Pin size={12} /></button>
+          <button class="icon-btn small" title="Abrir o projeto completo (arquivos, editor, terminal)" onClick={openFull}><PanelRightOpen size={12} /></button>
+          <button class="icon-btn small" ref={moreBtn} classList={{ on: more() }} title="Mais opções" onClick={() => setMore(!more())}><MoreHorizontal size={13} /></button>
+          <button class="icon-btn small pane-close" title="Tirar da tela (o projeto continua na lista e trabalhando)" onClick={() => closePane(props.pid)}><X size={13} /></button>
         </span>
+        <Show when={more()}>
+          <div class="menu pop-in pane-menu right" ref={(el) => dismissable(el, () => setMore(false), () => moreBtn)}>
+            <button class="menu-item" disabled={chat().busy} onClick={() => (setMore(false), void newChat(ck()).then(() => clearFeed(props.pid)))}><MessageSquarePlus size={15} /><span>Nova conversa</span><small>a anterior fica guardada</small></button>
+            <button class="menu-item" onClick={() => (setMore(false), togglePin(props.pid))}><Pin size={15} /><span>{isPinned(props.pid) ? "Soltar deste lugar" : "Fixar neste lugar"}</span><small>{isPinned(props.pid) ? "pode dar lugar a outro" : "não sai sozinho"}</small></button>
+            <button class="menu-item" onClick={() => (setMore(false), setPick(true))}><ArrowLeftRight size={15} /><span>Trocar o projeto deste canto</span></button>
+            <div class="menu-sep" />
+            <button class="menu-item" onClick={() => (setMore(false), closePane(props.pid))}><X size={15} /><span>Tirar da tela</span></button>
+          </div>
+        </Show>
         <Show when={pick()}>
           <div class="menu pop-in pane-menu" ref={(el) => dismissable(el, () => setPick(false), () => titleBtn)}>
             <small class="menu-title">Mostrar neste canto</small>
@@ -131,9 +150,13 @@ export default function ChatPane(props: { pid: string; index: number }) {
                 b.kind === "steps" ? (
                   <Steps items={b.items} />
                 ) : b.item.kind === "user" ? (
-                  <div class="bubble user">{b.item.title}<MsgTools text={b.item.title} onReuse={() => (setInput(props.pid, b.item.title), focusComposer(scroller.closest(".pane")))} /></div>
+                  <div class="bubble user">{b.item.title}<SentThumbs text={b.item.title} /><MsgTools text={b.item.title} onReuse={() => (setInput(ck(), b.item.title), focusComposer(scroller.closest(".pane")))} /></div>
                 ) : b.item.kind === "say" ? (
-                  <div class="bubble agent say" style={{ "--c": a().color }}><Markdown text={b.item.title} /><MsgTools text={b.item.title} /></div>
+                  limitHit(b.item.title) ? (
+                    <LimitHitCard accountId={p().accountId} win={limitHit(b.item.title)!.win} raw={b.item.title} onPick={(id) => requestSwitch(props.pid, id)} />
+                  ) : (
+                    <div class="bubble agent say" style={{ "--c": a().color }}><Markdown text={b.item.title} /><MsgTools text={b.item.title} /></div>
+                  )
                 ) : b.item.kind === "error" ? (
                   <div class="pane-done err"><AlertTriangle size={11} /> {b.item.title}</div>
                 ) : (
@@ -160,8 +183,8 @@ export default function ChatPane(props: { pid: string; index: number }) {
                 <strong>{q.title}</strong>
                 <Show when={q.detail}><pre>{q.detail}</pre></Show>
                 <div class="perm-ask-actions">
-                  <button class="ghost-btn" disabled={q.answering} onClick={() => answerPermission(props.pid, q.requestId, false)}><Ban size={13} /> Recusar</button>
-                  <button class="primary-btn small" disabled={q.answering} onClick={() => answerPermission(props.pid, q.requestId, true)}><Check size={13} /> Permitir</button>
+                  <button class="ghost-btn" disabled={q.answering} onClick={() => answerPermission(ck(), q.requestId, false)}><Ban size={13} /> Recusar</button>
+                  <button class="primary-btn small" disabled={q.answering} onClick={() => answerPermission(ck(), q.requestId, true)}><Check size={13} /> Permitir</button>
                 </div>
               </div>
             )}
@@ -170,30 +193,39 @@ export default function ChatPane(props: { pid: string; index: number }) {
             <div class="bubble chat-error">
               <AlertTriangle size={14} />
               <span>{chat().error}</span>
-              <button class="icon-btn small" title="Fechar" onClick={() => clearError(props.pid)}><X size={12} /></button>
+              <button class="icon-btn small" title="Fechar" onClick={() => clearError(ck())}><X size={12} /></button>
             </div>
           </Show>
         </Show>
       </div>
 
-      <div class="pane-composer">
+      <MediaStrip pid={props.pid} compact />
+      <div class="pane-composer" classList={{ dropping: dropPid() === ck(), "has-atts": attsOf(ck()).length > 0, listening: listeningTo(ck()) }} data-attach-pid={ck()}>
+        <AttachBar pid={ck()} />
+        <button class="icon-btn pane-clip" classList={{ on: attsOf(ck()).length > 0 }} title="Anexar arquivos ou imagens (ou cole com ⌘V, ou arraste do Finder)" onClick={() => void pickFiles(ck())}><Paperclip size={14} /></button>
         <textarea
           rows={1}
           value={chat().input}
-          placeholder={`Pedir algo em ${p().name}…`}
-          onInput={(e) => setInput(props.pid, e.currentTarget.value)}
+          readOnly={listeningTo(ck())}
+          placeholder={listeningTo(ck()) ? "Pode falar… (Enter para, Esc cancela)" : `Pedir algo em ${p().name}… (⌥ Espaço para falar)`}
+          onPaste={(e) => void pasteFiles(ck(), e)}
+          onInput={(e) => setInput(ck(), e.currentTarget.value)}
           onKeyDown={(e) => {
+            if (voiceKey(ck(), e)) return;
+            if (e.key === "Escape" && chat().busy) return (e.preventDefault(), void stopChat(ck()));
             if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
               e.preventDefault();
               if (!chat().busy) send();
             }
           }}
         />
+        <UsageRing id={p().accountId} small />
+        <MicButton target={ck()} compact />
         <Show
           when={chat().busy}
-          fallback={<button class="send-btn" disabled={!chat().input.trim()} title="Enviar (Enter)" onClick={send}><SendHorizontal size={14} /></button>}
+          fallback={<button class="send-btn" disabled={!chat().input.trim() && !attsOf(ck()).length} title="Enviar (Enter)" onClick={send}><SendHorizontal size={14} /></button>}
         >
-          <button class="send-btn stop" title="Parar a resposta" onClick={() => void stopChat(props.pid)}><Square size={12} /></button>
+          <button class="send-btn stop" title="Parar (Esc)" onClick={() => void stopChat(ck())}><Square size={12} /></button>
         </Show>
       </div>
     </section>
@@ -201,22 +233,37 @@ export default function ChatPane(props: { pid: string; index: number }) {
 }
 
 function Steps(props: { items: FeedItem[] }) {
+  // fechado numa linha só, como na conversa; enquanto trabalha mostra o passo atual
   const [open, setOpen] = createSignal(false);
-  const shown = () => (open() ? props.items : props.items.slice(-4));
+  const running = () => props.items.find((s) => s.status === "running");
+  const failed = () => props.items.filter((s) => s.status === "error").length;
   return (
-    <div class="pane-steps">
-      <Show when={props.items.length > 4}>
-        <button class="pane-steps-more" onClick={() => setOpen(!open())}>{open() ? "Mostrar só os últimos" : `${props.items.length} passos · ver todos`}</button>
+    <div class="pane-steps" classList={{ open: open() }}>
+      <button class="work-sum" aria-expanded={open()} onClick={() => setOpen(!open())}>
+        <Show when={running()} fallback={<span class="work-sum-text">{stepsSummary(props.items.map((s) => stepKind(s.step)))}</span>}>
+          {(r) => (
+            <>
+              <span class="spinner" />
+              <span class="work-sum-text now">{r().title}</span>
+            </>
+          )}
+        </Show>
+        <Show when={failed() > 0}><small class="work-sum-fail">{failed()} falhou</small></Show>
+        <ChevronDown size={12} class="work-chev" />
+      </button>
+      <Show when={open()}>
+        <div class="pane-steps-list slide-in">
+          <For each={props.items}>
+            {(s) => (
+              <div class="pane-step" classList={{ running: s.status === "running", err: s.status === "error" }} title={s.detail ?? s.title}>
+                <span class="pane-step-icon" style={{ color: kindColor[stepKind(s.step)] }}><ActivityIcon kind={stepKind(s.step)} size={12} /></span>
+                <span class="pane-step-title">{s.sub ? <em>{s.sub}: </em> : null}{s.title}</span>
+                <Show when={s.status === "running"}><span class="spinner" /></Show>
+              </div>
+            )}
+          </For>
+        </div>
       </Show>
-      <For each={shown()}>
-        {(s) => (
-          <div class="pane-step" classList={{ running: s.status === "running", err: s.status === "error" }} title={s.detail ?? s.title}>
-            <span class="pane-step-icon" style={{ color: kindColor[stepKind(s.step)] }}><ActivityIcon kind={stepKind(s.step)} size={12} /></span>
-            <span class="pane-step-title">{s.sub ? <em>{s.sub}: </em> : null}{s.title}</span>
-            <Show when={s.status === "running"}><span class="spinner" /></Show>
-          </div>
-        )}
-      </For>
     </div>
   );
 }
@@ -244,7 +291,7 @@ function PaneIdle(props: { pid: string }) {
       <div class="pane-ideas">
         <For each={ideas()}>
           {(t, i) => (
-            <button style={{ "--i": i(), "--c": a().color }} onClick={() => (setInput(props.pid, t), focusComposer(document.querySelector(`[data-drop-pane="${props.pid}"]`)))}>
+            <button style={{ "--i": i(), "--c": a().color }} onClick={() => (setInput(activeKey(props.pid), t), focusComposer(document.querySelector(`[data-drop-pane="${props.pid}"]`)))}>
               <Sparkles size={12} /> {t}
             </button>
           )}

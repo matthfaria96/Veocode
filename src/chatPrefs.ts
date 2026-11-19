@@ -53,3 +53,6 @@ export function prefsLabel(pid: string): string | null {
   const parts = [p.model ? m?.label ?? p.model : null, p.effort ? `força ${e?.label.toLowerCase()}` : null].filter(Boolean);
   return parts.length ? parts.join(" · ") : null;
 }
+
+/** "claude-opus-5-5" → "Opus 5.5" (para mostrar o modelo no botão da IA). */
+export const niceModel = (s: string) => s.replace(/\bclaude-([a-z]+)-(\d+)-(\d+)\b/gi, (_, n: string, a, b) => `${n[0].toUpperCase()}${n.slice(1)} ${a}.${b}`);

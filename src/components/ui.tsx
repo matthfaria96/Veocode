@@ -23,37 +23,6 @@ export function ProviderMark(props: { id: string; size?: number }) {
   );
 }
 
-/** Anel de uso animado. */
-export function Ring(props: { value: number; color: string; size?: number; stroke?: number; children?: JSX.Element }) {
-  const size = () => props.size ?? 64;
-  const stroke = () => props.stroke ?? 6;
-  const r = () => (size() - stroke()) / 2;
-  const c = () => 2 * Math.PI * r();
-  const [shown, setShown] = createSignal(0);
-  createEffect(on(() => props.value, (v) => requestAnimationFrame(() => setShown(v))));
-  return (
-    <div class="ring" style={{ width: `${size()}px`, height: `${size()}px` }}>
-      <svg width={size()} height={size()}>
-        <circle cx={size() / 2} cy={size() / 2} r={r()} stroke="var(--line)" stroke-width={stroke()} fill="none" />
-        <circle
-          class="ring-value"
-          cx={size() / 2}
-          cy={size() / 2}
-          r={r()}
-          stroke={props.color}
-          stroke-width={stroke()}
-          fill="none"
-          stroke-linecap="round"
-          stroke-dasharray={`${c()}`}
-          stroke-dashoffset={`${c() * (1 - shown())}`}
-          transform={`rotate(-90 ${size() / 2} ${size() / 2})`}
-        />
-      </svg>
-      <div class="ring-label">{props.children}</div>
-    </div>
-  );
-}
-
 /** Número que "rola" até o valor novo. */
 export function CountUp(props: { value: number; format?: (n: number) => string; ms?: number }) {
   const [n, setN] = createSignal(0);

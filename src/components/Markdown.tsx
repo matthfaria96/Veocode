@@ -14,7 +14,7 @@ type Block =
   | { t: "quote"; text: string }
   | { t: "hr" };
 
-export function parseBlocks(src: string): Block[] {
+function parseBlocks(src: string): Block[] {
   const lines = src.replace(/\r\n/g, "\n").split("\n");
   const out: Block[] = [];
   let para: string[] = [];
@@ -82,7 +82,7 @@ const openLink = (e: MouseEvent, url: string) => {
 };
 
 /** Trechos de uma linha: código, negrito, itálico e links. */
-export function Inline(props: { text: string }): JSX.Element {
+function Inline(props: { text: string }): JSX.Element {
   const parts = () => {
     const re = /(`[^`\n]+`)|(\*\*[^*\n]+\*\*)|(\[[^\]\n]+\]\([^)\s]+\))|(\*[^*\s][^*\n]*\*)/g;
     const out: JSX.Element[] = [];

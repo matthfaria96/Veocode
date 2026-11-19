@@ -5,6 +5,7 @@ export default function ConfirmDialog(props: {
   title: string;
   confirmLabel: string;
   danger?: boolean;
+  disabled?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
   children: JSX.Element;
@@ -24,7 +25,7 @@ export default function ConfirmDialog(props: {
         <div class="dialog-body">{props.children}</div>
         <div class="dialog-actions">
           <button class="ghost-btn" ref={cancel} onClick={props.onCancel}>Cancelar</button>
-          <button class={props.danger ? "danger-btn" : "primary-btn"} onClick={props.onConfirm}>
+          <button class={props.danger ? "danger-btn" : "primary-btn"} disabled={props.disabled} onClick={props.onConfirm}>
             {props.confirmLabel}
           </button>
         </div>

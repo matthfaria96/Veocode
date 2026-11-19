@@ -1,16 +1,19 @@
-import { ChevronDown, FilePlus, FlaskConical, FolderMinus, FolderPlus, FolderSearch, GitBranch, Pause, Play, Plus, RefreshCw } from "lucide-solid";
+import { ChevronDown, FilePlus, FlaskConical, FolderMinus, FolderPlus, FolderSearch, GitBranch, Maximize2, Minimize2, Pause, Play, Plus, RefreshCw, X } from "lucide-solid";
 import { askCloseProject } from "../components/CloseProject";
 import { ProjectIcon } from "../components/icons";
-import { createEffect, createSignal, For, on, onCleanup, Show } from "solid-js";
+import { createEffect, createSignal, For, Match, on, onCleanup, Show, Switch } from "solid-js";
 import { accessLevels } from "../data/mock";
 import { accountById } from "../accounts";
-import { git, gitWords, loadSummaries, setGitTab } from "../git";
+import { git, gitWords, loadSummaries, setGitTab, setSideTab, sideTab } from "../git";
+import { isUnsaved, saveNow } from "../editing";
+import GitPanel from "../components/GitPanel";
+import TrailPanel from "../components/TrailPanel";
 import { absPathOf, addProjectFromPicker, currentProject, projectId, projects, resetWorkspace, setProjectId, setWs, showToast, ws } from "../store";
 import { startAgentSim } from "../sim/agentSim";
 import { dismissable } from "../dismiss";
 import { newEntry } from "../fileActions";
 import { startAgentFeed } from "../agentFeed";
-import { chatOf, restoreChat } from "../chat";
+import { anyBusy, restoreChat } from "../chat";
 import { loadDir, openRealProject } from "../realProject";
 import { api } from "../api";
 import FileTree from "../components/FileTree";
@@ -22,43 +25,33 @@ import AgentCursors from "../components/AgentCursors";
 import { ProviderMark } from "../components/ui";
 import { projectState } from "../board";
 import { watchFeeds } from "../feeds";
-import { setWsMode, wsMode } from "../layoutMode";
+import { bottomOpen, filesMax, filesW, resetFilesW, setFilesMax, setFilesW, setWsMode, wsMode } from "../layoutMode";
 
-// largura da conversa à direita: arrastável, lembrada neste computador
-const CHAT_W = 400;
-const readW = () => {
-  try {
-    const v = Number(localStorage.getItem("veocode.chat.width"));
-    return v >= 320 && v <= 900 ? v : CHAT_W;
-  } catch {
-    return CHAT_W;
-  }
-};
-const [chatW, setChatW] = createSignal(readW());
-const saveChatW = (w: number) => {
-  setChatW(w);
-  try {
-    localStorage.setItem("veocode.chat.width", String(w));
-  } catch {
-    /* sem armazenamento */
-  }
-};
 const [dragging, setDragging] = createSignal(false);
+/** Arrastar a borda do painel de arquivos (à direita do chat). */
 function startDrag(e: PointerEvent) {
   e.preventDefault();
   const x0 = e.clientX;
-  const w0 = chatW();
-  const max = Math.min(900, window.innerWidth - 560);
+  const w0 = filesW();
+  const max = Math.min(1400, window.innerWidth - 640);
   setDragging(true);
-  const move = (ev: PointerEvent) => setChatW(Math.round(Math.max(320, Math.min(max, w0 + (x0 - ev.clientX)))));
+  const move = (ev: PointerEvent) => setFilesW(Math.round(Math.max(340, Math.min(max, w0 + (x0 - ev.clientX)))));
   const up = () => {
     setDragging(false);
-    saveChatW(chatW());
+    setFilesW(filesW(), true);
     window.removeEventListener("pointermove", move);
     window.removeEventListener("pointerup", up);
   };
   window.addEventListener("pointermove", move);
   window.addEventListener("pointerup", up);
+}
+
+/** Fecha todas as abas de arquivo (grava antes o que ainda falta gravar). */
+async function closeAllFiles() {
+  for (const path of [...ws.openTabs]) if (!currentProject().demo && isUnsaved(path) && !(await saveNow(path))) return showToast(`Não deu para salvar ${path}: feche a aba dele para decidir`);
+  setWs("openTabs", []);
+  setWs("activeFile", "");
+  setFilesMax(false);
 }
 
 export default function Workspace() {
@@ -84,7 +77,7 @@ export default function Workspace() {
         onCleanup(stop);
         // conversa com API guardada no Rust; resposta ainda chegando
         restoreChat(project.id);
-        if (chatOf(project.id).busy) setWs("running", true);
+        if (anyBusy(project.id)) setWs("running", true);
       }
     }),
   );
@@ -97,7 +90,7 @@ export default function Workspace() {
   };
 
   return (
-    <div class="workspace" classList={{ adv: wsMode() === "avancado", "no-file": !ws.activeFile, resizing: dragging() }} style={{ "--chat-w": `${chatW()}px` }} ref={root}>
+    <div class="workspace" classList={{ adv: wsMode() === "avancado", "has-files": ws.openTabs.length > 0, "files-max": filesMax() && ws.openTabs.length > 0, resizing: dragging() }} style={{ "--files-w": `${filesW()}px` }} ref={root}>
       <Show when={wsMode() === "avancado"}>
         <ProjectsColumn />
       </Show>
@@ -167,22 +160,40 @@ export default function Workspace() {
           <span>{accountById(p().accountId).label}</span>
         </div>
 
-        <div class="sidebar-title">
-          <span title={p().path}>Arquivos{p().demo ? " (fictícios)" : ""}</span>
-          <Show when={!p().demo}>
-            <span class="sidebar-tools">
-              <button class="icon-btn small" title="Novo arquivo" onClick={() => void newEntry("", false)}><FilePlus size={12} /></button>
-              <button class="icon-btn small" title="Nova pasta" onClick={() => void newEntry("", true)}><FolderPlus size={12} /></button>
-              <button class="icon-btn small" title="Recarregar a lista de arquivos" onClick={() => loadDir("")}><RefreshCw size={12} /></button>
-              <button class="icon-btn small" title="Mostrar no Finder/Explorer" onClick={reveal}><FolderSearch size={12} /></button>
-              <button class="icon-btn small" title="Fechar este projeto (tirar do Veocode)" onClick={removeFromList}><FolderMinus size={12} /></button>
-            </span>
-          </Show>
+        <div class="seg three side-seg">
+          <button classList={{ active: sideTab() === "files" }} onClick={() => setSideTab("files")} title="Arquivos da pasta">Arquivos</button>
+          <button classList={{ active: sideTab() === "git" }} onClick={() => setSideTab("git")} title="Git e GitHub deste projeto">Git <GitBadge /></button>
+          <button classList={{ active: sideTab() === "trail" }} onClick={() => setSideTab("trail")} title="O que a IA deixou: sobras para limpar, pastas fora do projeto e o que instalou">Rastro</button>
+          <span class="seg-thumb" style={{ transform: `translateX(${["files", "git", "trail"].indexOf(sideTab()) * 100}%)` }} />
         </div>
 
-        <Show when={p().demo} fallback={<Show when={p().exists} fallback={<div class="tree-loading">A pasta {p().path} não existe mais.</div>}><RealFileTree /></Show>}>
-          <FileTree />
-        </Show>
+        <Switch>
+          <Match when={sideTab() === "files"}>
+            <div class="sidebar-title">
+              <span title={p().path}>Arquivos{p().demo ? " (fictícios)" : ""}</span>
+              <Show when={!p().demo}>
+                <span class="sidebar-tools">
+                  <button class="icon-btn small" title="Novo arquivo" onClick={() => void newEntry("", false)}><FilePlus size={12} /></button>
+                  <button class="icon-btn small" title="Nova pasta" onClick={() => void newEntry("", true)}><FolderPlus size={12} /></button>
+                  <button class="icon-btn small" title="Recarregar a lista de arquivos" onClick={() => loadDir("")}><RefreshCw size={12} /></button>
+                  <button class="icon-btn small" title="Mostrar no Finder/Explorer" onClick={reveal}><FolderSearch size={12} /></button>
+                  <button class="icon-btn small" title="Fechar este projeto (tirar do Veocode)" onClick={removeFromList}><FolderMinus size={12} /></button>
+                </span>
+              </Show>
+            </div>
+
+            <Show when={p().demo} fallback={<Show when={p().exists} fallback={<div class="tree-loading">A pasta {p().path} não existe mais.</div>}><RealFileTree /></Show>}>
+              <FileTree />
+            </Show>
+
+          </Match>
+          <Match when={sideTab() === "git"}>
+            <div class="side-scroll"><GitPanel /></div>
+          </Match>
+          <Match when={sideTab() === "trail"}>
+            <div class="side-scroll"><TrailPanel /></div>
+          </Match>
+        </Switch>
 
         <div class="mode-switch" role="radiogroup" aria-label="Modo da tela">
           <button role="radio" aria-checked={wsMode() === "simples"} classList={{ active: wsMode() === "simples" }} onClick={() => setWsMode("simples")} title="Um projeto por vez: troque pelo nome lá em cima">Simples</button>
@@ -202,12 +213,24 @@ export default function Workspace() {
             <button class="primary-btn small" onClick={() => void addProjectFromPicker()}><FolderPlus size={13} /> Adicionar pasta</button>
           </div>
         </Show>
-        <Editor />
-        <BottomPanel />
+        <ChatPanel />
+        <Show when={bottomOpen()}>
+          <BottomPanel />
+        </Show>
       </section>
 
-      <div class="chat-resize" title="Arraste para alargar ou estreitar a conversa (dois cliques volta ao normal)" onPointerDown={startDrag} onDblClick={() => saveChatW(CHAT_W)} />
-      <ChatPanel />
+      <Show when={ws.openTabs.length > 0}>
+        <div class="chat-resize" title="Arraste para alargar ou estreitar os arquivos (dois cliques volta ao normal)" onPointerDown={startDrag} onDblClick={resetFilesW} />
+        <section class="files-pane pop-in">
+          <Editor />
+          <div class="files-tools">
+            <button class="icon-btn small" title={filesMax() ? "Voltar ao normal" : "Maximizar os arquivos (o chat fica estreito)"} onClick={() => setFilesMax(!filesMax())}>
+              {filesMax() ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+            </button>
+            <button class="icon-btn small" title="Fechar os arquivos" onClick={() => void closeAllFiles()}><X size={14} /></button>
+          </div>
+        </section>
+      </Show>
       <AgentCursors />
     </div>
   );
@@ -249,5 +272,17 @@ function ProjectsColumn() {
         </For>
       </div>
     </aside>
+  );
+}
+
+/** Na aba Git: quantos commits faltam enviar ou baixar, ou um ponto quando há mudanças. */
+function GitBadge() {
+  const sum = () => git.summaries[currentProject().id];
+  return (
+    <Show when={sum()?.repo}>
+      <Show when={sum()!.ahead || sum()!.behind} fallback={<Show when={sum()!.changed}><i class="seg-dot" title={`${sum()!.changed} arquivos mudados`} /></Show>}>
+        <span class="seg-badge" title="Commits para enviar / baixar">{sum()!.ahead ? `↑${sum()!.ahead}` : ""}{sum()!.behind ? `↓${sum()!.behind}` : ""}</span>
+      </Show>
+    </Show>
   );
 }

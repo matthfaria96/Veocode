@@ -4,7 +4,7 @@ import { AlertTriangle, FolderMinus, Trash2, X } from "lucide-solid";
 import { createSignal, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import { api } from "../api";
-import { chatOf } from "../chat";
+import { anyBusy } from "../chat";
 import { saveAll } from "../editing";
 import { forgetFeed } from "../feeds";
 import { forgetGit, git } from "../git";
@@ -80,7 +80,7 @@ function CloseDialog(props: { id: string; onClose: () => void }) {
             </span>
           </p>
         </Show>
-        <Show when={chatOf(props.id).busy}>
+        <Show when={anyBusy(props.id)}>
           <p class="close-warn"><AlertTriangle size={14} /><span>A IA está trabalhando neste projeto agora: fechar interrompe a resposta.</span></p>
         </Show>
 

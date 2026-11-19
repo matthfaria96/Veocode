@@ -113,7 +113,7 @@ fn refresh(sys: &mut System) {
     sys.refresh_processes_specifics(
         ProcessesToUpdate::All,
         true,
-        ProcessRefreshKind::nothing().with_cpu().with_memory().with_cmd(UpdateKind::OnlyIfNotSet).with_cwd(UpdateKind::OnlyIfNotSet),
+        ProcessRefreshKind::nothing().with_cpu().with_memory().with_cmd(UpdateKind::OnlyIfNotSet).with_cwd(UpdateKind::OnlyIfNotSet).with_exe(UpdateKind::OnlyIfNotSet),
     );
     // (o número de processos atualizados não interessa)
 }
@@ -247,10 +247,260 @@ pub fn kill(sys: &mut System, pid: u32) -> Result<(), String> {
         _ => Err("o sistema não deixou encerrar".into()),
     }
 }
+// ---------------------------------------------------------------- portas abertas
+
+/// Um servidor que ficou rodando depois que quem o abriu (agente, terminal) fechou.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Leftover {
+    /// O processo de cima da árvore que sobrou (encerrá-lo leva junto os de baixo).
+    pub pid: u32,
+    pub cmd: String,
+    pub cwd: String,
+    /// Nome do projeto do Veocode, se a pasta for de um.
+    pub project: Option<String>,
+    pub ports: Vec<u16>,
+    pub cpu: f32,
+    pub mem: u64,
+    pub run_secs: u64,
+    /// Todos os processos da árvore (o de cima primeiro).
+    pub pids: Vec<u32>,
+}
+
+/// Qualquer outro programa com porta aberta (só para consulta).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PortOwner {
+    pub pid: u32,
+    pub name: String,
+    pub cmd: String,
+    pub ports: Vec<u16>,
+    /// Agente que abriu, se for de um agente que ainda está aberto.
+    pub agent: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PortReport {
+    pub leftovers: Vec<Leftover>,
+    pub others: Vec<PortOwner>,
+}
+
+/// O mínimo de cada processo para decidir se ele "sobrou" (separado do sysinfo para dar para testar).
+#[derive(Debug, Clone)]
+pub struct Node {
+    pub parent: Option<u32>,
+    pub name: String,
+    pub exe: String,
+    pub cwd: Option<PathBuf>,
+}
+
+/// Programas que ficam pendurados no sistema de propósito e não são "restos".
+fn is_service(n: &Node) -> bool {
+    let exe = n.exe.to_lowercase();
+    let name = n.name.to_lowercase();
+    // apps de verdade (Discord, Terminal…); o Python do macOS também mora num "Python.app", mas dentro de um .framework
+    (exe.contains(".app/contents/macos/") && !exe.contains(".framework/")) || exe.starts_with("/system/") || exe.starts_with("/usr/libexec/") || exe.starts_with("/usr/sbin/")
+        || exe.contains("\\windows\\")
+        || matches!(name.as_str(), "launchd" | "login" | "sshd" | "tmux" | "tmux: server" | "screen" | "systemd" | "init" | "explorer.exe" | "services.exe" | "svchost.exe")
+}
+
+/// O processo de cima da árvore: aquele cujo pai é o sistema (pid ≤ 1) ou já não existe.
+fn root_of(nodes: &HashMap<u32, Node>, pid: u32) -> u32 {
+    let mut cur = pid;
+    for _ in 0..32 {
+        match nodes.get(&cur).and_then(|n| n.parent) {
+            Some(p) if p > 1 && nodes.contains_key(&p) => cur = p,
+            _ => break,
+        }
+    }
+    cur
+}
+
+/// Pasta "de trabalho" plausível: dentro da sua pasta pessoal, mas não a própria nem Library/AppData.
+fn work_dir(cwd: &std::path::Path, home: &std::path::Path) -> bool {
+    let Ok(rest) = cwd.strip_prefix(home) else { return false };
+    let first = rest.components().next().map(|c| c.as_os_str().to_string_lossy().to_lowercase());
+    match first.as_deref() {
+        None => false,
+        Some(f) => !matches!(f, "library" | "appdata") && !f.starts_with('.'),
+    }
+}
+
+/// Raízes das árvores que sobraram e têm porta aberta. `me` é o próprio Veocode (nunca entra).
+pub fn leftover_roots(nodes: &HashMap<u32, Node>, ports: &HashMap<u32, Vec<u16>>, agents: &std::collections::HashSet<u32>, me: u32, home: &std::path::Path) -> Vec<u32> {
+    let my_root = root_of(nodes, me);
+    let mut roots: Vec<u32> = ports
+        .keys()
+        .filter(|pid| nodes.contains_key(pid))
+        .map(|pid| root_of(nodes, *pid))
+        .filter(|r| *r != my_root && !agents.contains(r))
+        .filter(|r| {
+            let n = &nodes[r];
+            !is_service(n) && n.cwd.as_deref().is_some_and(|c| work_dir(c, home))
+        })
+        .collect();
+    roots.sort_unstable();
+    roots.dedup();
+    roots
+}
+
+fn nodes_of(procs: &HashMap<Pid, sysinfo::Process>) -> HashMap<u32, Node> {
+    procs
+        .iter()
+        .map(|(pid, p)| {
+            (pid.as_u32(), Node {
+                parent: p.parent().map(|x| x.as_u32()),
+                name: p.name().to_string_lossy().into_owned(),
+                exe: p.exe().map(|e| e.to_string_lossy().into_owned()).unwrap_or_default(),
+                cwd: p.cwd().map(PathBuf::from),
+            })
+        })
+        .collect()
+}
+
+/// Árvore abaixo de `root` (inclui ele), pais antes dos filhos.
+fn tree(nodes: &HashMap<u32, Node>, root: u32) -> Vec<u32> {
+    let mut kids: HashMap<u32, Vec<u32>> = HashMap::new();
+    for (pid, n) in nodes {
+        if let Some(p) = n.parent {
+            kids.entry(p).or_default().push(*pid);
+        }
+    }
+    let mut out = vec![];
+    let mut stack = vec![root];
+    while let Some(p) = stack.pop() {
+        if out.len() > 200 {
+            break;
+        }
+        out.push(p);
+        stack.extend(kids.get(&p).into_iter().flatten());
+    }
+    out
+}
+
+/// Todas as portas abertas: o que sobrou de sessões fechadas e o resto, só para consulta.
+pub fn ports(sys: &mut System, projects: &[(String, PathBuf)], home: &std::path::Path) -> PortReport {
+    let groups = snapshot(sys);
+    let ports = listening_ports();
+    let procs = sys.processes();
+    let nodes = nodes_of(procs);
+    let agent_pids: std::collections::HashSet<u32> = groups.iter().map(|g| g.pid).collect();
+    let mut in_agent: HashMap<u32, String> = HashMap::new();
+    for g in &groups {
+        in_agent.insert(g.pid, g.agent.clone());
+        for c in &g.children {
+            in_agent.insert(c.pid, g.agent.clone());
+        }
+    }
+    let me = std::process::id();
+    let roots = leftover_roots(&nodes, &ports, &agent_pids, me, home);
+
+    let mut taken = std::collections::HashSet::new();
+    let mut leftovers = Vec::new();
+    for r in roots {
+        let pids = tree(&nodes, r);
+        let (mut cpu, mut mem) = (0.0, 0);
+        let mut ps = vec![];
+        for pid in &pids {
+            if let Some(p) = procs.get(&Pid::from_u32(*pid)) {
+                cpu += p.cpu_usage();
+                mem += p.memory();
+            }
+            ps.extend(ports.get(pid).into_iter().flatten().copied());
+            taken.insert(*pid);
+        }
+        ps.sort_unstable();
+        ps.dedup();
+        let Some(p) = procs.get(&Pid::from_u32(r)) else { continue };
+        let cwd = p.cwd().map(PathBuf::from).unwrap_or_default();
+        let project = projects.iter().filter(|(_, root)| cwd.starts_with(root)).max_by_key(|(_, root)| root.as_os_str().len()).map(|(n, _)| n.clone());
+        // o comando mais útil é o de quem abriu a porta (ex.: "vite"), não o "npm run dev" de cima
+        let opener = pids.iter().find(|x| ports.contains_key(x)).and_then(|x| procs.get(&Pid::from_u32(*x))).unwrap_or(p);
+        leftovers.push(Leftover { pid: r, cmd: cmd_line(opener), cwd: cwd.to_string_lossy().into_owned(), project, ports: ps, cpu, mem, run_secs: p.run_time(), pids });
+    }
+    leftovers.sort_by(|a, b| b.run_secs.cmp(&a.run_secs));
+
+    let mut others: Vec<PortOwner> = ports
+        .iter()
+        .filter(|(pid, _)| !taken.contains(pid))
+        .filter_map(|(pid, ps)| {
+            let p = procs.get(&Pid::from_u32(*pid))?;
+            Some(PortOwner { pid: *pid, name: p.name().to_string_lossy().into_owned(), cmd: cmd_line(p), ports: ps.clone(), agent: in_agent.get(pid).cloned() })
+        })
+        .collect();
+    others.sort_by(|a, b| b.agent.is_some().cmp(&a.agent.is_some()).then(a.ports.first().cmp(&b.ports.first())));
+    PortReport { leftovers, others }
+}
+
+/// Encerra uma árvore que sobrou (de baixo para cima). Recusa qualquer coisa que não esteja na lista de restos.
+pub fn kill_leftover(sys: &mut System, pid: u32, projects: &[(String, PathBuf)], home: &std::path::Path) -> Result<(), String> {
+    let report = ports(sys, projects, home);
+    let l = report.leftovers.iter().find(|l| l.pid == pid).ok_or("esse servidor não está na lista do que sobrou")?;
+    let mut failed = 0;
+    for p in l.pids.iter().rev() {
+        if let Some(proc_) = sys.process(Pid::from_u32(*p)) {
+            if !matches!(proc_.kill_with(Signal::Term), Some(true)) && !proc_.kill() {
+                failed += 1;
+            }
+        }
+    }
+    if failed == l.pids.len() { Err("o sistema não deixou encerrar".into()) } else { Ok(()) }
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn node(parent: u32, name: &str, exe: &str, cwd: &str) -> Node {
+        Node { parent: Some(parent), name: name.into(), exe: exe.into(), cwd: Some(cwd.into()) }
+    }
+
+    #[test]
+    fn finds_leftover_dev_servers() {
+        let home = std::path::Path::new("/Users/eu");
+        let mut n = HashMap::new();
+        // sobrou: npm → vite, pai do npm já é o sistema
+        n.insert(10, node(1, "npm", "/opt/homebrew/bin/node", "/Users/eu/dev/site"));
+        n.insert(11, node(10, "node", "/opt/homebrew/bin/node", "/Users/eu/dev/site"));
+        // aberto no Terminal: não sobrou
+        n.insert(20, node(1, "Terminal", "/System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal", "/"));
+        n.insert(21, node(20, "zsh", "/bin/zsh", "/Users/eu/dev/api"));
+        n.insert(22, node(21, "node", "/opt/homebrew/bin/node", "/Users/eu/dev/api"));
+        // app comum com porta
+        n.insert(30, node(1, "Discord", "/Applications/Discord.app/Contents/MacOS/Discord", "/"));
+        // python do macOS: mora num Python.app dentro de um .framework, mas é um servidor solto
+        n.insert(70, node(1, "Python", "/Library/Frameworks/Python3.framework/Versions/3.9/Resources/Python.app/Contents/MacOS/Python", "/Users/eu/dev/docs"));
+        // serviço do Homebrew (pasta fora do home)
+        n.insert(40, node(1, "postgres", "/opt/homebrew/bin/postgres", "/opt/homebrew/var/postgresql"));
+        // o próprio Veocode em modo dev, também solto
+        n.insert(50, node(1, "npm", "/opt/homebrew/bin/node", "/Users/eu/dev/veocode"));
+        n.insert(51, node(50, "node", "/opt/homebrew/bin/node", "/Users/eu/dev/veocode"));
+        n.insert(52, node(50, "veocode", "/Users/eu/dev/veocode/target/debug/veocode", "/Users/eu/dev/veocode"));
+        // agente aberto
+        n.insert(60, node(1, "claude", "/Users/eu/.local/bin/claude", "/Users/eu/dev/x"));
+        n.insert(61, node(60, "node", "/opt/homebrew/bin/node", "/Users/eu/dev/x"));
+        let ports: HashMap<u32, Vec<u16>> = [(11, vec![5173]), (22, vec![3000]), (30, vec![6463]), (40, vec![5432]), (51, vec![1420]), (61, vec![8080]), (70, vec![8765])].into();
+        let agents = [60].into();
+        assert_eq!(leftover_roots(&n, &ports, &agents, 52, home), vec![10, 70]);
+        assert_eq!(tree(&n, 10), vec![10, 11]);
+    }
+
+    #[test]
+    fn work_dirs() {
+        let h = std::path::Path::new("/Users/eu");
+        assert!(work_dir("/Users/eu/dev/a".as_ref(), h));
+        assert!(!work_dir("/Users/eu".as_ref(), h));
+        assert!(!work_dir("/Users/eu/Library/x".as_ref(), h));
+        assert!(!work_dir("/Users/eu/.cache/x".as_ref(), h));
+        assert!(!work_dir("/opt/x".as_ref(), h));
+    }
+
+    #[test]
+    fn refuses_to_kill_non_leftovers() {
+        let mut sys = new_system().unwrap();
+        assert!(kill_leftover(&mut sys, 1, &[], &crate::xray::util::home()).is_err());
+    }
 
     #[test]
     fn recognizes_agents() {

@@ -2,7 +2,7 @@
 
 import { createSignal } from "solid-js";
 import { createStore, produce, reconcile } from "solid-js/store";
-import { isTauri, xrayApi, type AgentGroup, type CacheSpec, type InstallReport, type MachineReport, type ModelReport } from "./api";
+import { isTauri, xrayApi, type AgentGroup, type CacheSpec, type InstallReport, type MachineReport, type ModelReport, type PortReport } from "./api";
 import { caches as mockCaches, installed as mockInstalled, machines as mockMachines, processes as mockProcs } from "./data/mock";
 import { showToast } from "./store";
 
@@ -23,6 +23,7 @@ interface XrayState {
   modelsLoading: boolean;
   procs: AgentGroup[];
   procsLoaded: boolean;
+  ports: PortReport | null;
   /** pid → últimas leituras de CPU (para o gráfico). */
   cpu: Record<number, number[]>;
   busy: Record<string, boolean>;
@@ -39,6 +40,7 @@ export const [xray, setXray] = createStore<XrayState>({
   modelsLoading: false,
   procs: [],
   procsLoaded: false,
+  ports: null,
   cpu: {},
   busy: {},
 });
@@ -238,6 +240,35 @@ export async function killProc(pid: number) {
   }
 }
 
+// ---------- portas abertas ----------
+
+export async function refreshPorts() {
+  if (!isTauri) {
+    setXray("ports", reconcile({
+      leftovers: [{ pid: 4242, cmd: "node vite --port 5173", cwd: "~/dev/site", project: "site", ports: [5173], cpu: 0.4, mem: 180 * 1024 ** 2, runSecs: 3 * 3600, pids: [4241, 4242] }],
+      others: [{ pid: 900, name: "node", cmd: "node next dev", ports: [3000], agent: "Claude Code" }, { pid: 901, name: "Discord", cmd: "Discord", ports: [6463], agent: null }],
+    }, { key: "pid" }));
+    return;
+  }
+  try {
+    setXray("ports", reconcile(await xrayApi.ports(), { key: "pid" }));
+  } catch {
+    /* silencioso: tenta de novo no próximo ciclo */
+  }
+}
+
+export async function killLeftover(pid: number) {
+  setXray("busy", `l:${pid}`, true);
+  try {
+    if (isTauri) await xrayApi.killLeftover(pid);
+    showToast("Pronto, o servidor foi fechado");
+    setTimeout(refreshPorts, 400);
+  } catch (e) {
+    showToast(errMsg(e));
+  }
+  setXray("busy", `l:${pid}`, false);
+}
+
 export const agentColor = (agent: string) =>
   agent.startsWith("Claude") ? "#e8915b" : agent.startsWith("Codex") ? "#10a37f" : agent.startsWith("Gemini") ? "#4f8cff" : agent.startsWith("Ollama") ? "#34d399" : agent.startsWith("DeepSeek") ? "#4f8cff" : "#a78bfa";
 
@@ -250,7 +281,7 @@ export type DiskPoint = { day: string; bytes: number };
 
 const today = () => new Date().toLocaleDateString("sv-SE"); // AAAA-MM-DD no fuso local
 
-export function diskHistory(): DiskPoint[] {
+function diskHistory(): DiskPoint[] {
   try {
     const v = JSON.parse(localStorage.getItem(DISK_KEY) ?? "[]");
     return Array.isArray(v) ? v.filter((p) => typeof p?.day === "string" && typeof p?.bytes === "number") : [];

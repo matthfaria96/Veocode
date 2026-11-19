@@ -292,6 +292,95 @@ pub fn open_login(a: &Account) -> Result<(), String> {
     open_terminal(a, None)
 }
 
+// ---------------------------------------------------------------- login pelo navegador
+
+/// Logins em andamento: o processo e a entrada dele (para colar o código, se o navegador não voltar sozinho).
+static LOGINS: std::sync::Mutex<Option<HashMap<String, (u32, std::process::ChildStdin)>>> = std::sync::Mutex::new(None);
+
+/// Login pelo navegador com o próprio Claude Code (`claude auth login`): abre a página da Anthropic,
+/// a pessoa entra e o Claude Code guarda o login no chaveiro. O Veocode não vê senha nem token.
+/// `on_url` recebe o endereço da página (para abrir de novo se a aba sumir). Volta quando termina.
+pub fn browser_login(a: &Account, on_url: impl Fn(String)) -> Result<(), String> {
+    use std::io::Read;
+    use std::process::{Command, Stdio};
+    let claude = crate::xray::util::which("claude").ok_or(
+        "Não achei o comando `claude`. Instale o Claude Code (https://claude.com/claude-code) e tente de novo.",
+    )?;
+    cancel_login(&a.id);
+    let dir = config_dir(a);
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let mut cmd = Command::new(&claude);
+    cmd.args(["auth", "login", "--claudeai"]);
+    if a.config_dir.is_some() {
+        cmd.env("CLAUDE_CONFIG_DIR", &dir);
+    } else {
+        cmd.env_remove("CLAUDE_CONFIG_DIR");
+    }
+    cmd.env_remove("CLAUDECODE");
+    let mut path: Vec<PathBuf> = std::env::var_os("PATH").map(|p| std::env::split_paths(&p).collect()).unwrap_or_default();
+    for extra in ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"] {
+        if !path.contains(&PathBuf::from(extra)) {
+            path.push(extra.into());
+        }
+    }
+    if let Some(d) = claude.parent() {
+        path.insert(0, d.to_path_buf());
+    }
+    if let Ok(j) = std::env::join_paths(path) {
+        cmd.env("PATH", j);
+    }
+    cmd.current_dir(crate::xray::util::home()).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = cmd.spawn().map_err(|e| format!("não deu para abrir o Claude Code: {e}"))?;
+    if let (Some(stdin), Ok(mut map)) = (child.stdin.take(), LOGINS.lock()) {
+        map.get_or_insert_with(HashMap::new).insert(a.id.clone(), (child.id(), stdin));
+    }
+    // a saída traz o endereço da página ("visit: https://…"); o resto fica para a mensagem de erro
+    let mut out = String::new();
+    if let Some(stdout) = child.stdout.take() {
+        let mut r = BufReader::new(stdout);
+        let mut line = String::new();
+        while r.read_line(&mut line).unwrap_or(0) > 0 {
+            if let Some(i) = line.find("https://") {
+                on_url(line[i..].trim().to_string());
+            } else {
+                out.push_str(&line);
+            }
+            line.clear();
+        }
+    }
+    let mut err = String::new();
+    if let Some(mut e) = child.stderr.take() {
+        let _ = e.read_to_string(&mut err);
+    }
+    let status = child.wait().map_err(|e| e.to_string())?;
+    let canceled = LOGINS.lock().ok().and_then(|mut m| m.as_mut().and_then(|m| m.remove(&a.id))).is_none();
+    if status.success() {
+        return Ok(());
+    }
+    if canceled {
+        return Err("Login cancelado.".into());
+    }
+    let why = format!("{err}\n{out}").lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with("Paste code")).last().unwrap_or("").to_string();
+    Err(if why.is_empty() { "O login não terminou. Tente de novo.".into() } else { format!("O login não terminou: {why}") })
+}
+
+/// Cola o código que a página mostra (quando o navegador não volta sozinho para o Claude Code).
+pub fn login_code(id: &str, code: &str) -> Result<(), String> {
+    use std::io::Write;
+    let mut map = LOGINS.lock().map_err(|e| e.to_string())?;
+    let (_, stdin) = map.as_mut().and_then(|m| m.get_mut(id)).ok_or("Nenhum login em andamento para esta conta.")?;
+    writeln!(stdin, "{}", code.trim()).and_then(|_| stdin.flush()).map_err(|e| e.to_string())
+}
+
+/// Desiste do login em andamento.
+pub fn cancel_login(id: &str) {
+    let gone = LOGINS.lock().ok().and_then(|mut m| m.as_mut().and_then(|m| m.remove(id)));
+    if let Some((pid, stdin)) = gone {
+        drop(stdin);
+        let _ = std::process::Command::new("kill").arg(pid.to_string()).status();
+    }
+}
+
 /// Abre um terminal com o Claude Code usando a pasta desta conta. Com `cwd`, já dentro do
 /// projeto (o Claude lê o .claude/settings.local.json de lá, onde está o nível de acesso).
 pub fn open_terminal(a: &Account, cwd: Option<&Path>) -> Result<(), String> {

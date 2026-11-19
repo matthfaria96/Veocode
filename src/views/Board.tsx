@@ -1,21 +1,21 @@
-import { Activity, FolderMinus, FolderOpen, FolderPlus, GitBranch, GripVertical, Hand, LayoutGrid, MoreHorizontal, Plus, Sparkles, SquareArrowOutUpRight, Zap } from "lucide-solid";
+import { Activity, ArrowUpRight, FolderMinus, Maximize, FolderOpen, FolderPlus, GitBranch, GripVertical, Hand, LayoutGrid, MoreHorizontal, Plus, Sparkles, SquareArrowOutUpRight, Zap } from "lucide-solid";
 import { askCloseProject } from "../components/CloseProject";
 import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import { accountById } from "../accounts";
 import { api, isTauri } from "../api";
-import { inGrid, layout, layouts, maximized, panes, projectState, replacePane, setLayout, setMaximized, toneOrder, type Layout } from "../board";
+import { homeFocus, inGrid, layout, layouts, maximized, panes, projectState, replacePane, setHomeFocus, setLayout, setMaximized, toneOrder, type Layout } from "../board";
 import { drag, dropOver, startDrag } from "../drag";
 import { feedOf, watchFeeds } from "../feeds";
 import { found, foundLoaded, loadFound, type Found } from "../found";
 import { git, gitWords, loadSummaries, since } from "../git";
 import { needs } from "../attention";
-import { absPathOf, addProjectFromPicker, addProjectPath, projects, projectsReady, setProjectId, setView, showToast } from "../store";
+import { absPathOf, addProjectFromPicker, addProjectPath, projects, projectsReady, projectsSlow, setProjectId, setView, showToast } from "../store";
 import { every } from "../every";
 import { dismissable } from "../dismiss";
 import ChatPane from "../components/ChatPane";
 import { ProjectIcon } from "../components/icons";
-import { CountUp, ProviderMark } from "../components/ui";
+import { CountUp, ProviderMark, Toggle } from "../components/ui";
 
 const greet = () => {
   const h = new Date().getHours();
@@ -40,7 +40,15 @@ export default function Board() {
   void loadSummaries(true);
   onCleanup(every(() => void loadSummaries(), 15000));
   onMount(() => void loadFound());
-  const key = (e: KeyboardEvent) => e.key === "Escape" && maximized() && setMaximized(null);
+  const key = (e: KeyboardEvent) => {
+    if (e.key === "Escape" && maximized()) return setMaximized(null);
+    // F liga/desliga o foco (fora de campos de texto)
+    const t = e.target as HTMLElement | null;
+    if ((e.key === "f" || e.key === "F") && !e.metaKey && !e.ctrlKey && !e.altKey && !(t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) && real().length) {
+      e.preventDefault();
+      setHomeFocus(!homeFocus());
+    }
+  };
   window.addEventListener("keydown", key);
   onCleanup(() => window.removeEventListener("keydown", key));
 
@@ -54,15 +62,22 @@ export default function Board() {
   );
 
   return (
-    <div class="page board home">
-      <Welcome />
-      <NeedsStrip />
-      <Show when={real().length} fallback={<Show when={projectsReady()} fallback={<div class="loading-rows"><div /><div /></div>}><Discover /></Show>}>
+    <div class="page board home" classList={{ focus: homeFocus() && real().length > 0 }}>
+      <Show when={!homeFocus() || !real().length}>
+        <Welcome />
+        <NeedsStrip />
+      </Show>
+      <Show when={real().length} fallback={<Show when={projectsReady()} fallback={<Show when={projectsSlow()} fallback={<div class="loading-rows"><div /><div /></div>}><PermWait /></Show>}><Discover /></Show>}>
         <div class="home-bar">
           <div>
             <h2>Na tela agora</h2>
-            <small><Hand size={12} /> Arraste pelo título para trocar de lugar · arraste um projeto lá de baixo para cima de um painel</small>
+            <small><Hand size={12} /> Arraste pelo título para trocar de lugar · o ✕ tira da tela · arraste um projeto lá de baixo para pôr</small>
           </div>
+          <label class="focus-switch" classList={{ on: homeFocus() }} title={homeFocus() ? "Sair do modo foco (volta o resumo do dia e os cartões)" : "Modo foco: só os projetos na tela, os outros numa faixa embaixo (F)"}>
+            <Maximize size={13} />
+            <span>Foco</span>
+            <Toggle on={homeFocus()} onChange={setHomeFocus} />
+          </label>
           <Show when={real().length > 1}>
             <div class="layout-picks" role="radiogroup" aria-label="Quantos projetos na tela">
               <For each={layouts}>
@@ -82,11 +97,25 @@ export default function Board() {
             </div>
           </Show>
         </div>
-        <div class={`board-grid lay-${maximized() ? "1" : layout()}`} classList={{ "is-dragging": !!drag() }}>
-          <For each={shown()}>{(id, i) => <ChatPane pid={id} index={i()} />}</For>
-        </div>
+        <Show
+          when={shown().length}
+          fallback={
+            <div class="board-empty" classList={{ "drop-on": dropOver() === "__empty", "is-dragging": !!drag() }} data-drop-pane="__empty">
+              <span class="board-empty-icon"><LayoutGrid size={22} /></span>
+              <strong>Nenhum projeto na tela</strong>
+              <span>Arraste um projeto lá de baixo para cá, ou use o <b>+</b> do cartão dele.</span>
+            </div>
+          }
+        >
+          <div class={`board-grid lay-${maximized() ? "1" : layout()}`} classList={{ "is-dragging": !!drag() }}>
+            <For each={shown()}>{(id, i) => <ChatPane pid={id} index={i()} />}</For>
+          </div>
+        </Show>
 
-        <div class="home-shelf">
+        <Show when={homeFocus()}>
+          <Dock />
+        </Show>
+        <div class="home-shelf" classList={{ hidden: homeFocus() }}>
           <div class="home-bar">
             <div>
               <h2>Seus projetos</h2>
@@ -336,7 +365,43 @@ export default function Board() {
   }
 
   /** Último cartão da lista: adiciona uma pasta (sugestões do histórico do Claude ou o Finder). */
-  function AddCard() {
+  /** Modo foco: os projetos fora da tela numa faixa fina (clique põe na tela, arraste escolhe o lugar). */
+  function Dock() {
+    const off = () => shelf().filter((p) => !inGrid(p.id));
+    return (
+      <div class="home-dock" role="list" aria-label="Projetos fora da tela">
+        <For each={off()}>
+          {(p, i) => {
+            const st = () => projectState(p.id);
+            const a = () => accountById(p.accountId);
+            const open = () => (setProjectId(p.id), setView("workspace"));
+            return (
+              <div
+                class={`dock-item ${st().tone}`}
+                role="listitem"
+                classList={{ lifted: drag()?.id === p.id }}
+                style={{ "--c": a().color, "--i": i() }}
+                title={`${p.name} · ${st().label}\nClique para pôr na tela · arraste até um painel para trocar`}
+                onPointerDown={(e) => startDrag(e, p.id, "project", p.name, (target) => replacePane(target, p.id))}
+                onClick={() => replacePane(undefined, p.id)}
+              >
+                <ProjectIcon id={p.id} name={p.name} stack={p.stack} size={18} />
+                <span class="dock-name">{p.name}</span>
+                <i class="dock-dot" />
+                <button class="dock-open" title="Abrir o projeto" onPointerDown={(e) => e.stopPropagation()} onClick={(e) => (e.stopPropagation(), open())}><ArrowUpRight size={12} /></button>
+              </div>
+            );
+          }}
+        </For>
+        <Show when={!off().length}>
+          <span class="dock-note">Todos os projetos estão na tela</span>
+        </Show>
+        <AddCard dock />
+      </div>
+    );
+  }
+
+  function AddCard(props: { dock?: boolean }) {
     const [pos, setPos] = createSignal<{ left: number; top?: number; bottom?: number; max: number } | null>(null);
     let btn!: HTMLButtonElement;
     const toggle = () => {
@@ -349,25 +414,39 @@ export default function Board() {
       setPos(below >= 260 || below >= above ? { left, top: r.bottom + 6, max: Math.min(380, below) } : { left, bottom: window.innerHeight - r.top + 6, max: Math.min(380, above) });
     };
     const close = () => setPos(null);
+    let menu: HTMLDivElement | undefined;
     onMount(() => {
-      const off = () => close();
+      // rolar a tela fecha (o menu ficaria solto); rolar a lista do próprio menu, não
+      const off = (e: Event) => {
+        if (menu && e.target instanceof Node && menu.contains(e.target)) return;
+        close();
+      };
       window.addEventListener("resize", off);
       document.addEventListener("scroll", off, true);
       onCleanup(() => (window.removeEventListener("resize", off), document.removeEventListener("scroll", off, true)));
     });
     return (
       <div class="shelf-add-wrap">
-        <button class="board-card mini shelf-add" classList={{ open: !!pos() }} ref={btn} onClick={toggle} style={{ "--i": shelf().length }}>
-          <span class="found-icon"><Plus size={20} /></span>
-          <strong>Adicionar projeto</strong>
-          <small>{found().length ? `${found().length} ${found().length === 1 ? "pasta sugerida" : "pastas sugeridas"}` : "escolher uma pasta"}</small>
-        </button>
+        <Show
+          when={props.dock}
+          fallback={
+            <button class="board-card mini shelf-add" classList={{ open: !!pos() }} ref={btn} onClick={toggle} style={{ "--i": shelf().length }}>
+              <span class="found-icon"><Plus size={20} /></span>
+              <strong>Adicionar projeto</strong>
+              <small>{found().length ? `${found().length} ${found().length === 1 ? "pasta sugerida" : "pastas sugeridas"}` : "escolher uma pasta"}</small>
+            </button>
+          }
+        >
+          <button class="dock-add" classList={{ open: !!pos() }} ref={btn} onClick={toggle} title="Adicionar projeto">
+            <Plus size={14} /> <span>Adicionar</span>
+          </button>
+        </Show>
         <Show when={pos()}>
           {(p) => (
             <Portal>
               <div
                 class="menu pop-in shelf-menu"
-                ref={(el) => dismissable(el, close, () => btn)}
+                ref={(el) => ((menu = el), dismissable(el, close, () => btn))}
                 style={{ left: `${p().left}px`, top: p().top != null ? `${p().top}px` : "auto", bottom: p().bottom != null ? `${p().bottom}px` : "auto", "max-height": `${p().max}px` }}
               >
                 <small class="menu-title">Onde você já usou o Claude</small>
@@ -452,5 +531,18 @@ function DayStrip(props: { id: string }) {
         <small>{total()} {total() === 1 ? "passo" : "passos"} nas últimas 24 h · mais movimento por volta das {busiest()}</small>
       </div>
     </Show>
+  );
+}
+
+/** O macOS segura a leitura das pastas até você responder ao aviso de permissão. */
+function PermWait() {
+  return (
+    <div class="perm-wait pop-in">
+      <span class="perm-wait-dot" />
+      <div>
+        <strong>Esperando a permissão do macOS</strong>
+        <small>Depois de atualizar o Veocode, o macOS pergunta de novo se ele pode abrir a pasta dos seus projetos (ex.: Documentos). Clique em <b>Permitir</b> no aviso do sistema e os projetos aparecem aqui sozinhos.</small>
+      </div>
+    </div>
   );
 }

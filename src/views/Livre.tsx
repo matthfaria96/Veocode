@@ -1,6 +1,6 @@
 import { dismissable } from "../dismiss";
 import { AlertTriangle, ArrowLeft, Ban, Check, ChevronDown, Eye, History, HardDrive, MessageSquarePlus, MessagesSquare, Paperclip, SendHorizontal, ShieldCheck, Square, X } from "lucide-solid";
-import { createEffect, createResource, createSignal, For, Match, on, onCleanup, onMount, Show, Switch } from "solid-js";
+import { createEffect, createResource, createSignal, For, Match, on, onMount, Show, Switch } from "solid-js";
 import { accountById, accountSub, accts } from "../accounts";
 import type { ActivityEvent } from "../store";
 import { isTauri } from "../api";
@@ -8,6 +8,7 @@ import { settings } from "../settings";
 import { answerLivre, freeAccount, freeAccountId, listLivre, livre, newLivre, openLivre, sendLivre, setFreeAccount, setFreePc, setLivre, stopLivre, type Item } from "../livre";
 import { attsOf, dropPid, pasteFiles, pickFiles } from "../attachments";
 import AttachBar from "../components/AttachBar";
+import { SentThumbs } from "../components/Media";
 import { deleteConvos, type Convo } from "../chat";
 import { LIVRE } from "../livre";
 import ConvoRow from "../components/ConvoRow";
@@ -15,6 +16,11 @@ import ActivityIcon, { kindColor } from "../components/ActivityIcon";
 import Markdown from "../components/Markdown";
 import { ProviderMark } from "../components/ui";
 import MsgTools, { focusComposer } from "../components/MsgTools";
+import { MicButton } from "../components/Mic";
+import { LimitChip, LimitHitCard, UsageRing } from "../components/Limits";
+import { niceModel } from "../chatPrefs";
+import { limitHit } from "../limits";
+import { listeningTo, voiceKey } from "../voice";
 
 const ideas = {
   conversa: [
@@ -31,53 +37,29 @@ const ideas = {
   ],
 };
 
-/** Escolha da conta (Claude, DeepSeek, OpenAI-compatível, Ollama). */
-function AccountPicker() {
-  const [open, setOpen] = createSignal(false);
-  const close = (e: MouseEvent) => !(e.target as HTMLElement).closest(".livre-picker") && setOpen(false);
-  onMount(() => document.addEventListener("mousedown", close));
-  onCleanup(() => document.removeEventListener("mousedown", close));
-  const a = freeAccount;
+/** Menu da conta, aberto pelo botão da IA na barra da caixa (igual ao dos projetos). */
+function AccountMenu(props: { onClose: () => void }) {
   return (
-    <div class="livre-picker inv-picker">
-      <button class="inv-select" disabled={livre.busy} title={livre.busy ? "Espere a resposta terminar para trocar" : "Trocar a conta"} onClick={() => setOpen(!open())}>
-        <ProviderMark id={a().id} size={16} />
-        <span>{a().label}</span>
-        <ChevronDown size={12} />
-      </button>
-      <Show when={open()}>
-        <div class="inv-menu" ref={(el) => dismissable(el, () => setOpen(false))}>
-          <For each={accts.list} fallback={<small class="inv-menu-empty">Nenhuma conta ainda: adicione em Contas e IAs</small>}>
-            {(x) => (
-              <button
-                classList={{ on: x.id === freeAccountId() }}
-                onClick={() => {
-                  setFreeAccount(x.id);
-                  setOpen(false);
-                }}
-              >
-                <ProviderMark id={x.id} size={16} /> {x.label}
-                <small>{accountSub(x)}</small>
-              </button>
-            )}
-          </For>
-        </div>
-      </Show>
-    </div>
-  );
-}
-
-/** "Só conversa" ou "Olhar o computador" (só leitura). */
-function ModeSwitch() {
-  return (
-    <div class="livre-mode" role="radiogroup" aria-label="O que o chat pode fazer" classList={{ pc: settings.freePc }}>
-      <span class="livre-mode-thumb" />
-      <button role="radio" aria-checked={!settings.freePc} disabled={livre.busy} onClick={() => setFreePc(false)} title="Só conversa: a IA não vê nenhum arquivo">
-        <MessagesSquare size={13} /> Só conversa
-      </button>
-      <button role="radio" aria-checked={settings.freePc} disabled={livre.busy} onClick={() => setFreePc(true)} title="A IA pode listar, ler e buscar arquivos da sua pasta pessoal. Não edita nada.">
-        <Eye size={13} /> Olhar o computador
-      </button>
+    <div class="menu pop-in agent-menu" ref={(el) => dismissable(el, props.onClose)}>
+      <small class="menu-title">Conta no Chat livre</small>
+      <For each={accts.list} fallback={<small class="inv-menu-empty">Nenhuma conta ainda: adicione em Contas e IAs</small>}>
+        {(x) => (
+          <button
+            class="menu-item"
+            classList={{ sel: x.id === freeAccountId() }}
+            onClick={() => {
+              props.onClose();
+              if (x.id !== freeAccountId()) void setFreeAccount(x.id);
+            }}
+          >
+            <ProviderMark id={x.id} size={20} />
+            <span>{x.label}</span>
+            <small>{accountSub(x)}</small>
+            <LimitChip id={x.id} />
+            <Show when={x.id === freeAccountId()}><Check size={14} class="menu-check" /></Show>
+          </button>
+        )}
+      </For>
     </div>
   );
 }
@@ -152,14 +134,21 @@ function Steps(props: { steps: Item & { t: "work" } }) {
 function Message(props: { item: Item }) {
   return (
     <Switch>
-      <Match when={props.item.t === "user" && props.item}>{(it) => <div class="livre-msg user pop-in">{it().text}<MsgTools text={it().text} onReuse={() => (setLivre("input", it().text), focusComposer(document.querySelector(".livre-composer")))} /></div>}</Match>
+      <Match when={props.item.t === "user" && props.item}>{(it) => <div class="livre-msg user pop-in">{it().text}<SentThumbs text={it().text} /><MsgTools text={it().text} onReuse={() => (setLivre("input", it().text), focusComposer(document.querySelector(".livre-composer")))} /></div>}</Match>
       <Match when={props.item.t === "say" && props.item}>
         {(it) => (
-          <div class="livre-msg agent pop-in" style={{ "--c": accountById(it().account).color }}>
-            <ProviderMark id={it().account} size={22} />
-            <div class="livre-say"><Markdown text={it().text} /></div>
-            <MsgTools text={it().text} />
-          </div>
+          <Show
+            when={limitHit(it().text)}
+            fallback={
+              <div class="livre-msg agent pop-in" style={{ "--c": accountById(it().account).color }}>
+                <ProviderMark id={it().account} size={22} />
+                <div class="livre-say"><Markdown text={it().text} /></div>
+                <MsgTools text={it().text} />
+              </div>
+            }
+          >
+            {(h) => <LimitHitCard accountId={it().account} win={h().win} raw={h().raw} onPick={(id) => void setFreeAccount(id)} />}
+          </Show>
         )}
       </Match>
       <Match when={props.item.t === "work" && (props.item as Item & { t: "work" })}>{(it) => <Steps steps={it()} />}</Match>
@@ -227,14 +216,17 @@ function Conversations(props: { onClose: () => void }) {
 
 export default function Livre() {
   const [convos, setConvos] = createSignal(false);
+  const [menu, setMenu] = createSignal(false);
   let scroller!: HTMLDivElement;
   let box!: HTMLTextAreaElement;
   let stick = true;
 
   const fit = () => {
     box.style.height = "auto";
-    box.style.height = `${Math.min(box.scrollHeight, 180)}px`;
+    box.style.height = `${Math.min(box.scrollHeight, 160)}px`;
   };
+  // texto que chega pelo ditado (ou é limpo ao enviar) também ajusta a altura da caixa
+  createEffect(on(() => livre.input, () => box && requestAnimationFrame(fit), { defer: true }));
   const send = () => {
     stick = true;
     sendLivre();
@@ -258,8 +250,6 @@ export default function Livre() {
           </div>
         </div>
         <div class="livre-tools">
-          <AccountPicker />
-          <ModeSwitch />
           <button class="icon-btn" title="Conversas anteriores" classList={{ active: convos() }} onClick={() => setConvos(!convos())}><History size={15} /></button>
           <button class="icon-btn" title="Nova conversa" disabled={livre.busy || (!livre.items.length && !livre.conv)} onClick={() => newLivre()}><MessageSquarePlus size={15} /></button>
         </div>
@@ -311,39 +301,67 @@ export default function Livre() {
 
       <div class="livre-bottom">
         <div class="livre-col">
-          <div class="composer livre-composer" classList={{ busy: livre.busy, dropping: dropPid() === LIVRE, "has-atts": attsOf(LIVRE).length > 0 }} style={{ "--c": a().color }} data-attach-pid={LIVRE}>
+          <div class="composer livre-composer" classList={{ busy: livre.busy, listening: listeningTo(LIVRE), dropping: dropPid() === LIVRE }} style={{ "--c": a().color }} data-attach-pid={LIVRE}>
             <AttachBar pid={LIVRE} />
-            <button class="icon-btn livre-clip" classList={{ on: attsOf(LIVRE).length > 0 }} title="Anexar arquivos ou imagens (ou cole com ⌘V, ou arraste do Finder)" onClick={() => void pickFiles(LIVRE)}>
-              <Paperclip size={15} />
-            </button>
             <textarea
               onPaste={(e) => void pasteFiles(LIVRE, e)}
               ref={box}
-              rows={1}
+              rows={2}
               value={livre.input}
-              placeholder={settings.freePc ? `Pergunte a ${a().label} sobre seus arquivos… (Enter envia, ⌘V cola imagens)` : `Converse com ${a().label}… (Enter envia, ⌘V cola imagens)`}
+              readOnly={listeningTo(LIVRE)}
+              placeholder={listeningTo(LIVRE) ? "Pode falar… (Enter para, Esc cancela)" : settings.freePc ? `Pergunte a ${a().label} sobre seus arquivos… (Enter envia, ⌥ Espaço para falar)` : `Converse com ${a().label}… (Enter envia, ⌥ Espaço para falar)`}
               onInput={(e) => {
                 setLivre("input", e.currentTarget.value);
                 fit();
               }}
               onKeyDown={(e) => {
+                if (voiceKey(LIVRE, e)) return;
+                if (e.key === "Escape" && livre.busy) return (e.preventDefault(), void stopLivre());
                 if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
                   e.preventDefault();
-                  send();
+                  if (!livre.busy) send();
                 }
               }}
             />
-            <Show
-              when={livre.busy}
-              fallback={
-                <button class="send-btn" title="Enviar (Enter)" disabled={!livre.input.trim() && !attsOf(LIVRE).length} onClick={send}>
-                  <SendHorizontal size={15} />
-                </button>
-              }
-            >
-              <button class="send-btn stop" title="Parar a resposta" onClick={() => stopLivre()}>
-                <Square size={13} fill="currentColor" />
+            <div class="composer-bar">
+              <button class="icon-btn" classList={{ on: attsOf(LIVRE).length > 0 }} title="Anexar arquivos ou imagens (ou cole com ⌘V, ou arraste do Finder)" onClick={() => void pickFiles(LIVRE)}>
+                <Paperclip size={14} />
               </button>
+              <button class="agent-chip-btn" classList={{ on: menu() }} disabled={livre.busy} title={livre.busy ? "Espere a resposta terminar para trocar" : "Conta do Chat livre"} onClick={() => setMenu(!menu())}>
+                <ProviderMark id={a().id} size={18} />
+                <span class="agent-chip-name">{a().label}</span>
+                <small>{niceModel(accountSub(a()))}</small>
+                <ChevronDown size={12} />
+              </button>
+              <button
+                class="composer-chip"
+                style={{ "--lc": settings.freePc ? "var(--info)" : "var(--text-2)" }}
+                disabled={livre.busy}
+                title={settings.freePc ? "Olhar o computador: a IA pode listar, ler e buscar na sua pasta pessoal, sem editar nada (clique para voltar a Só conversa)" : "Só conversa: a IA não vê nenhum arquivo (clique para deixar ela olhar o computador)"}
+                onClick={() => setFreePc(!settings.freePc)}
+              >
+                <Show when={settings.freePc} fallback={<><MessagesSquare size={12} /> Só conversa</>}>
+                  <Eye size={12} /> Olhar o computador
+                </Show>
+              </button>
+              <span class="composer-gap" />
+              <UsageRing id={freeAccountId()} />
+              <MicButton target={LIVRE} />
+              <Show
+                when={livre.busy}
+                fallback={
+                  <button class="send-btn" title="Enviar (Enter)" disabled={!livre.input.trim() && !attsOf(LIVRE).length} onClick={send}>
+                    <SendHorizontal size={14} />
+                  </button>
+                }
+              >
+                <button class="send-btn stop" title="Parar (Esc)" onClick={() => stopLivre()}>
+                  <Square size={11} fill="currentColor" />
+                </button>
+              </Show>
+            </div>
+            <Show when={menu()}>
+              <AccountMenu onClose={() => setMenu(false)} />
             </Show>
           </div>
           <div class="livre-foot">

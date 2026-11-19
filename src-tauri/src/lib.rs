@@ -10,12 +10,15 @@ mod files;
 mod git;
 mod projects;
 mod livre;
+mod memory;
 mod term;
 mod settings;
 mod skills;
 mod tools;
 mod trail;
 mod vault;
+mod voice;
+mod limits;
 mod watch;
 mod xray;
 
@@ -56,6 +59,7 @@ struct AppState {
 
 impl AppState {
     fn root_of(&self, project_id: &str) -> Result<PathBuf, String> {
+        let project_id = chat::base_project(project_id);
         if project_id == livre::ID {
             return Ok(livre::dir(&self.data_dir));
         }
@@ -99,10 +103,13 @@ impl AppState {
     }
 }
 
-#[tauri::command(async)]
-fn list_projects(state: State<'_, AppState>) -> Result<Vec<ProjectInfo>, String> {
-    let store = state.store.lock().map_err(|e| e.to_string())?;
-    Ok(store.projects.iter().map(projects::info).collect())
+/// Lê as pastas FORA da trava da lista: logo depois de atualizar o app, o macOS pode pedir de novo
+/// a permissão de acesso a Documentos e a leitura fica parada até você responder. Assim só esta
+/// chamada espera; o resto do app continua.
+#[tauri::command]
+async fn list_projects(state: State<'_, AppState>) -> Result<Vec<ProjectInfo>, String> {
+    let list = state.store.lock().map_err(|e| e.to_string())?.projects.clone();
+    blocking(move || list.iter().map(projects::info).collect()).await
 }
 
 #[tauri::command(async)]
@@ -130,7 +137,7 @@ fn remove_project(state: State<'_, AppState>, project_id: String, trash_folder: 
         let r = root.as_ref().ok_or("projeto não encontrado")?;
         projects::folder_trashable(r, &[state.config_dir.clone(), state.data_dir.clone()])?;
     }
-    state.chats.reset(&project_id); // fecha o Claude deste projeto (a conversa continua guardada)
+    state.chats.reset_project(&project_id); // fecha o Claude deste projeto (a conversa continua guardada)
     if let Ok(mut ws) = state.watchers.lock() {
         ws.remove(&project_id); // soltar o Debouncer para de observar
     }
@@ -259,6 +266,13 @@ async fn open_entry(app: AppHandle, state: State<'_, AppState>, project_id: Stri
     app.opener().open_path(real.to_string_lossy(), None::<&str>).map_err(|e| format!("não abriu: {e}"))
 }
 
+/// Imagem do projeto como data URL (visualizador e faixa de imagens novas).
+#[tauri::command]
+async fn image_preview(state: State<'_, AppState>, project_id: String, path: String) -> Result<String, String> {
+    let root = state.root_of(&project_id)?;
+    blocking(move || attach::preview(&files::resolve_in_root(&root, &path)?)).await?
+}
+
 #[tauri::command]
 async fn list_files(state: State<'_, AppState>, project_id: String) -> Result<Vec<String>, String> {
     let root = state.root_of(&project_id)?;
@@ -368,6 +382,16 @@ fn account_remove(state: State<'_, AppState>, id: String) -> Result<(), String> 
     store.save()
 }
 
+/// Limites do plano (5 horas e semana) de uma conta do Claude. Leitura: não gasta tokens.
+#[tauri::command]
+async fn account_limits(state: State<'_, AppState>, id: String, force: Option<bool>) -> Result<limits::Limits, String> {
+    let a = state.accounts.lock().map_err(|e| e.to_string())?.get(&id).cloned().ok_or("conta não encontrada")?;
+    if a.provider != Provider::Claude {
+        return Err("Limites só existem nas contas do Claude".into());
+    }
+    blocking(move || limits::for_account(&a, force.unwrap_or(false))).await
+}
+
 #[tauri::command]
 async fn account_status(state: State<'_, AppState>, id: String) -> Result<AccountStatus, String> {
     let account = state.accounts.lock().map_err(|e| e.to_string())?.get(&id).cloned().ok_or("conta não encontrada")?;
@@ -386,6 +410,32 @@ fn account_login(state: State<'_, AppState>, id: String) -> Result<(), String> {
         return Err("só contas do Claude fazem login pelo terminal".into());
     }
     accounts::claude::open_login(&account)
+}
+
+/// Login do Claude pelo navegador. Termina quando a pessoa entra (ou cancela).
+#[tauri::command]
+async fn account_browser_login(app: AppHandle, state: State<'_, AppState>, id: String) -> Result<(), String> {
+    use tauri::Emitter;
+    let account = state.accounts.lock().map_err(|e| e.to_string())?.get(&id).cloned().ok_or("conta não encontrada")?;
+    if account.provider != Provider::Claude {
+        return Err("só contas do Claude fazem login pelo navegador".into());
+    }
+    blocking(move || {
+        accounts::claude::browser_login(&account, |url| {
+            let _ = app.emit("login-url", serde_json::json!({ "id": account.id, "url": url }));
+        })
+    })
+    .await?
+}
+
+#[tauri::command]
+fn account_login_code(id: String, code: String) -> Result<(), String> {
+    accounts::claude::login_code(&id, &code)
+}
+
+#[tauri::command]
+fn account_login_cancel(id: String) {
+    accounts::claude::cancel_login(&id)
 }
 
 // ---------------------------------------------------------------- Nível de acesso
@@ -550,7 +600,8 @@ fn chat_send(
     model: Option<String>,
     effort: Option<String>,
     files: Option<Vec<String>>,
-) -> Result<(), String> {
+    rewind: Option<String>,
+) -> Result<Option<String>, String> {
     let (model, effort) = chat::model_choice(model, effort)?;
     let files = attach::checked(files)?;
     if project_id == livre::ID {
@@ -580,12 +631,16 @@ fn chat_send(
                 stream_steps: true,
                 effort: if claude { effort } else { None },
                 files,
+                rewind,
             },
         );
     }
-    let p = state.store.lock().map_err(|e| e.to_string())?.get(&project_id).cloned().ok_or("projeto não encontrado")?;
+    let base = chat::base_project(&project_id).to_string();
+    let p = state.store.lock().map_err(|e| e.to_string())?.get(&base).cloned().ok_or("projeto não encontrado")?;
     let mut account = state.accounts.lock().map_err(|e| e.to_string())?.get(&p.account_id).cloned().ok_or("conta não encontrada")?;
     let claude = account.provider == Provider::Claude;
+    // memória do projeto: só para o Claude (nas APIs o texto substituiria as instruções)
+    let memory = if claude { memory::prompt(&state.data_dir, &base) } else { None };
     if claude && model.is_some() {
         account.model = model;
     }
@@ -623,11 +678,12 @@ fn chat_send(
             settings,
             mode: access::MODES[p.access.min(3) as usize],
             add_dir: None,
-            prompt: None,
+            prompt: memory,
             tools: true,
             stream_steps: false,
             effort: if claude { effort } else { None },
             files,
+            rewind,
         },
     )
 }
@@ -734,7 +790,7 @@ async fn chat_open(state: State<'_, AppState>, project_id: String, kind: String,
     let (current, root) = if project_id == livre::ID {
         (state.free_account()?.id, livre::dir(&state.data_dir))
     } else {
-        let p = state.store.lock().map_err(|e| e.to_string())?.get(&project_id).cloned().ok_or("projeto não encontrado")?;
+        let p = state.store.lock().map_err(|e| e.to_string())?.get(chat::base_project(&project_id)).cloned().ok_or("projeto não encontrado")?;
         (p.account_id.clone(), PathBuf::from(&p.path))
     };
     if current != account {
@@ -830,6 +886,36 @@ async fn chat_delete(state: State<'_, AppState>, project_id: String, kind: Strin
         state.chats.reset(&project_id);
     }
     blocking(move || inventory::to_trash(&files).map_err(|e| format!("Não deu para mandar para a Lixeira: {e}"))).await?
+}
+
+#[tauri::command]
+async fn memory_get(state: State<'_, AppState>, project_id: String) -> Result<String, String> {
+    memory::get(&state.data_dir, chat::base_project(&project_id))
+}
+
+#[tauri::command]
+async fn memory_set(state: State<'_, AppState>, project_id: String, text: String) -> Result<String, String> {
+    memory::set(&state.data_dir, chat::base_project(&project_id), &text)
+}
+
+#[tauri::command]
+async fn memory_add(state: State<'_, AppState>, project_id: String, entry: String) -> Result<String, String> {
+    memory::add(&state.data_dir, chat::base_project(&project_id), &entry)
+}
+
+#[tauri::command]
+fn voice_start(app: AppHandle, locale: String) -> Result<u64, String> {
+    voice::start(app, &locale)
+}
+
+#[tauri::command]
+fn voice_stop() {
+    voice::stop()
+}
+
+#[tauri::command]
+fn voice_cancel() {
+    voice::cancel()
 }
 
 #[tauri::command]
@@ -1026,6 +1112,23 @@ async fn xray_kill(state: State<'_, AppState>, pid: u32) -> Result<(), String> {
     xray::procs::kill(sys, pid)
 }
 
+/// Todas as portas abertas, com o que sobrou de sessões já fechadas.
+#[tauri::command]
+async fn xray_ports(state: State<'_, AppState>) -> Result<xray::procs::PortReport, String> {
+    let roots = state.project_roots();
+    let mut guard = state.sys.lock().map_err(|e| e.to_string())?;
+    let sys = guard.as_mut().ok_or("não deu para ler os processos do sistema")?;
+    Ok(xray::procs::ports(sys, &roots, &xray::util::home()))
+}
+
+#[tauri::command]
+async fn xray_kill_leftover(state: State<'_, AppState>, pid: u32) -> Result<(), String> {
+    let roots = state.project_roots();
+    let mut guard = state.sys.lock().map_err(|e| e.to_string())?;
+    let sys = guard.as_mut().ok_or("não deu para ler os processos do sistema")?;
+    xray::procs::kill_leftover(sys, pid, &roots, &xray::util::home())
+}
+
 // ---------------------------------------------------------------- Ajustes
 
 #[tauri::command(async)]
@@ -1102,6 +1205,9 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            voice_start,
+            voice_stop,
+            voice_cancel,
             git_status,
             git_summaries,
             git_fetch,
@@ -1142,6 +1248,10 @@ pub fn run() {
             rename_entry,
             trash_entry,
             open_entry,
+            image_preview,
+            memory_get,
+            memory_set,
+            memory_add,
             list_files,
             project_trail,
             trail_link,
@@ -1152,7 +1262,11 @@ pub fn run() {
             account_set_key,
             account_remove,
             account_status,
+            account_limits,
             account_login,
+            account_browser_login,
+            account_login_code,
+            account_login_cancel,
             skills_report,
             inventory_report,
             inventory_running,
@@ -1173,6 +1287,8 @@ pub fn run() {
             xray_toggle_machine,
             xray_processes,
             xray_kill,
+            xray_ports,
+            xray_kill_leftover,
             term_open,
             term_list,
             term_write,

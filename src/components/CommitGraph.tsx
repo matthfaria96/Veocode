@@ -17,7 +17,7 @@ interface Seg { a: number; b: number; c: string }
 interface Row { col: number; top: Seg[]; bottom: Seg[]; lanes: number }
 
 /** Distribui os commits em faixas (uma por branch ativo) e calcula as linhas de cada linha da lista. */
-export function layout(commits: GitCommit[]): Row[] {
+function layout(commits: GitCommit[]): Row[] {
   const known = new Set(commits.map((c) => c.hash));
   let lanes: (string | null)[] = [];
   const rows: Row[] = [];

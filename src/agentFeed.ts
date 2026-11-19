@@ -24,6 +24,10 @@ export interface AgentEvent {
   output: string[];
   ts: number;
   history: boolean;
+  /** aba do chat que fez (passos das contas por API, que não têm sessão do Claude) */
+  tab?: string;
+  /** pedido: de onde recomeçar se for editado */
+  anchor?: string;
 }
 
 const POLL_MS = 900;
@@ -163,6 +167,8 @@ export function startAgentFeed(root: HTMLElement): () => void {
   const term = (text: string, tone?: "cmd" | "ok" | "dim") => setWs("terminal", (t) => [...t, { text, tone }].slice(-200));
 
   const apply = async (e: AgentEvent) => {
+    // de qual conversa é (a aba do chat filtra por isso)
+    const tag = { session: e.session || undefined, tab: e.tab };
     const live = !e.history;
     const who = e.sub ? `${accountById(e.account).label} · ${label(e)}` : accountById(e.account).label;
     const color = accountById(e.account).color;
@@ -208,16 +214,16 @@ export function startAgentFeed(root: HTMLElement): () => void {
     // o que foi enviado/recebido pelo chat do Veocode já está na tela
     if ((e.kind === "user" || e.kind === "say") && live && alreadyShown(e.kind, e.id, e.title)) return;
     if (e.kind === "user") {
-      pushEvent({ kind: "user", title: e.title, agent: "Você", status: "ok", at: e.ts });
+      pushEvent({ ...tag,  kind: "user", title: e.title, agent: "Você", status: "ok", at: e.ts, anchor: e.anchor });
       if (live) setWs("running", true);
       return;
     }
     if (e.kind === "say") {
-      pushEvent({ kind: "say", title: e.title, agent: who, color, status: "ok", at: e.ts });
+      pushEvent({ ...tag,  kind: "say", title: e.title, agent: who, color, status: "ok", at: e.ts });
       return;
     }
     if (e.kind === "done") {
-      pushEvent({ kind: "done", title: "Terminou", agent: who, color, status: "ok", at: e.ts });
+      pushEvent({ ...tag,  kind: "done", title: "Terminou", agent: who, color, status: "ok", at: e.ts });
       if (live) {
         setWs("running", false);
         // terminou: os cursores desta sessão somem
@@ -233,7 +239,7 @@ export function startAgentFeed(root: HTMLElement): () => void {
       const recent = new Set(ws.events.slice(-10).filter((x) => x.agent === "disco" && x.path === e.path).map((x) => x.id));
       if (recent.size) setWs("events", (l) => l.filter((x) => !recent.has(x.id)));
     }
-    const aid = pushEvent({ kind, title: e.title, detail: e.detail ?? undefined, agent: who, color, status: e.status === "running" ? "running" : "ok", path: e.path ?? undefined, at: e.ts });
+    const aid = pushEvent({ ...tag,  kind, title: e.title, detail: e.detail ?? undefined, agent: who, color, status: e.status === "running" ? "running" : "ok", path: e.path ?? undefined, at: e.ts });
     ids.set(e.id, aid);
     if (e.path) {
       // edição só marca quando o resultado confirmar (pode esperar permissão ou ser recusada)

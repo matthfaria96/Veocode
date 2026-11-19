@@ -34,6 +34,8 @@ pub struct Convo {
     /// ms desde 1970
     pub updated: i64,
     pub bytes: u64,
+    /// tokens que a conversa carrega hoje (o que o Claude relê a cada mensagem)
+    pub context: Option<u64>,
 }
 
 /// Ids vêm da tela: só letras, números, '-' e '_' (nada de caminho).
@@ -127,6 +129,45 @@ pub fn claude_info(file: &Path) -> Option<(String, Option<String>, Option<String
 }
 
 /// Sessões do Claude deste projeto em todas as contas (mais recentes primeiro).
+/// Tamanho do contexto na última resposta do Claude (entrada + cache + saída), lido do fim
+/// do histórico. É quanto a próxima mensagem desta conversa manda de novo.
+/// Última entrada da conversa principal (uuid), para recomeçar dali depois de editar um pedido.
+pub fn last_uuid(p: &Path) -> Option<String> {
+    peek(p, true)
+        .iter()
+        .rev()
+        .filter(|v| v.get("isSidechain").and_then(Value::as_bool) != Some(true))
+        .filter(|v| matches!(v.get("type").and_then(Value::as_str), Some("user" | "assistant" | "system" | "attachment")))
+        .find_map(|v| v.get("uuid").and_then(Value::as_str).map(String::from))
+}
+
+pub fn last_context(p: &Path) -> Option<u64> {
+    let mut f = File::open(p).ok()?;
+    let len = f.metadata().ok()?.len();
+    let start = len.saturating_sub(512 * 1024);
+    f.seek(SeekFrom::Start(start)).ok()?;
+    let mut buf = Vec::new();
+    f.read_to_end(&mut buf).ok()?;
+    let text = String::from_utf8_lossy(&buf);
+    text.lines().rev().find_map(|l| {
+        if !l.contains("\"usage\"") {
+            return None;
+        }
+        let v: Value = serde_json::from_str(l).ok()?;
+        if v.get("type").and_then(Value::as_str) != Some("assistant") || v.get("isSidechain").and_then(Value::as_bool) == Some(true) {
+            return None;
+        }
+        usage_total(v.pointer("/message/usage")?)
+    })
+}
+
+/// Soma do que foi para o modelo numa chamada (o contexto daquele momento).
+pub fn usage_total(u: &Value) -> Option<u64> {
+    let n = |k: &str| u.get(k).and_then(Value::as_u64).unwrap_or(0);
+    let t = n("input_tokens") + n("cache_creation_input_tokens") + n("cache_read_input_tokens") + n("output_tokens");
+    (t > 0).then_some(t)
+}
+
 pub fn claude_sessions(root: &Path, accounts: &[(String, PathBuf)]) -> Vec<Convo> {
     let mut files = vec![];
     for (acc, cfg) in accounts {
@@ -147,7 +188,8 @@ pub fn claude_sessions(root: &Path, accounts: &[(String, PathBuf)]) -> Vec<Convo
         }
         let Some((title, last_prompt, origin)) = claude_info(&p) else { continue };
         let bytes = fs::metadata(&p).map(|m| m.len()).unwrap_or(0);
-        out.push(Convo { id, kind: "claude".into(), account, title, last_prompt, origin, updated, bytes });
+        let context = last_context(&p);
+        out.push(Convo { id, kind: "claude".into(), account, title, last_prompt, origin, updated, bytes, context });
     }
     out
 }
@@ -228,7 +270,7 @@ pub fn api_list(dir: &Path) -> Vec<Convo> {
         .filter_map(|e| {
             let m: ApiMeta = serde_json::from_slice(&fs::read(e.path()).ok()?).ok()?;
             let bytes = fs::metadata(dir.join(format!("{}.json", m.id))).map(|x| x.len()).ok()?;
-            valid_id(&m.id).then(|| Convo { id: m.id, kind: "api".into(), account: m.account, title: m.title, last_prompt: m.last_prompt, origin: None, updated: m.updated, bytes })
+            valid_id(&m.id).then(|| Convo { id: m.id, kind: "api".into(), account: m.account, title: m.title, last_prompt: m.last_prompt, origin: None, updated: m.updated, bytes, context: None })
         })
         .collect();
     out.sort_by(|a, b| b.updated.cmp(&a.updated));
@@ -243,7 +285,7 @@ pub fn api_events(account: &str, msgs: &[Value], ts: i64) -> Vec<AgentEvent> {
     for (n, m) in msgs.iter().enumerate() {
         let content = m.get("content").and_then(Value::as_str).unwrap_or("");
         match m.get("role").and_then(Value::as_str) {
-            Some("user") => out.push(AgentEvent { id: format!("api-h{n}"), kind: "user".into(), title: strip_attach(content), ..base.clone() }),
+            Some("user") => out.push(AgentEvent { id: format!("api-h{n}"), kind: "user".into(), title: strip_attach(content), anchor: Some(format!("api:{n}")), ..base.clone() }),
             Some("assistant") => {
                 if !content.trim().is_empty() {
                     out.push(AgentEvent { id: format!("api-h{n}"), kind: "say".into(), title: content.into(), ..base.clone() });

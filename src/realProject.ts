@@ -11,7 +11,7 @@ const parentOf = (path: string) => (path.includes("/") ? path.slice(0, path.last
 const nameOf = (path: string) => path.split("/").pop() ?? path;
 
 /** Linhas do texto novo que não existiam no antigo (comparação por contagem — barata e boa o suficiente). */
-export function changedLineNumbers(oldText: string, newText: string): number[] {
+function changedLineNumbers(oldText: string, newText: string): number[] {
   const counts = new Map<string, number>();
   for (const l of oldText.split("\n")) counts.set(l, (counts.get(l) ?? 0) + 1);
   const out: number[] = [];
@@ -49,7 +49,7 @@ export function toggleDir(dir: string) {
   if (open && !ws.tree[dir]) loadDir(dir);
 }
 
-export async function loadContent(path: string, opts: { diff?: boolean } = {}) {
+async function loadContent(path: string, opts: { diff?: boolean } = {}) {
   const pid = projectId();
   const before = ws.contents[path];
   if (!before) setWs("contents", path, { kind: "loading" });

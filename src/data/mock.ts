@@ -9,13 +9,6 @@ export interface Provider {
   kind: "nuvem" | "local";
 }
 
-export const providers: Record<ProviderId, Provider> = {
-  claude: { id: "claude", name: "Claude", kind: "nuvem" },
-  deepseek: { id: "deepseek", name: "DeepSeek", kind: "nuvem" },
-  openai: { id: "openai", name: "OpenAI", kind: "nuvem" },
-  ollama: { id: "ollama", name: "Ollama", kind: "local" },
-};
-
 export interface Account {
   id: string;
   label: string;
@@ -84,8 +77,6 @@ export const accounts: Account[] = [
     status: "ociosa",
   },
 ];
-
-export const accountById = (id: string) => accounts.find((a) => a.id === id)!;
 
 // ---------- Nível de acesso ----------
 

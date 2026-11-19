@@ -1,13 +1,14 @@
-import { Activity, ArrowRight, Check, FolderOpen, KeyRound, LogIn, Pencil, Plug, Plus, RefreshCw, Trash2 } from "lucide-solid";
+import { LimitBars } from "../components/Limits";
+import { ArrowRight, Check, ExternalLink, FolderOpen, Globe, KeyRound, Pencil, Plug, Plus, RefreshCw, SquareTerminal, Trash2, X } from "lucide-solid";
 import Vault from "../components/Vault";
 import { createMemo, createSignal, For, Show } from "solid-js";
-import { vault } from "../vault";
-const vaultCount = () => vault.items.length;
 import { api, isTauri, prettyPath } from "../api";
-import { projects, setView, showToast } from "../store";
+import { projects, setProjectAccount, setView, showToast } from "../store";
+import { settings, updateSettings } from "../settings";
+import { loadLimits } from "../limits";
 import {
-  accts, addAccount, checkAccount, fmtAgo, fmtTokens, loginAccount, palette, prettyModel, providers, refreshStatuses,
-  removeAccount, setAccountKey, stateText, updateAccount, type Account, type ProviderId,
+  accts, addAccount, browserLogin, cancelLogin, checkAccount, fmtAgo, fmtTokens, loginAccount, logins, palette, prettyModel, providers, refreshStatuses,
+  removeAccount, sendLoginCode, setAccountKey, stateText, updateAccount, type Account, type ProviderId,
 } from "../accounts";
 import { CountUp, PageHeader, ProviderMark, Stagger } from "../components/ui";
 import ConfirmDialog from "../components/ConfirmDialog";
@@ -32,53 +33,6 @@ const weekday = (offset: number) => {
   return d.toLocaleDateString("pt-BR", { weekday: "short" }).replace(".", "");
 };
 
-/** Topo de Contas: a semana de todas as contas num gráfico só, uma cor por conta. */
-function WeekHero() {
-  const series = createMemo(() =>
-    accts.list.map((a) => ({ a, days: accts.status[a.id]?.usage?.days ?? [0, 0, 0, 0, 0, 0, 0] })).filter((x) => x.days.some((d) => d > 0)),
-  );
-  const totals = createMemo(() => Array.from({ length: 7 }, (_, i) => series().reduce((t, x) => t + (x.days[i] ?? 0), 0)));
-  const max = () => Math.max(1, ...totals());
-  const week = () => totals().reduce((a, b) => a + b, 0);
-  const active = () => accts.list.filter((a) => accts.status[a.id]?.active).length;
-  return (
-    <section class="acc-hero">
-      <span class="cx-orb a" />
-      <span class="cx-orb b" />
-      <div class="acc-hero-main">
-        <small class="cx-eyebrow"><Activity size={12} /> Últimos 7 dias, todas as contas</small>
-        <strong class="cx-big"><CountUp value={week()} format={fmtTokens} /> <span class="acc-hero-unit">tokens</span></strong>
-        <p>
-          {accts.list.length} {accts.list.length === 1 ? "conta" : "contas"}
-          {active() ? ` · ${active()} trabalhando agora` : " · nenhuma trabalhando agora"}
-          {vaultCount() ? ` · ${vaultCount()} ${vaultCount() === 1 ? "chave guardada" : "chaves guardadas"} no cofre` : ""}
-        </p>
-        <div class="cx-legend">
-          <For each={series()}>
-            {(x, i) => (
-              <span style={{ "--k": x.a.color, "--i": i() }}>
-                <i /> {x.a.label} <b>{fmtTokens(x.days.reduce((t, d) => t + d, 0))}</b>
-              </span>
-            )}
-          </For>
-        </div>
-      </div>
-      <div class="acc-week" aria-label="Tokens por dia">
-        <For each={totals()}>
-          {(_, i) => (
-            <div class="acc-week-col" style={{ "--i": i() }}>
-              <div class="acc-week-stack" style={{ height: `${Math.max(3, (totals()[i()] / max()) * 100)}%` }} title={`${weekday(6 - i())}: ${fmtTokens(totals()[i()])} tokens`}>
-                <For each={series()}>{(x) => <span style={{ flex: x.days[i()] || 0, background: x.a.color }} />}</For>
-              </div>
-              <small classList={{ today: i() === 6 }}>{i() === 6 ? "hoje" : weekday(6 - i())}</small>
-            </div>
-          )}
-        </For>
-      </div>
-    </section>
-  );
-}
-
 export default function Accounts() {
   const [adding, setAdding] = createSignal(false);
   const [removing, setRemoving] = createSignal<Account | null>(null);
@@ -88,7 +42,7 @@ export default function Accounts() {
     <div class="page">
       <PageHeader
         title="Contas e IAs"
-        subtitle={isTauri ? "Suas IAs, quanto cada uma trabalhou e o cofre com as chaves e senhas que os projetos usam." : "Modo navegador: contas de exemplo. Abra pelo app para ver as suas."}
+        subtitle={isTauri ? "As IAs que os seus projetos usam, quanto falta de cada plano e o cofre de chaves." : "Modo navegador: contas de exemplo. Abra pelo app para ver as suas."}
         actions={
           <>
             <button class="ghost-btn" onClick={() => refreshStatuses()}>
@@ -104,8 +58,6 @@ export default function Accounts() {
       <Show when={accts.loaded && accts.list.length === 0}>
         <div class="empty-state">Nenhuma conta ainda. Adicione uma conta do Claude, uma chave da DeepSeek ou o Ollama.</div>
       </Show>
-
-      <WeekHero />
 
       <h2 class="section-title acc-section">Suas contas de IA</h2>
       <div class="acc-grid">
@@ -133,31 +85,127 @@ export default function Accounts() {
         {(a) => <KeyDialog a={a()} onClose={() => setKeyFor(null)} />}
       </Show>
 
-      <Show when={removing()}>
-        {(a) => (
-          <ConfirmDialog
-            title={`Tirar “${a().label}” do Veocode?`}
-            confirmLabel="Tirar da lista"
-            danger
-            onCancel={() => setRemoving(null)}
-            onConfirm={() => {
-              const acc = a();
-              setRemoving(null);
-              removeAccount(acc.id).then(() => showToast(`${acc.label} saiu da lista`), (e) => showToast(errMsg(e)));
-            }}
+      <Show when={removing()}>{(a) => <RemoveDialog a={a()} onClose={() => setRemoving(null)} />}</Show>
+    </div>
+  );
+}
+
+/** Tirar a conta: se algum projeto usa ela, escolhe para qual conta eles vão antes. */
+function RemoveDialog(props: { a: Account; onClose: () => void }) {
+  const a = () => props.a;
+  const users = () => projects.filter((p) => !p.demo && p.accountId === a().id);
+  const others = () => accts.list.filter((x) => x.id !== a().id);
+  const [to, setTo] = createSignal(others()[0]?.id ?? "");
+  const [busy, setBusy] = createSignal(false);
+  const blocked = () => users().length > 0 && !others().length;
+  const go = async () => {
+    setBusy(true);
+    try {
+      if (users().length) await Promise.all(users().map((p) => setProjectAccount(p.id, to())));
+      // projetos de exemplo e o Chat livre também saem dela
+      for (const p of projects.filter((p) => p.demo && p.accountId === a().id)) void setProjectAccount(p.id, to() || others()[0]?.id || "");
+      if (settings.freeAccount === a().id) await updateSettings({ freeAccount: to() || "" });
+      await removeAccount(a().id);
+      showToast(`${a().label} saiu do Veocode`);
+      props.onClose();
+    } catch (e) {
+      showToast(errMsg(e));
+      setBusy(false);
+    }
+  };
+  return (
+    <ConfirmDialog title={`Remover “${a().label}”?`} confirmLabel={busy() ? "Removendo…" : "Remover conta"} danger disabled={busy() || blocked()} onCancel={props.onClose} onConfirm={() => void go()}>
+      <div class="rm-acc">
+        <div class="rm-acc-who">
+          <ProviderMark id={a().id} size={30} />
+          <div>
+            <strong>{a().label}</strong>
+            <small>{accts.status[a().id]?.who ?? providers[a().provider].name}</small>
+          </div>
+        </div>
+        <Show when={users().length}>
+          <Show
+            when={!blocked()}
+            fallback={<p class="rm-acc-warn">{users().map((p) => p.name).join(", ")} {users().length === 1 ? "usa" : "usam"} esta conta e não há outra para pôr no lugar. Adicione outra conta antes de remover esta.</p>}
           >
-            <p class="foot-note top">
-              {a().provider === "claude"
-                ? "A pasta da conta continua no disco, com login e históricos. Dá para adicionar de novo depois apontando para ela."
-                : a().provider === "ollama"
-                  ? "O Ollama e os modelos continuam instalados."
-                  : "A chave de API é apagada do chaveiro do sistema."}
-            </p>
-            <Show when={a().dir}><code class="confirm-cmd">{prettyPath(a().dir!)}</code></Show>
-          </ConfirmDialog>
-        )}
+            <label class="rm-acc-move">
+              <span>{users().length === 1 ? `${users()[0].name} usa esta conta. Passar para:` : `${users().length} projetos usam esta conta. Passar todos para:`}</span>
+              <select value={to()} onChange={(e) => setTo(e.currentTarget.value)}>
+                <For each={others()}>{(o) => <option value={o.id}>{o.label}</option>}</For>
+              </select>
+            </label>
+          </Show>
+        </Show>
+        <p class="foot-note top">
+          {a().provider === "claude"
+            ? a().configDir
+              ? "Só sai do Veocode. A pasta da conta fica no disco, com o login e as conversas: dá para adicionar de novo depois."
+              : "Só sai do Veocode. O Claude Code no terminal continua logado nesta conta, igual antes."
+            : a().provider === "ollama"
+              ? "O Ollama e os modelos continuam instalados."
+              : "A chave de API é apagada do chaveiro do sistema."}
+        </p>
+      </div>
+    </ConfirmDialog>
+  );
+}
+
+/** Esperando a pessoa terminar o login na página da Anthropic. */
+function LoginWait(props: { id: string }) {
+  const l = () => logins[props.id];
+  const [code, setCode] = createSignal("");
+  const [showCode, setShowCode] = createSignal(false);
+  const send = async (e: Event) => {
+    e.preventDefault();
+    if (!code().trim()) return;
+    try {
+      await sendLoginCode(props.id, code());
+      setCode("");
+      showToast("Código enviado. Terminando o login…");
+    } catch (er) {
+      showToast(errMsg(er));
+    }
+  };
+  return (
+    <div class="login-wait pop-in">
+      <div class="login-wait-head">
+        <span class="login-pulse"><Globe size={15} /></span>
+        <div>
+          <strong>Termine o login no navegador</strong>
+          <small>A página da Anthropic abriu. Entre com a conta do Claude que quer usar aqui; o Veocode atualiza sozinho quando acabar.</small>
+        </div>
+      </div>
+      <div class="login-wait-actions">
+        <Show when={l()?.url}>
+          <button class="ghost-btn small" onClick={() => api.openUrl(l()!.url!).catch((e) => showToast(errMsg(e)))}><ExternalLink size={12} /> Abrir a página de novo</button>
+        </Show>
+        <button class="link-btn" onClick={() => setShowCode((v) => !v)}>A página mostrou um código?</button>
+        <span class="grow" />
+        <button class="ghost-btn small" onClick={() => cancelLogin(props.id)}><X size={12} /> Cancelar</button>
+      </div>
+      <Show when={showCode()}>
+        <form class="login-code" onSubmit={send} autocomplete="off">
+          <input value={code()} placeholder="Cole o código aqui" spellcheck={false} autofocus onInput={(e) => setCode(e.currentTarget.value)} />
+          <button class="primary-btn small" disabled={!code().trim()}>Enviar</button>
+        </form>
       </Show>
     </div>
+  );
+}
+
+/** Entra pelo navegador e, quando termina, avisa e lê o uso da conta. */
+export function startBrowserLogin(a: Account) {
+  browserLogin(a.id).then(
+    (ok) => {
+      if (!ok) return;
+      const who = accts.status[a.id]?.who;
+      showToast(who ? `${a.label} conectada: ${who}` : `${a.label} conectada`);
+      void loadLimits(a.id, true);
+    },
+    (e) => {
+      const m = errMsg(e);
+      if (!/cancelad/i.test(m)) showToast(m);
+    },
   );
 }
 
@@ -165,10 +213,14 @@ function AccountCard(props: { a: Account; onRemove: (a: Account) => void; onKey:
   const a = () => props.a;
   const s = () => accts.status[a().id];
   const u = () => s()?.usage ?? null;
-  const used = () => projects.filter((p) => p.accountId === a().id);
+  const used = () => projects.filter((p) => !p.demo && p.accountId === a().id);
   const maxDay = createMemo(() => Math.max(1, ...(u()?.days ?? [1])));
+  const week = () => (u()?.days ?? []).reduce((t, d) => t + d, 0);
   const [editing, setEditing] = createSignal(false);
   const [name, setName] = createSignal("");
+  const claude = () => a().provider === "claude";
+  const noLogin = () => claude() && s()?.state === "semLogin";
+  const loggingIn = () => !!logins[a().id];
 
   const saveName = () => {
     setEditing(false);
@@ -176,70 +228,76 @@ function AccountCard(props: { a: Account; onRemove: (a: Account) => void; onKey:
   };
 
   return (
-    <div class="acc-card" classList={{ working: s()?.active }} style={{ "--c": a().color }}>
+    <div class="acc-card" classList={{ working: s()?.active, off: noLogin() }} style={{ "--c": a().color }}>
       <div class="acc-top">
-        <ProviderMark id={a().id} size={38} />
+        <ProviderMark id={a().id} size={40} />
         <div class="acc-name">
           <Show
             when={editing()}
             fallback={
               <strong>
-                {a().label}
+                <span class="acc-label">{a().label}</span>
                 <button class="icon-btn tiny" title="Renomear" onClick={() => (setName(a().label), setEditing(true))}><Pencil size={11} /></button>
               </strong>
             }
           >
             <input class="name-input" value={name()} autofocus onInput={(e) => setName(e.currentTarget.value)} onBlur={saveName} onKeyDown={(e) => e.key === "Enter" && saveName()} />
           </Show>
-          <small>{providers[a().provider].name}{s()?.plan ? ` · ${s()!.plan}` : ""}</small>
+          <small class="acc-sub">
+            <span>{providers[a().provider].name}</span>
+            <Show when={s()?.plan}><span class="acc-plan">{s()!.plan}</span></Show>
+            <Show when={claude() && s()?.who}><span class="acc-email" title="Quem fez login nesta conta">{s()!.who}</span></Show>
+          </small>
         </div>
         <span class={`acc-state st-${s()?.state ?? "checking"}`} classList={{ live: s()?.active }}>
           <Show when={s()} fallback={<><span class="spinner inline" /> verificando</>}>
-            {s()!.active ? "trabalhando" : stateText[s()!.state]}
+            <i class="acc-dot" /> {s()!.active ? "trabalhando" : stateText[s()!.state]}
           </Show>
         </span>
       </div>
 
-      <Show when={s()?.detail && s()!.state !== "pronta"}>
+      <Show when={loggingIn()}>
+        <LoginWait id={a().id} />
+      </Show>
+
+      <Show when={!loggingIn() && noLogin()}>
+        <div class="acc-cta">
+          <p>Ninguém entrou nesta conta ainda. Entre com a sua conta do Claude (Pro ou Max) pelo navegador.</p>
+          <button class="primary-btn" onClick={() => startBrowserLogin(a())}><Globe size={14} /> Entrar pelo navegador</button>
+        </div>
+      </Show>
+
+      <Show when={!noLogin() && s()?.detail && s()!.state !== "pronta"}>
         <p class="acc-detail">{s()!.detail}</p>
       </Show>
 
+      <Show when={claude() && s() && !noLogin()}>
+        <LimitBars id={a().id} />
+      </Show>
+
       {/* Claude: uso real dos históricos */}
-      <Show when={a().provider === "claude" && u() && u()!.lastActiveSecs !== null}>
-        <div class="usage">
-          <div class="usage-bars" title="Tokens por dia (entrada nova + saída)">
+      <Show when={claude() && u() && u()!.lastActiveSecs !== null}>
+        <div class="acc-usage">
+          <div class="acc-usage-nums">
+            <div><small>Hoje</small><b><CountUp value={u()!.today} format={fmtTokens} /></b></div>
+            <div><small>7 dias</small><b><CountUp value={week()} format={fmtTokens} /></b></div>
+            <div><small>Última vez</small><b class="soft">{fmtAgo(u()!.lastActiveSecs)}</b></div>
+          </div>
+          <div class="usage-bars" title={weekSays(u()!.days)}>
             <For each={u()!.days}>
               {(d, i) => (
                 <div class="ubar-col" title={`${weekday(6 - i())}: ${fmtTokens(d)} tokens`}>
-                  <span class="ubar" classList={{ today: i() === 6 }} style={{ height: `${Math.max(3, (d / maxDay()) * 100)}%`, "transition-delay": `${i() * 40}ms` }} />
-                  <small>{weekday(6 - i())[0]}</small>
+                  <span class="ubar" classList={{ today: i() === 6 }} style={{ height: `${Math.max(4, (d / maxDay()) * 100)}%`, "transition-delay": `${i() * 40}ms` }} />
+                  <small>{i() === 6 ? "hoje" : weekday(6 - i())[0]}</small>
                 </div>
               )}
             </For>
           </div>
-          <dl>
-            <dt>Hoje</dt>
-            <dd><CountUp value={u()!.today} format={fmtTokens} /> tokens</dd>
-            <dt>Últimas 5 h</dt>
-            <dd><CountUp value={u()!.last5h} format={fmtTokens} /></dd>
-            <dt>Sessões hoje</dt>
-            <dd>{u()!.sessionsToday} · {u()!.messagesToday} respostas</dd>
-            <dt>Última vez</dt>
-            <dd>{fmtAgo(u()!.lastActiveSecs)}</dd>
-          </dl>
         </div>
-        <p class="usage-says">{weekSays(u()!.days)}</p>
-        <Show when={u()!.models.length}>
-          <div class="model-mix">
-            <For each={u()!.models}>
-              {([m, t]) => <span class="mini-chip" title={`${fmtTokens(t)} tokens em 7 dias`}>{prettyModel(m)} <b>{fmtTokens(t)}</b></span>}
-            </For>
-          </div>
-        </Show>
       </Show>
 
       {/* APIs e Ollama */}
-      <Show when={a().provider !== "claude"}>
+      <Show when={!claude()}>
         <dl class="acc-facts">
           <Show when={a().provider === "deepseek" || a().provider === "openai"}>
             <dt>Chave</dt>
@@ -253,10 +311,6 @@ function AccountCard(props: { a: Account; onRemove: (a: Account) => void; onKey:
           <dd>{s()?.who ?? a().baseUrl ?? "—"}</dd>
           <dt>Modelos</dt>
           <dd>{s() ? (s()!.models.length ? `${s()!.models.length} disponíveis` : "—") : "…"}</dd>
-          <Show when={a().provider === "ollama" && s()?.state === "pronta" && s()?.detail}>
-            <dt>Detalhe</dt>
-            <dd>{s()!.detail}</dd>
-          </Show>
         </dl>
       </Show>
 
@@ -264,45 +318,48 @@ function AccountCard(props: { a: Account; onRemove: (a: Account) => void; onKey:
         <label class="model-pick">
           <span>Modelo padrão</span>
           <select value={a().model ?? ""} onChange={(e) => updateAccount(a().id, { model: e.currentTarget.value }).catch((er) => showToast(errMsg(er)))}>
-            <option value="">{a().provider === "claude" ? "o do Claude Code" : "automático"}</option>
-            <For each={s()!.models}>{(m) => <option value={m}>{a().provider === "claude" ? prettyModel(m) : m}</option>}</For>
+            <option value="">{claude() ? "o do Claude Code" : "automático"}</option>
+            <For each={s()!.models}>{(m) => <option value={m}>{claude() ? prettyModel(m) : m}</option>}</For>
           </select>
         </label>
       </Show>
 
+      <div class="acc-used">
+        <small>Usada em</small>
+        <For each={used()} fallback={<span class="muted">nenhum projeto ainda</span>}>{(p) => <span class="mini-chip">{p.name}</span>}</For>
+        <Show when={settings.freeAccount === a().id}><span class="mini-chip">Chat livre</span></Show>
+      </div>
+
       <div class="acc-foot">
         <div class="acc-actions">
-          <Show when={a().provider === "claude"}>
-            <button
-              class={s()?.state === "semLogin" ? "primary-btn small" : "ghost-btn small"}
-              title="Abre um terminal com o Claude Code nesta conta"
-              onClick={() => loginAccount(a().id).then(() => showToast("Terminal aberto. Faça o login lá e volte aqui."), (e) => showToast(errMsg(e)))}
-            >
-              <LogIn size={12} /> {s()?.state === "semLogin" ? "Entrar" : "Terminal"}
+          <Show when={claude() && !noLogin() && !loggingIn()}>
+            <button class="ghost-btn small" title="Entra de novo pelo navegador (troca quem está logado nesta conta)" onClick={() => startBrowserLogin(a())}>
+              <Globe size={12} /> Entrar de novo
             </button>
-            <Show when={a().dir}>
-              <button class="icon-btn small" title={`Mostrar pasta: ${prettyPath(a().dir!)}`} onClick={() => api.reveal(a().dir!).catch((e) => showToast(errMsg(e)))}>
-                <FolderOpen size={12} />
-              </button>
-            </Show>
           </Show>
           <Show when={a().provider === "deepseek" || a().provider === "openai"}>
             <button class={a().keyHint ? "ghost-btn small" : "primary-btn small"} onClick={() => props.onKey(a())}>
               <KeyRound size={12} /> {a().keyHint ? "Trocar chave" : "Colar chave"}
             </button>
           </Show>
+          <Show when={claude()}>
+            <button class="icon-btn small" title="Abrir o Claude Code no terminal com esta conta" onClick={() => loginAccount(a().id).catch((e) => showToast(errMsg(e)))}>
+              <SquareTerminal size={13} />
+            </button>
+            <Show when={a().dir}>
+              <button class="icon-btn small" title={`Mostrar a pasta da conta: ${prettyPath(a().dir!)}`} onClick={() => api.reveal(a().dir!).catch((e) => showToast(errMsg(e)))}>
+                <FolderOpen size={13} />
+              </button>
+            </Show>
+          </Show>
           <button class="icon-btn small" title="Verificar de novo" onClick={() => checkAccount(a().id)}>
-            <RefreshCw size={12} classList={{ spinning: accts.checking[a().id] }} />
+            <RefreshCw size={13} classList={{ spinning: accts.checking[a().id] }} />
           </button>
-          <button class="icon-btn small" title="Tirar da lista" onClick={() => props.onRemove(a())}><Trash2 size={12} /></button>
         </div>
-        <span class="acc-projects">
-          <For each={used()} fallback={<small class="muted">nenhum projeto</small>}>{(p) => <span class="mini-chip">{p.name}</span>}</For>
-        </span>
+        <button class="acc-remove" onClick={() => props.onRemove(a())}>
+          <Trash2 size={12} /> Remover
+        </button>
       </div>
-      <Show when={s()?.who && a().provider === "claude"}>
-        <small class="acc-who" title="Quem fez login nesta pasta">{s()!.who}</small>
-      </Show>
     </div>
   );
 }
@@ -310,7 +367,7 @@ function AccountCard(props: { a: Account; onRemove: (a: Account) => void; onKey:
 // ---------------------------------------------------------------- adicionar
 
 const kinds: { id: ProviderId; title: string; text: string }[] = [
-  { id: "claude", title: "Claude", text: "Outra conta do Claude Code, com login, histórico e limites próprios." },
+  { id: "claude", title: "Claude", text: "Sua conta Pro ou Max. Entra pelo navegador, com histórico e limites próprios." },
   { id: "deepseek", title: "DeepSeek", text: "Pela API, com chave. Mostra o saldo." },
   { id: "openai", title: "Compatível com OpenAI", text: "Qualquer API no formato da OpenAI (OpenRouter, Groq, LM Studio…)." },
   { id: "ollama", title: "Ollama", text: "Modelos rodando na sua máquina, sem internet." },
@@ -347,8 +404,10 @@ function AddAccount(props: { onClose: () => void }) {
         kind() === "deepseek" || kind() === "openai" ? key() : undefined,
       );
       setKey("");
-      showToast(kind() === "claude" && !folder() ? `${a.label} criada. Clique em “Entrar” para fazer login.` : `${a.label} adicionada`);
       props.onClose();
+      // conta nova do Claude: já abre o login no navegador
+      if (kind() === "claude" && !folder()) startBrowserLogin(a);
+      else showToast(`${a.label} adicionada`);
     } catch (er) {
       setError(errMsg(er));
     }
@@ -393,7 +452,7 @@ function AddAccount(props: { onClose: () => void }) {
                 <button type="button" class="ghost-btn small" onClick={pick}>Usar uma existente…</button>
                 <Show when={folder()}><button type="button" class="ghost-btn small" onClick={() => setFolder(null)}>Criar nova</button></Show>
               </div>
-              <small class="hint">Depois de criar, “Entrar” abre o Claude Code no terminal com essa pasta, e você faz o login lá. O Veocode não vê senha nem token.</small>
+              <small class="hint">Ao adicionar, a página de login da Anthropic abre no navegador. O login fica no chaveiro do Mac: o Veocode não vê senha nem token.</small>
             </label>
           </Show>
 
@@ -423,7 +482,7 @@ function AddAccount(props: { onClose: () => void }) {
         <div class="dialog-actions">
           <button type="button" class="ghost-btn" onClick={props.onClose}>Cancelar</button>
           <button type="submit" class="primary-btn" disabled={busy()}>
-            <Show when={busy()} fallback={<Plus size={14} />}><span class="spinner inline" /></Show> Adicionar
+            <Show when={busy()} fallback={kind() === "claude" && !folder() ? <Globe size={14} /> : <Plus size={14} />}><span class="spinner inline" /></Show> {kind() === "claude" && !folder() ? "Adicionar e entrar" : "Adicionar"}
           </button>
         </div>
       </form>

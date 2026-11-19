@@ -70,6 +70,31 @@ fn looks_text(p: &Path) -> bool {
     !bytes.contains(&0) && std::str::from_utf8(&bytes).is_ok()
 }
 
+/// Tipo de imagem que a tela sabe mostrar (inclui os que não vão para o Claude como bloco).
+pub fn preview_mime(p: &Path) -> Option<&'static str> {
+    image_mime(p).or(match ext(p).as_str() {
+        "svg" => Some("image/svg+xml"),
+        "bmp" => Some("image/bmp"),
+        "ico" => Some("image/x-icon"),
+        "avif" => Some("image/avif"),
+        _ => None,
+    })
+}
+
+/// Maior imagem que a prévia carrega (passa disso, abre no programa padrão).
+pub const MAX_PREVIEW: u64 = 25 * 1024 * 1024;
+
+/// Imagem como data URL, para mostrar na tela.
+pub fn preview(p: &Path) -> Result<String, String> {
+    let mime = preview_mime(p).ok_or("não é uma imagem que dá para mostrar")?;
+    let m = fs::metadata(p).map_err(|_| "não achei a imagem".to_string())?;
+    if m.len() > MAX_PREVIEW {
+        return Err("imagem grande demais para a prévia (mais de 25 MB)".into());
+    }
+    let b = fs::read(p).map_err(|e| e.to_string())?;
+    Ok(format!("data:{mime};base64,{}", B64.encode(b)))
+}
+
 /// Confere um anexo escolhido (caminho absoluto de um arquivo que existe).
 pub fn info(path: &str) -> Result<Staged, String> {
     let p = PathBuf::from(path);
@@ -224,6 +249,17 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         assert!(info(&d.path().to_string_lossy()).is_err());
         assert!(checked(Some(vec!["x".into(); 21])).is_err());
+    }
+
+    #[test]
+    fn previews_images_only() {
+        let d = tempfile::tempdir().unwrap();
+        let svg = d.path().join("logo.svg");
+        fs::write(&svg, "<svg xmlns='http://www.w3.org/2000/svg'/>").unwrap();
+        assert!(preview(&svg).unwrap().starts_with("data:image/svg+xml;base64,"));
+        let txt = d.path().join("a.txt");
+        fs::write(&txt, "oi").unwrap();
+        assert!(preview(&txt).is_err());
     }
 
     #[test]

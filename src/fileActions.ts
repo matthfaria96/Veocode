@@ -13,7 +13,7 @@ const parentOf = (p: string) => (p.includes("/") ? p.slice(0, p.lastIndexOf("/")
 const nameOf = (p: string) => p.split("/").pop() ?? p;
 
 /** Mostra a pasta aberta na árvore (e as de cima). */
-export async function expandTo(dir: string) {
+async function expandTo(dir: string) {
   const parts = dir ? dir.split("/") : [];
   for (let i = 0; i <= parts.length; i++) {
     const d = parts.slice(0, i).join("/");

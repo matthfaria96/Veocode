@@ -42,6 +42,10 @@ pub enum ChatEvent {
     PermissionGone { request_id: String },
     /// fim da resposta
     Done { ok: bool, detail: Option<String> },
+    /// tamanho do contexto da conversa agora (tokens que a próxima mensagem manda de novo)
+    Usage { context: u64 },
+    /// uso do plano (5 h e semana) que o Claude Code mandou junto com a resposta
+    Limits { account: String, limits: crate::limits::Limits },
     /// passo de ferramenta das contas por API (mesmo formato dos passos do Claude)
     Step { event: AgentEvent },
     Error { message: String },
@@ -99,6 +103,14 @@ struct ProjectChat {
     /// — raiz para os caminhos e as ferramentas em andamento
     stream_steps: Option<PathBuf>,
     step_tools: HashMap<String, String>,
+    /// última entrada da conversa do Claude (uuid): é a "âncora" de onde o próximo pedido sai,
+    /// para editar um pedido depois e recomeçar dali (`--resume-session-at`)
+    last_uuid: Option<String>,
+}
+
+/// Projeto de uma chave de conversa: "projeto" ou "projeto~aba" (várias conversas por projeto).
+pub fn base_project(key: &str) -> &str {
+    key.split('~').next().unwrap_or(key)
 }
 
 #[derive(Default)]
@@ -131,6 +143,9 @@ pub struct SendArgs {
     pub stream_steps: bool,
     /// força do raciocínio do Claude (`--effort`): low, medium, high, xhigh, max
     pub effort: Option<String>,
+    /// editar um pedido já mandado: recomeça a conversa da âncora dele ("" = do começo;
+    /// "api:N" = contas por API, corta o histórico em N mensagens)
+    pub rewind: Option<String>,
     /// anexos (caminhos absolutos já conferidos)
     pub files: Vec<PathBuf>,
 }
@@ -141,7 +156,7 @@ impl Chats {
     }
 
     pub fn api_dir(&self, project: &str) -> PathBuf {
-        convos::api_dir(&self.data, project)
+        convos::api_dir(&self.data, base_project(project))
     }
 
     /// Conversa atual do projeto: ("claude", sessão) ou ("api", id).
@@ -180,7 +195,8 @@ impl Chats {
         self.map.lock().ok().and_then(|m| m.get(project).map(|c| c.busy.load(Ordering::SeqCst))).unwrap_or(false)
     }
 
-    pub fn send(self: &Arc<Self>, app: AppHandle, a: SendArgs) -> Result<(), String> {
+    /// Manda o pedido. Devolve a âncora dele (para editar depois e recomeçar dali).
+    pub fn send(self: &Arc<Self>, app: AppHandle, a: SendArgs) -> Result<Option<String>, String> {
         if a.text.trim().is_empty() {
             return Err("mensagem vazia".into());
         }
@@ -192,11 +208,25 @@ impl Chats {
 
     // ------------------------------------------------------------ Claude
 
-    fn send_claude(self: &Arc<Self>, app: AppHandle, a: SendArgs) -> Result<(), String> {
+    fn send_claude(self: &Arc<Self>, app: AppHandle, a: SendArgs) -> Result<Option<String>, String> {
         let mut map = self.map.lock().map_err(|e| e.to_string())?;
         let chat = map.entry(a.project_id.clone()).or_default();
         if chat.busy.load(Ordering::SeqCst) {
             return Err("O Claude ainda está respondendo. Espere ou pare a resposta.".into());
+        }
+        // pedido editado: fecha o processo e recomeça a conversa do ponto antes dele
+        let mut resume_at: Option<String> = None;
+        if let Some(r) = a.rewind.as_deref() {
+            if let Some(mut p) = chat.claude.take() {
+                let _ = p.child.kill();
+            }
+            if r.is_empty() || chat.session.is_none() {
+                chat.session = None;
+                chat.last_uuid = None;
+            } else {
+                resume_at = Some(r.to_string());
+                chat.last_uuid = Some(r.to_string());
+            }
         }
         // modelo e força entram na chave: trocar um deles reabre o processo (a conversa continua)
         let level_key = format!("{}:{}:{}:{:?}:{:?}:{:?}:{:?}", a.level, a.mode, a.settings, a.add_dir, a.prompt, a.account.model, a.effort);
@@ -212,11 +242,19 @@ impl Chats {
         }
         if chat.session.as_ref().is_some_and(|(acc, _)| acc != &a.account.id) {
             chat.session = None;
+            chat.last_uuid = None;
         }
         if chat.claude.is_none() {
             let resume = chat.session.as_ref().map(|(_, s)| s.clone());
+            // conversa retomada: a âncora é a última entrada do arquivo dela
+            if chat.last_uuid.is_none() {
+                if let Some(s) = &resume {
+                    let file = convos::claude_dir(&crate::accounts::claude::config_dir(&a.account), &a.root).join(format!("{s}.jsonl"));
+                    chat.last_uuid = convos::last_uuid(&file);
+                }
+            }
             let proc_id = NEXT_GEN.fetch_add(1, Ordering::SeqCst);
-            let proc = spawn_claude(&a, resume.as_deref(), level_key, proc_id)?;
+            let proc = spawn_claude(&a, resume.as_deref(), resume_at.as_deref().filter(|_| resume.is_some()), level_key, proc_id)?;
             chat.claude = Some(proc);
             let stdout = chat.claude.as_mut().unwrap().child.stdout.take().ok_or("sem saída do Claude")?;
             let stderr = chat.claude.as_mut().unwrap().child.stderr.take();
@@ -234,6 +272,8 @@ impl Chats {
             text = format!("{text}\n\n(Arquivo aberto no Veocode: {path})");
             let _ = content; // o Claude lê o arquivo sozinho; só avisamos qual é
         }
+        // âncora: o que vinha antes deste pedido ("" = começo da conversa)
+        let anchor = if chat.session.is_some() { chat.last_uuid.clone() } else { Some(String::new()) };
         let p = chat.claude.as_mut().unwrap();
         chat.busy.store(true, Ordering::SeqCst);
         let content = crate::attach::claude_content(&text, &a.files);
@@ -241,7 +281,21 @@ impl Chats {
         if r.is_err() {
             chat.busy.store(false, Ordering::SeqCst);
         }
-        r
+        r.map(|_| anchor)
+    }
+
+    /// Guarda a última entrada da conversa (só as da conversa principal, não de subagentes).
+    fn note_uuid(&self, project: &str, v: &Value) {
+        if v.get("parent_tool_use_id").is_some_and(|p| !p.is_null()) {
+            return;
+        }
+        if let Some(u) = v.get("uuid").and_then(Value::as_str).filter(|u| !u.is_empty()) {
+            if let Ok(mut m) = self.map.lock() {
+                if let Some(c) = m.get_mut(project) {
+                    c.last_uuid = Some(u.to_string());
+                }
+            }
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -297,6 +351,7 @@ impl Chats {
                 }
                 vec![ChatEvent::Session { session_id: sid }]
             }
+            ("rate_limit_event", _) => crate::limits::from_event(account, v).map(|limits| vec![ChatEvent::Limits { account: account.into(), limits }]).unwrap_or_default(),
             ("stream_event", _) => {
                 let e = v.get("event").unwrap_or(&Value::Null);
                 if v.get("parent_tool_use_id").is_some_and(|p| !p.is_null()) {
@@ -308,14 +363,21 @@ impl Chats {
                 }
                 vec![]
             }
-            ("user", _) => self.steps_of(project, account, v),
+            ("user", _) => {
+                self.note_uuid(project, v);
+                self.steps_of(project, account, v)
+            }
             ("assistant", _) => {
+                self.note_uuid(project, v);
                 if v.get("parent_tool_use_id").is_some_and(|p| !p.is_null()) {
                     return vec![];
                 }
                 let uuid = v.get("uuid").and_then(Value::as_str).unwrap_or("");
                 let blocks = v.pointer("/message/content").and_then(Value::as_array).cloned().unwrap_or_default();
                 let mut out = self.steps_of(project, account, v);
+                if let Some(context) = v.pointer("/message/usage").and_then(crate::convos::usage_total) {
+                    out.push(ChatEvent::Usage { context });
+                }
                 out.extend(blocks
                     .iter()
                     .enumerate()
@@ -390,7 +452,7 @@ impl Chats {
     }
 
     /// Para a resposta atual (Claude: interrompe; APIs: corta o stream).
-    pub fn stop(&self, app: &AppHandle, project: &str) -> Result<(), String> {
+    pub fn stop(self: &Arc<Self>, app: &AppHandle, project: &str) -> Result<(), String> {
         let mut map = self.map.lock().map_err(|e| e.to_string())?;
         let Some(c) = map.get_mut(project) else { return Ok(()) };
         c.cancel.store(true, Ordering::SeqCst);
@@ -401,6 +463,26 @@ impl Chats {
         }
         if let Some(p) = c.claude.as_mut() {
             let _ = write_line(&mut p.stdin, &json!({"type":"control_request","request_id":format!("veocode-stop-{}", now_ms()),"request":{"subtype":"interrupt"}}));
+            // rede de segurança: se o Claude não parar em 4 s, fecha o processo (a conversa fica
+            // guardada e o próximo pedido continua dela)
+            let (proc_id, busy, me, app, project) = (p.proc_id, c.busy.clone(), Arc::clone(self), app.clone(), project.to_string());
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_secs(4));
+                if !busy.load(Ordering::SeqCst) {
+                    return;
+                }
+                let Ok(mut m) = me.map.lock() else { return };
+                let Some(c) = m.get_mut(&project) else { return };
+                if c.claude.as_ref().map(|p| p.proc_id) != Some(proc_id) {
+                    return;
+                }
+                busy.store(false, Ordering::SeqCst);
+                if let Some(mut p) = c.claude.take() {
+                    let _ = p.child.kill();
+                }
+                drop(m);
+                emit(&app, &project, ChatEvent::Done { ok: false, detail: Some("parado".into()) });
+            });
         }
         Ok(())
     }
@@ -418,6 +500,14 @@ impl Chats {
     }
 
     /// Fecha todos os processos (app saindo).
+    /// Fecha todas as conversas (abas) de um projeto.
+    pub fn reset_project(&self, project: &str) {
+        let keys: Vec<String> = self.map.lock().map(|m| m.keys().filter(|k| base_project(k) == project).cloned().collect()).unwrap_or_default();
+        for k in keys {
+            self.reset(&k);
+        }
+    }
+
     pub fn shutdown(&self) {
         if let Ok(mut map) = self.map.lock() {
             for (_, c) in map.iter_mut() {
@@ -442,7 +532,7 @@ impl Chats {
 
     // ------------------------------------------------------------ APIs
 
-    fn send_api(self: &Arc<Self>, app: AppHandle, a: SendArgs) -> Result<(), String> {
+    fn send_api(self: &Arc<Self>, app: AppHandle, a: SendArgs) -> Result<Option<String>, String> {
         let ag = apiagent::agent();
         let wire = apiagent::wire_for(&a.account, &ag)?;
         let (busy, cancel, mut msgs, conv) = {
@@ -456,9 +546,14 @@ impl Chats {
                 chat.history_account = a.account.id.clone();
             }
             // conversa sem histórico (nova, ou a conta mudou) ganha um id novo para ser guardada
+            // pedido editado: corta o histórico antes dele
+            if let Some(n) = a.rewind.as_deref().and_then(|r| r.strip_prefix("api:")).and_then(|n| n.parse::<usize>().ok()) {
+                chat.history.truncate(n);
+            }
             if chat.history.is_empty() || chat.api_conv.is_none() {
                 chat.api_conv = Some(format!("api-{}", now_ms()));
             }
+            let anchor = format!("api:{}", chat.history.len());
             let conv = chat.api_conv.clone().unwrap_or_default();
             let mut content = a.text.clone();
             if let Some((path, body)) = &a.attach {
@@ -468,8 +563,9 @@ impl Chats {
             chat.history.push(json!({"role":"user","content":content}));
             chat.cancel = Arc::new(AtomicBool::new(false));
             chat.busy.store(true, Ordering::SeqCst);
-            (chat.busy.clone(), chat.cancel.clone(), chat.history.clone(), conv)
+            (chat.busy.clone(), chat.cancel.clone(), chat.history.clone(), (conv, anchor))
         };
+        let (conv, anchor) = conv;
         let me = Arc::clone(self);
         std::thread::spawn(move || {
             let project = a.project_id.clone();
@@ -522,7 +618,7 @@ impl Chats {
             }
             busy.store(false, Ordering::SeqCst);
         });
-        Ok(())
+        Ok(Some(anchor))
     }
 
 }
@@ -572,7 +668,7 @@ pub fn model_choice(model: Option<String>, effort: Option<String>) -> Result<(Op
 
 static NEXT_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
-fn spawn_claude(a: &SendArgs, resume: Option<&str>, level_key: String, proc_id: u64) -> Result<ClaudeProc, String> {
+fn spawn_claude(a: &SendArgs, resume: Option<&str>, resume_at: Option<&str>, level_key: String, proc_id: u64) -> Result<ClaudeProc, String> {
     let claude = crate::xray::util::which("claude").ok_or("Não achei o comando `claude`. Instale o Claude Code e tente de novo.")?;
     let mut cmd = Command::new(&claude);
     cmd.args(["--output-format", "stream-json", "--verbose", "--input-format", "stream-json", "--include-partial-messages"])
@@ -604,6 +700,10 @@ fn spawn_claude(a: &SendArgs, resume: Option<&str>, level_key: String, proc_id: 
     }
     if let Some(s) = resume {
         cmd.arg(format!("--resume={s}"));
+        // pedido editado: a conversa volta até aqui (o resto fica num ramo que o Claude esquece)
+        if let Some(at) = resume_at {
+            cmd.arg(format!("--resume-session-at={at}"));
+        }
     }
     if a.account.config_dir.is_some() {
         cmd.env("CLAUDE_CONFIG_DIR", crate::accounts::claude::config_dir(&a.account));

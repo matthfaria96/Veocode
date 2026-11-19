@@ -1,9 +1,11 @@
-import { lazy, Match, onCleanup, onMount, Show, Suspense, Switch } from "solid-js";
+import { createEffect, lazy, Match, on, onCleanup, onMount, Show, Suspense, Switch } from "solid-js";
 import { acc, loadAccess } from "./access";
 import TitleBar from "./components/TitleBar";
 import Rail from "./components/Rail";
 import Dialogs from "./components/Dialogs";
 import CloseProjectHost from "./components/CloseProject";
+import { MediaViewer } from "./components/Media";
+import { trackMedia } from "./media";
 import { watchDrops } from "./attachments";
 import ContextMenu from "./components/ContextMenu";
 import CommandPalette from "./components/CommandPalette";
@@ -22,6 +24,9 @@ import { newLivre } from "./livre";
 import { startTermEvents } from "./terminal";
 import { startNotices } from "./attention";
 import { every } from "./every";
+import { refreshLimits, startLimitWatch } from "./limits";
+import { SwitchAccountDialog } from "./components/Limits";
+import { accts } from "./accounts";
 
 // telas menos usadas chegam aos poucos: o app abre mais rápido e elas ficam prontas logo depois
 const loaders = {
@@ -88,6 +93,9 @@ export default function App() {
     "requestIdleCallback" in window ? (window as any).requestIdleCallback(warm, { timeout: 3000 }) : setTimeout(warm, 1500);
     // avisa quando a IA de outro projeto termina ou passa a esperar você
     onCleanup(startNotices());
+    // limites do plano (5 h e semana): logo que as contas chegam e depois a cada 3 min
+    onCleanup(startLimitWatch());
+    createEffect(on(() => accts.loaded, (ok) => ok && void refreshLimits()));
     // uso do Claude e Ollama a cada 20 s (só leitura local); APIs só quando pedir
     onCleanup(every(() => refreshStatuses(false), 20000));
     // mudanças no disco chegam do Rust (src-tauri/src/watch.rs)
@@ -96,6 +104,7 @@ export default function App() {
     let gitTimer: number | undefined;
     const unlisten = api.onFsChange((e) => {
       handleFsChange(e);
+      trackMedia(e);
       // arquivos mudaram: o número de mudanças do git também (uma leitura leve, juntando os avisos)
       clearTimeout(gitTimer);
       gitTimer = window.setTimeout(() => void loadSummaries(true), 1500);
@@ -151,7 +160,9 @@ export default function App() {
         <CommandPalette />
       </Show>
       <Dialogs />
+      <SwitchAccountDialog />
       <CloseProjectHost />
+      <MediaViewer />
       <ContextMenu />
       <Show when={toast()}>
         <div class="toast">{toast()}</div>

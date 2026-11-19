@@ -17,7 +17,7 @@ const markTitle: Record<FileMark, string> = {
 };
 
 /** O que dá para fazer com um item da árvore ("" = a pasta do projeto). */
-export function itemsFor(path: string, isDir: boolean): (MenuItem | "sep")[] {
+function itemsFor(path: string, isDir: boolean): (MenuItem | "sep")[] {
   const here = isDir ? path : path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
   const out: (MenuItem | "sep")[] = [];
   if (!isDir) out.push({ label: "Abrir com o programa padrão", icon: () => <ExternalLink size={14} />, run: () => void openWithSystem(path) });
@@ -38,7 +38,7 @@ export function itemsFor(path: string, isDir: boolean): (MenuItem | "sep")[] {
   return out;
 }
 
-export const openMenu = (e: MouseEvent, path: string, isDir: boolean) => {
+const openMenu = (e: MouseEvent, path: string, isDir: boolean) => {
   e.preventDefault();
   e.stopPropagation();
   setContextMenu({ x: e.clientX, y: e.clientY, items: itemsFor(path, isDir) });

@@ -1,9 +1,9 @@
-import { Activity, AlertTriangle, Box, Brain, Copy, Cpu, FolderOpen, HardDrive, Monitor, Package, Play, Power, RefreshCw, Sparkles, Square, Trash2 } from "lucide-solid";
+import { Activity, AlertTriangle, Box, Brain, Copy, Cpu, FolderOpen, HardDrive, Monitor, Package, Play, Plug, Power, RefreshCw, Sparkles, Square, Trash2 } from "lucide-solid";
 import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, onMount, Show, Switch, type JSX } from "solid-js";
-import { api, copyText, isTauri, type AgentGroup, type Proc } from "../api";
+import { api, copyText, isTauri, type AgentGroup, type Leftover, type Proc } from "../api";
 import { formatBytes } from "../data/mock";
 import { showToast } from "../store";
-import { agentColor, diskPoints, killProc, loadCaches, loadInstalls, loadMachines, loadModels, refreshProcs, setXray, toggleMachine, trashCaches, xray, type CacheRow } from "../xray";
+import { agentColor, diskPoints, killLeftover, killProc, loadCaches, loadInstalls, loadMachines, loadModels, refreshPorts, refreshProcs, setXray, toggleMachine, trashCaches, xray, type CacheRow } from "../xray";
 import { CountUp, PageHeader, Sparkline, Stagger } from "../components/ui";
 import ConfirmDialog from "../components/ConfirmDialog";
 import Explainer from "../components/Explainer";
@@ -11,7 +11,7 @@ import ComputerTabs from "../components/ComputerTabs";
 import ClaudeSpace, { claudeSpaceTotal, loadClaudeSpace } from "../components/ClaudeSpace";
 import { every } from "../every";
 
-type Tab = "claude" | "caches" | "installed" | "models" | "machines" | "processes";
+type Tab = "claude" | "caches" | "installed" | "models" | "machines" | "processes" | "ports";
 const [tab, setTab] = createSignal<Tab>("claude");
 
 const base = (p: string) => p.split(/[\\/]/).filter(Boolean).pop() ?? p;
@@ -27,6 +27,7 @@ const uptime = (s: number) => {
 export default function System() {
   const [confirmTrash, setConfirmTrash] = createSignal<CacheRow[] | null>(null);
   const [confirmKill, setConfirmKill] = createSignal<Proc | null>(null);
+  const [confirmLeftover, setConfirmLeftover] = createSignal<Leftover | null>(null);
   const [showAll, setShowAll] = createSignal(false);
   const [filter, setFilter] = createSignal("");
 
@@ -36,8 +37,12 @@ export default function System() {
     if (!xray.machines) loadMachines();
     if (!xray.models) loadModels();
     refreshProcs();
-    // processos "respiram": atualiza a cada 2 s enquanto a tela está aberta
-    onCleanup(every(refreshProcs, 2000));
+    refreshPorts();
+    // processos "respiram": atualiza a cada 2 s enquanto a tela está aberta (as portas só com a aba delas aberta)
+    onCleanup(every(() => {
+      refreshProcs();
+      if (tab() === "ports") refreshPorts();
+    }, 2000));
   });
 
   const refreshAll = () => {
@@ -47,6 +52,7 @@ export default function System() {
     loadMachines();
     loadModels();
     refreshProcs();
+    refreshPorts();
   };
 
   const total = createMemo(() => xray.caches.reduce((s, c) => s + (c.size ?? 0), 0));
@@ -74,6 +80,7 @@ export default function System() {
     { id: "models", label: "IAs locais", icon: Brain, color: "#f472b6", count: () => (xray.models ? (xray.models.models.length ? formatBytes(xray.models.models.reduce((s, m) => s + m.size, 0)) : "nenhuma") : "…") },
     { id: "machines", label: "Máquinas virtuais", icon: Box, color: "#34d399", count: () => (xray.machines ? (xray.machines.machines.length ? `${running()} rodando` : "nenhum") : "…") },
     { id: "processes", label: "IAs abertas agora", icon: Activity, color: "#fbbf24", count: () => (xray.procsLoaded ? String(xray.procs.length) : "…") },
+    { id: "ports", label: "Portas abertas", icon: Plug, color: "#60a5fa", count: () => (!xray.ports ? "…" : xray.ports.leftovers.length ? `${xray.ports.leftovers.length} ${xray.ports.leftovers.length === 1 ? "sobrou" : "sobraram"}` : String(xray.ports.others.length)) },
   ];
 
   const systemFiltered = createMemo(() => {
@@ -376,6 +383,72 @@ export default function System() {
           </Show>
           </div>
         </Match>
+
+        {/* ------------------------------------------------ portas */}
+        <Match when={tab() === "ports"}>
+          <div class="cx-pane">
+          <Show when={xray.ports} fallback={<div class="loading-rows"><div /><div /></div>}>
+            {(r) => (
+              <>
+                <h4 class="ports-title">Sobraram de sessões fechadas</h4>
+                <Show
+                  when={r().leftovers.length > 0}
+                  fallback={<div class="empty-state"><Plug size={20} /> Nenhum servidor sobrando. Tudo que está aberto tem alguém cuidando.</div>}
+                >
+                  <p class="foot-note top">
+                    Servidores que continuam rodando depois que o agente ou o terminal que os abriu fechou. Eles seguram a porta e gastam memória até alguém fechar.
+                  </p>
+                  <div class="agent-card leftover-card" style={{ "--c": "#60a5fa" }}>
+                    <div class="proc-list">
+                      <For each={r().leftovers}>
+                        {(l) => (
+                          <div class="proc-row">
+                            <div class="cache-info">
+                              <strong class="mono" title={`${l.cmd}\n(processo ${l.pid})`}>{l.cmd}</strong>
+                              <small title={l.cwd}>aberto há {uptime(l.runSecs)}{l.pids.length > 1 ? ` · ${l.pids.length} processos` : ""}</small>
+                            </div>
+                            <span class="proj-chip" classList={{ none: !l.project }} title={l.cwd}>{l.project ?? base(l.cwd)}</span>
+                            <span class="size">{l.cpu.toFixed(0)}% · {formatBytes(l.mem)}</span>
+                            <span class="port-links">
+                              <For each={l.ports}>
+                                {(port) => <button class="port-link" title={`Abrir http://localhost:${port}`} onClick={() => void api.openUrl(`http://localhost:${port}`).catch(() => {})}>:{port}</button>}
+                              </For>
+                            </span>
+                            <button class="icon-btn" title="Fechar este servidor" disabled={xray.busy[`l:${l.pid}`]} onClick={() => setConfirmLeftover(l)}>
+                              <Show when={!xray.busy[`l:${l.pid}`]} fallback={<span class="spinner inline" />}><Power size={13} /></Show>
+                            </button>
+                          </div>
+                        )}
+                      </For>
+                    </div>
+                  </div>
+                </Show>
+
+                <Show when={r().others.length > 0}>
+                  <h4 class="ports-title">Outras portas abertas <small>só para consulta</small></h4>
+                  <div class="agent-card idle">
+                    <div class="proc-list">
+                      <For each={r().others}>
+                        {(o) => (
+                          <div class="proc-row">
+                            <div class="cache-info">
+                              <strong title={`${o.cmd}\n(processo ${o.pid})`}>{o.name}</strong>
+                            </div>
+                            <Show when={o.agent}><span class="host-chip" title="Aberto por um agente que ainda está rodando; feche pela aba IAs abertas agora">{o.agent}</span></Show>
+                            <span class="port-links">
+                              <For each={o.ports}>{(port) => <code class="port">:{port}</code>}</For>
+                            </span>
+                          </div>
+                        )}
+                      </For>
+                    </div>
+                  </div>
+                </Show>
+              </>
+            )}
+          </Show>
+          </div>
+        </Match>
       </Switch>
 
       <div class="cx-explain">
@@ -389,6 +462,7 @@ export default function System() {
           { word: "IAs locais", means: "Modelos de IA baixados para rodar no próprio computador (Ollama, LM Studio, Hugging Face). Ficam soltos na máquina, fora dos projetos, e costumam ocupar vários GB." },
           { word: "Máquinas virtuais", means: "Computadores de mentira (Docker e afins) que podem estar gastando memória." },
           { word: "IAs abertas agora", means: "Cada janela de IA aberta e quanta memória usa. Dá para fechar uma travada daqui." },
+          { word: "Portas abertas", means: "Servidores (como um site em localhost:3000) que ficaram rodando depois que a IA ou o terminal fechou. Dá para abrir no navegador ou fechar." },
         ]}
         calm={<>Nada é apagado sem você confirmar, e tudo vai para a <strong>Lixeira</strong>.</>}
       />
@@ -418,6 +492,26 @@ export default function System() {
               )}
             </For>
             <p class="foot-note">Os arquivos vão para a Lixeira; dá para recuperar enquanto você não esvaziar.</p>
+          </ConfirmDialog>
+        )}
+      </Show>
+
+      <Show when={confirmLeftover()}>
+        {(l) => (
+          <ConfirmDialog
+            title={`Fechar o servidor na porta ${l().ports.map((p) => `:${p}`).join(", ")}?`}
+            confirmLabel="Fechar"
+            danger
+            onCancel={() => setConfirmLeftover(null)}
+            onConfirm={() => {
+              killLeftover(l().pid);
+              setConfirmLeftover(null);
+            }}
+          >
+            <code class="confirm-cmd">{l().cmd}</code>
+            <p class="foot-note">
+              Roda na pasta <code>{l().cwd}</code>{l().pids.length > 1 ? ` e fecha junto ${l().pids.length - 1} ${l().pids.length === 2 ? "processo ligado" : "processos ligados"} a ele` : ""}. Nenhum arquivo é apagado; se precisar dele de novo, é só rodar o comando outra vez.
+            </p>
           </ConfirmDialog>
         )}
       </Show>

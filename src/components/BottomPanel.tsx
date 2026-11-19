@@ -1,4 +1,4 @@
-import { Crosshair, Pause, Play } from "lucide-solid";
+import { Crosshair, PanelBottom, PanelTop, Pause, Play, X } from "lucide-solid";
 import { lazy, Suspense } from "solid-js";
 // o xterm só carrega quando a aba Terminal aparece
 const ProjectTerminal = lazy(() => import("./ProjectTerminal"));
@@ -6,10 +6,13 @@ import { terms } from "../terminal";
 import { follow, setFollow } from "../agentFeed";
 import { createEffect, createSignal, For, Match, on, Show, Switch } from "solid-js";
 import { currentProject, setWs, ws } from "../store";
+import { panelAt, setPanelAt } from "../layoutMode";
 import ActivityIcon, { kindColor } from "./ActivityIcon";
 
-export default function BottomPanel() {
-  const [tab, setTab] = createSignal<"activity" | "agent" | "terminal">("activity");
+// a aba escolhida continua a mesma ao mudar o painel de lugar (embaixo ↔ aba fixa)
+const [tab, setTab] = createSignal<"activity" | "agent" | "terminal">("activity");
+
+export default function BottomPanel(props: { asTab?: boolean }) {
   // altura arrastando a borda de cima (fica guardada neste computador)
   const saved = (() => {
     try {
@@ -48,8 +51,10 @@ export default function BottomPanel() {
   createEffect(on(() => ws.events.length, (n) => n <= 1 && setTab("activity"), { defer: true }));
 
   return (
-    <section class="bottom-panel" style={{ height: `${height()}px` }}>
-      <div class="panel-resize" onPointerDown={drag} onDblClick={() => setHeight(height() > 300 ? 240 : Math.round(window.innerHeight * 0.5))} title="Arraste para mudar a altura (dois cliques: alto/baixo)" />
+    <section class="bottom-panel" classList={{ "as-tab": props.asTab }} style={props.asTab ? undefined : { height: `${height()}px` }}>
+      <Show when={!props.asTab}>
+        <div class="panel-resize" onPointerDown={drag} onDblClick={() => setHeight(height() > 300 ? 240 : Math.round(window.innerHeight * 0.5))} title="Arraste para mudar a altura (dois cliques: alto/baixo)" />
+      </Show>
       <div class="panel-tabs">
         <button classList={{ active: tab() === "activity" }} onClick={() => setTab("activity")}>
           Atividade <span class="count">{ws.events.length}</span>
@@ -77,6 +82,12 @@ export default function BottomPanel() {
             {ws.paused ? "Continuar demo" : "Pausar demo"}
           </button>
         </Show>
+        <span class="panel-moves">
+          <button class="icon-btn small" title={panelAt() === "tab" ? "Mover para baixo da conversa" : "Abrir como aba fixa, no lugar da conversa"} onClick={() => setPanelAt(panelAt() === "tab" ? "bottom" : "tab")}>
+            {panelAt() === "tab" ? <PanelBottom size={13} /> : <PanelTop size={13} />}
+          </button>
+          <button class="icon-btn small" title="Fechar" onClick={() => setPanelAt("none")}><X size={13} /></button>
+        </span>
       </div>
       <Switch>
         <Match when={tab() === "activity"}>

@@ -150,7 +150,15 @@ interface State {
 }
 
 /** Aba aberta no painel da direita (Agente, Acesso ou Git); a barra lateral também abre a do Git. */
-export const [gitTab, setGitTab] = createSignal<"chat" | "access" | "trail" | "git">("chat");
+/** Aba do chat (conversa ou nível de acesso). */
+export const [gitTab, setChatTab] = createSignal<"chat" | "access">("chat");
+/** Aba da lateral da tela Projetos: arquivos, Git ou Rastro. */
+export const [sideTab, setSideTab] = createSignal<"files" | "git" | "trail">("files");
+/** Abre a aba pedida no lugar certo (Git e Rastro ficam na lateral; conversa e nível, no chat). */
+export function setGitTab(t: "chat" | "access" | "trail" | "git" | "files") {
+  if (t === "git" || t === "trail" || t === "files") setSideTab(t);
+  else setChatTab(t);
+}
 
 export const [git, setGit] = createStore<State>({ byProject: {}, summaries: {} });
 

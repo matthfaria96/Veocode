@@ -30,6 +30,13 @@ mod real {
         let m = super::machines::report();
         println!("engines: {:?}", m.engines.iter().map(|e| (e.name, e.installed)).collect::<Vec<_>>());
         let mut sys = super::procs::new_system().unwrap();
+        let pr = super::procs::ports(&mut sys, &[], &super::util::home());
+        for l in &pr.leftovers {
+            println!("SOBROU pid {} {:?} {:?} {}", l.pid, l.ports, l.pids, l.cmd);
+        }
+        for o in &pr.others {
+            println!("PORTA {} {:?} {:?} {}", o.pid, o.ports, o.agent, o.name);
+        }
         super::procs::snapshot(&mut sys);
         std::thread::sleep(std::time::Duration::from_millis(500));
         for g in super::procs::snapshot(&mut sys) {

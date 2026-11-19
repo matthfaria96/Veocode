@@ -43,6 +43,9 @@ pub struct AgentEvent {
     pub output: Vec<String>,
     pub ts: i64,
     pub history: bool,
+    /// pedido da pessoa: de onde a conversa recomeça se ele for editado ("" = do começo)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub anchor: Option<String>,
 }
 
 struct Tail {
@@ -240,6 +243,46 @@ impl Watch {
     }
 }
 
+/// Entradas do ramo atual da conversa: do fim para trás pelo `parentUuid`. Um pedido editado
+/// no Veocode deixa o ramo antigo no arquivo; ele não aparece de novo ao reabrir.
+fn active_branch(lines: &[Value]) -> Option<std::collections::HashSet<String>> {
+    let main = |v: &&Value| v.get("isSidechain").and_then(Value::as_bool) != Some(true);
+    let parent: HashMap<&str, Option<&str>> = lines
+        .iter()
+        .filter(main)
+        .filter_map(|v| {
+            let u = v.get("uuid").and_then(Value::as_str)?;
+            let p = v.get("parentUuid").and_then(Value::as_str).or_else(|| v.get("logicalParentUuid").and_then(Value::as_str));
+            Some((u, p))
+        })
+        .collect();
+    // sem ramo (nenhuma entrada com dois filhos): mostra tudo como sempre
+    let mut kids: HashMap<&str, usize> = HashMap::new();
+    for p in parent.values().flatten() {
+        *kids.entry(p).or_default() += 1;
+    }
+    if !kids.values().any(|n| *n > 1) {
+        return None;
+    }
+    let mut keep = std::collections::HashSet::new();
+    // começa da última mensagem de verdade (entradas de sistema podem ficar penduradas de lado)
+    let msg = |v: &&Value| matches!(v.get("type").and_then(Value::as_str), Some("user" | "assistant"));
+    let mut cur = lines.iter().rev().filter(main).filter(msg).find_map(|v| v.get("uuid").and_then(Value::as_str));
+    while let Some(u) = cur {
+        if !keep.insert(u.to_string()) {
+            break;
+        }
+        cur = parent.get(u).copied().flatten();
+    }
+    // subagentes e entradas de sistema que não são mensagens ficam como estavam
+    for v in lines.iter().filter(|v| !main(v) || !msg(v)) {
+        if let Some(u) = v.get("uuid").and_then(Value::as_str) {
+            keep.insert(u.to_string());
+        }
+    }
+    Some(keep)
+}
+
 /// Uma sessão inteira (só a principal) para mostrar ao retomar a conversa: lê do fim para
 /// trás até juntar `max_steps` passos visíveis, chegar ao início ou a 32 MB.
 pub fn read_session(root: &Path, account: &str, file: &Path, max_steps: usize) -> Vec<AgentEvent> {
@@ -252,11 +295,15 @@ pub fn read_session(root: &Path, account: &str, file: &Path, max_steps: usize) -
         let start = len - window;
         let Some((text, _)) = read_from(file, start, window) else { break };
         let mut tools = HashMap::new();
-        out = text
-            .lines()
-            .skip(usize::from(start > 0))
-            .filter_map(|l| serde_json::from_str::<Value>(l).ok())
-            .flat_map(|v| parse_line(&v, &ctx, &mut tools))
+        let lines: Vec<Value> = text.lines().skip(usize::from(start > 0)).filter_map(|l| serde_json::from_str::<Value>(l).ok()).collect();
+        let keep = active_branch(&lines);
+        out = lines
+            .iter()
+            .filter(|v| match (&keep, v.get("uuid").and_then(Value::as_str)) {
+                (Some(k), Some(u)) => k.contains(u),
+                _ => true,
+            })
+            .flat_map(|v| parse_line(v, &ctx, &mut tools))
             .filter(|e| e.kind != "think")
             .collect();
         let steps = out.iter().filter(|e| e.kind != "result").count();
@@ -415,9 +462,10 @@ fn parse_line(v: &Value, c: &Ctx, tools: &mut HashMap<String, String>) -> Vec<Ag
 
     // ------------------------------------------------ pedido da pessoa e resultados
     if ty == "user" {
+        let anchor = Some(s(v, "parentUuid").unwrap_or("").to_string());
         if let Some(text) = content.and_then(Value::as_str) {
             if !is_noise(text) && c.sub.is_none() {
-                out.push(AgentEvent { id: uuid.into(), kind: "user".into(), title: cut(text, 400), ..base.clone() });
+                out.push(AgentEvent { id: uuid.into(), kind: "user".into(), title: cut(text, 400), anchor, ..base.clone() });
             }
             return out;
         }
@@ -426,7 +474,7 @@ fn parse_line(v: &Value, c: &Ctx, tools: &mut HashMap<String, String>) -> Vec<Ag
                 Some("text") if c.sub.is_none() => {
                     let t = s(b, "text").unwrap_or("");
                     if !is_noise(t) {
-                        out.push(AgentEvent { id: format!("{uuid}:{i}"), kind: "user".into(), title: cut(t, 400), ..base.clone() });
+                        out.push(AgentEvent { id: format!("{uuid}:{i}"), kind: "user".into(), title: cut(t, 400), anchor: anchor.clone(), ..base.clone() });
                     }
                 }
                 Some("tool_result") => {
@@ -569,6 +617,17 @@ fn parse_line(v: &Value, c: &Ctx, tools: &mut HashMap<String, String>) -> Vec<Ag
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn active_branch_skips_edited_turns() {
+        let l = |u: &str, p: Option<&str>| serde_json::json!({"type":"user","uuid":u,"parentUuid":p});
+        // a → b → c (velho)  e  a → b → d → e (editado)
+        let lines = vec![l("a", None), l("b", Some("a")), l("c", Some("b")), l("d", Some("b")), l("e", Some("d"))];
+        let keep = super::active_branch(&lines).unwrap();
+        assert!(keep.contains("a") && keep.contains("b") && keep.contains("d") && keep.contains("e"));
+        assert!(!keep.contains("c"));
+    }
+
     use super::*;
     use std::io::Write;
 

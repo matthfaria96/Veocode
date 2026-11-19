@@ -5,6 +5,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { sendPrefs } from "./chatPrefs";
 import { attLabel, attsOf, clearAtts, setAttsOf } from "./attachments";
+import { rememberSent } from "./media";
 import { createStore, produce } from "solid-js/store";
 import { accountById, accts } from "./accounts";
 import type { AgentEvent } from "./agentFeed";
@@ -74,6 +75,7 @@ type Ev =
   | { kind: "permissionGone"; requestId: string }
   | { kind: "done"; ok: boolean; detail: string | null }
   | { kind: "step"; event: AgentEvent }
+  | { kind: "usage"; context: number }
   | { kind: "error"; message: string };
 
 /** Eventos do Rust com projectId "livre" (chat.ts encaminha para cá). */
@@ -130,7 +132,9 @@ export async function sendLivre(text?: string) {
     c.input = "";
   }));
   clearAtts(LIVRE);
-  push({ key: key("u"), t: "user", text: [t, attLabel(files)].filter(Boolean).join("\n") });
+  const shown = [t, attLabel(files)].filter(Boolean).join("\n");
+  rememberSent(shown, files.map((f) => f.thumb));
+  push({ key: key("u"), t: "user", text: shown });
   if (!isTauri) return demoReply(t);
   try {
     await invoke("chat_send", { projectId: LIVRE, text: t, attach: null, files: files.map((f) => f.path), ...sendPrefs(LIVRE) });

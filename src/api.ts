@@ -190,6 +190,32 @@ export interface AgentGroup {
   host?: string;
 }
 
+/** Servidor que ficou rodando depois que a sessão que o abriu fechou. */
+export interface Leftover {
+  pid: number;
+  cmd: string;
+  cwd: string;
+  project: string | null;
+  ports: number[];
+  cpu: number;
+  mem: number;
+  runSecs: number;
+  pids: number[];
+}
+
+export interface PortOwner {
+  pid: number;
+  name: string;
+  cmd: string;
+  ports: number[];
+  agent: string | null;
+}
+
+export interface PortReport {
+  leftovers: Leftover[];
+  others: PortOwner[];
+}
+
 export const xrayApi = {
   caches: (): Promise<CacheSpec[]> => invoke("xray_caches"),
   measure: (id: string): Promise<number> => invoke("xray_measure", { id }),
@@ -202,6 +228,8 @@ export const xrayApi = {
   toggleMachine: (engine: string, id: string, start: boolean): Promise<void> => invoke("xray_toggle_machine", { engine, id, start }),
   processes: (): Promise<AgentGroup[]> => invoke("xray_processes"),
   kill: (pid: number): Promise<void> => invoke("xray_kill", { pid }),
+  ports: (): Promise<PortReport> => invoke("xray_ports"),
+  killLeftover: (pid: number): Promise<void> => invoke("xray_kill_leftover", { pid }),
 };
 
 export async function copyText(text: string) {

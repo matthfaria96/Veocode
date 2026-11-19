@@ -1,61 +1,182 @@
-# Veocode
+<p align="center">
+  <img src="src-tauri/icons/128x128@2x.png" alt="Veocode" width="128">
+</p>
 
-Workspace visual para usar várias contas de IA (Claude, DeepSeek, modelos locais…) em projetos diferentes, controlar o nível de acesso de cada uma e enxergar tudo o que elas fazem na máquina.
+<h1 align="center">Veocode</h1>
 
-**Fase atual: Painel (todos os projetos e até 4 chats lado a lado).** Projetos são pastas de verdade (árvore, arquivos e mudanças no disco ao vivo). O Raio-X lê a máquina: tamanho dos caches das IAs e dos gerenciadores de pacote, o que o Claude Code instalou (lido dos históricos em `~/.claude/projects`), VMs e containers (Docker, Lima, UTM, Parallels, VirtualBox) e os agentes de IA rodando com os processos filhos e portas. Limpar sempre move para a Lixeira; remover pacotes só copia o comando, nada é executado; encerrar só vale para processos iniciados por um agente. As **Contas** também são reais: cada conta do Claude é uma pasta separada do Claude Code (`CLAUDE_CONFIG_DIR`), com plano, uso por dia e modelos lidos dos históricos; o login é feito pelo próprio Claude Code num terminal aberto pelo Veocode. DeepSeek e APIs compatíveis com OpenAI guardam a chave no chaveiro do sistema e mostram saldo e modelos; o Ollama é detectado no endereço local. **Skills e MCP** também são lidos do disco: skills, comandos e agentes de cada conta, plugins instalados (com as skills e MCP que trazem, e se valem só para um projeto) e servidores MCP de conta, locais e de `.mcp.json` dos projetos. Dos MCP aparecem só o comando, o tipo e os *nomes* das variáveis de ambiente; valores de chaves e tokens nunca são lidos para a tela. No macOS o sistema pode pedir acesso à pasta Documentos na primeira leitura, porque alguns plugins e servidores ficam lá. O **nível de acesso** agora vale de verdade para o Claude Code: o Veocode traduz o nível (e os ajustes de cada item: Permitido, Pergunta ou Bloqueado) em regras de permissão e grava em `.claude/settings.local.json` do projeto, que o Claude obedece (bloqueio sempre vence). Ele grava só as regras dele, guarda o que havia antes e desfaz exatamente isso; avisa se alguém mexer no arquivo por fora e mostra regras de outros arquivos que deixam passar sem perguntar. "Abrir o Claude aqui" abre o Terminal na pasta do projeto com a conta dele. Os **eventos do agente** também são reais: o Veocode lê ao vivo os históricos que o Claude Code grava em `projects/` de cada conta (só leitura, nada muda na configuração dele) e cada passo vira a mesma animação da demo: o cursor da conta vai até o arquivo, a árvore se abre e marca o que foi lido, buscado, editado ou criado, o editor abre o arquivo alterado, os comandos e o fim da saída aparecem no Terminal e a conversa (pedidos, respostas e passos) aparece no painel do agente. Subagentes ganham cursores próprios. Ao abrir o projeto, os últimos 60 passos das sessões das últimas 24 h aparecem como histórico. O **chat** agora funciona dentro do Veocode: com conta do Claude, o pedido vai para o próprio Claude Code rodando sem terminal (`claude -p` com entrada e saída em stream-json), na pasta do projeto, com a conta do projeto e com o nível de acesso indo junto (`--permission-mode` e `--settings` com as regras), mesmo que as regras nunca tenham sido gravadas no projeto. O que o nível manda perguntar aparece como cartão com Permitir e Recusar; o texto chega aos poucos; o botão de parar interrompe a resposta; "Nova conversa" começa uma sessão nova; e os passos (ler, editar, comandos) seguem aparecendo pela mesma animação dos eventos reais. Com DeepSeek, APIs compatíveis com OpenAI ou Ollama, o chat agora também trabalha na pasta: o Veocode oferece ao modelo seis ferramentas (listar pastas, ler arquivo, buscar texto, escrever arquivo, trocar um trecho e rodar comando) e executa cada pedido dele, rodada após rodada, até a resposta final. O nível de acesso vale do mesmo jeito: Permitido roda direto, Pergunta mostra o cartão com Permitir e Recusar (com o conteúdo, o trecho antes e depois ou o comando) e Bloqueado nem roda, e o modelo fica sabendo o motivo. Os comandos são separados por tipo (instalar pacotes, `git push`, rede, VMs) e o bloqueio de qualquer parte vence; no nível Pergunta, comandos só de leitura (`ls`, `git status`, `cat`…) rodam sem perguntar; escrever em `.claude/` sempre pergunta; arquivos de segredo (`.env`, chaves) seguem a regra de segredos; e as ferramentas de arquivo nunca saem da pasta do projeto. Comandos param em 2 minutos ou no botão de parar. Cada passo aparece na mesma animação (cursor, árvore, editor, Terminal e Atividade). Modelo que não aceita ferramentas volta a ser só conversa, com um aviso. O clipe manda junto o arquivo aberto (até 60 KB). As **conversas anteriores** de cada projeto ficam no botão de relógio do painel do agente: as sessões do Claude Code desta pasta (de todas as contas, abertas pelo chat, pelo Terminal ou pelo editor), com o título que a sessão tem (o nome dado com /rename, o gerado pelo Claude ou o primeiro pedido), o último pedido, a conta, a origem e quando mexeu; e as conversas com DeepSeek, OpenAI e Ollama, que o Veocode agora guarda em `chats/<projeto>/` na pasta de dados do app (com as chamadas de ferramenta). Clicar retoma: o fim da conversa volta para o painel e para a Atividade, e o próximo pedido continua dela (o Claude com `--resume`, na mesma sessão; a API com o histórico guardado). Conversas de outra conta aparecem com cadeado: é preciso trocar a conta do projeto antes. Os históricos do Claude são só lidos. Fechar o Veocode fecha os Claudes abertos pelo chat. O **Inventário** junta numa lista só tudo o que as IAs instalaram ou usam neste computador: agentes rodando agora, plugins, skills, comandos e agentes, servidores MCP, programas que o Claude Code instalou, VMs e containers e caches. Cada linha diz para qual projeto vale (a conta inteira, uma pasta, ou o computador todo; pastas que não estão no Veocode aparecem como "fora do Veocode"), se está ligado ou rodando e quanto pesa: CPU e memória do que roda agora (cada conversa aberta do Claude liga a sua cópia de cada servidor MCP, e o Veocode acha essas cópias entre os processos filhos dos agentes), o tamanho no disco dos plugins e caches, e os tokens de cada skill (o nome e a descrição entram em toda conversa; o resto só quando a skill é usada). Escolhendo um projeto, a lista mostra só o que vale nele e o "contexto fixo": quantos tokens as skills ligadas ocupam antes de você escrever qualquer coisa. Tirar nunca apaga de vez: skills, comandos e agentes vão para a Lixeira (no macOS pelo próprio sistema, sem pedir para controlar o Finder); plugins são ligados, desligados ou removidos e servidores MCP removidos pelo próprio Claude Code (`claude plugin …`, `claude mcp remove`), sempre com confirmação antes de remover. Skills que vieram do claude.ai e MCP que vêm de plugins dizem onde tirar. Programas instalados só copiam o comando de remoção. O que está dentro da pasta de um projeto (`.claude/skills`, `.mcp.json`) avisa que o arquivo do projeto muda. A **Ajuda** fica no botão de interrogação acima de Ajustes (ou F1, ou ? fora de campos de texto) e abre já no tópico da tela em que você está: começo rápido, uma página por tela (Mapa, Projetos, Contas e IAs, Inventário, Raio-X, Skills e MCP), nível de acesso, chat e conversas, e um glossário dos termos. Cada página tem uma ilustração animada da tela (SVG com as cores do tema, sem capturas e sem dados pessoais), o que ela mostra, o que dá para fazer e o que é bom saber, e um botão para abrir a tela. Setas trocam de tópico. Os textos ficam em `src/help/topics.ts` e os desenhos em `src/help/Scenes.tsx`. Os **Ajustes** (engrenagem no fim do menu lateral) escolhem o estilo dos ícones e das animações por cartões com prévia ao vivo, e valem na hora. Ícones **detalhados** (o padrão): pastas com volume e cor conforme o papel (src azul, testes verdes, assets rosa, docs verde-água, scripts amarelos, `.git` e `.claude` laranja, `node_modules`/`target`/`dist` cinza), arquivos como folhas com a etiqueta do tipo (TS, JS, RS, CSS, HTML, PY, IMG, NPM…) e cada projeto como uma pasta com cor própria e a sigla da tecnologia (Rs, TS, Py…). São desenhos próprios em SVG (`src/components/icons.tsx`), não ícones da Apple. **Minimalistas**: os traços finos de antes. Animações **reduzidas** tiram laços e deslizes do app inteiro. A tela também mostra onde ficam a configuração e os dados do app (com botão para abrir a pasta) e os atalhos. Os ajustes ficam em `settings.json` na pasta de configuração (`src-tauri/src/settings.rs`); valor estranho no arquivo volta ao padrão em vez de travar. O **Chat livre** (dois balões no menu lateral) é uma conversa fora de qualquer projeto, para tirar dúvidas, escrever e pensar junto, com a conta que você escolher no topo (Claude, DeepSeek, OpenAI-compatível ou Ollama). Usa a mesma máquina do chat dos projetos com o id especial `livre` (`src-tauri/src/livre.rs`, `src/livre.ts`, `src/views/Livre.tsx`): o Claude roda sempre na pasta própria `chat-livre/` da pasta de dados do app, no modo normal de conversa (não no de plano), com o nível Leitura e instruções extras (`--append-system-prompt`). Em **Só conversa** a IA não vê nenhum arquivo e a internet roda sem perguntar. Em **Olhar o computador** a pasta pessoal entra como pasta extra (`--add-dir`; nas APIs, vira a raiz das ferramentas de listar, ler e buscar) e a IA pode ler para responder, mas nunca edita, cria, apaga nem roda comandos; pastas de credenciais (`.ssh`, `.aws`, `.gnupg`, `.kube`, `.docker/config.json`, `.config/gh`, `.config/gcloud`, `.netrc`, `.npmrc`, chaveiro, cookies e a configuração do Veocode) e arquivos `.env`, `.pem`, `.key` e `id_rsa*` da pasta pessoal ficam bloqueados, e abrir páginas volta a pedir aprovação para nada lido no computador sair num link. A busca das APIs para em 20 mil arquivos ou 20 s. Os passos (o que ela leu ou buscou) aparecem num cartão na própria conversa, tirados da saída do Claude, já que o Chat livre não tem árvore nem Atividade. As respostas aparecem formatadas (títulos, listas, código, links que abrem no navegador), sem nunca virar HTML. As conversas ficam guardadas e o botão de relógio retoma qualquer uma (trocando para a conta dela). A conta e o modo ficam nos ajustes (`freeAccount`, `freePc`). Cada projeto agora tem **terminais de verdade** (aba Terminal no painel de baixo, até 6 por projeto): o shell da pessoa (zsh, bash ou PowerShell) num pseudo-terminal (`portable-pty` no Rust, `xterm.js` na tela; `src-tauri/src/term.rs`, `src/terminal.ts`, `src/termView.ts`, `src/components/ProjectTerminal.tsx`). O `xterm.js` só é baixado quando a aba Terminal aparece, e o shell só abre depois que a tela mede o painel, já com as colunas e linhas certas (sem isso o zsh desenha um `%` solto no primeiro prompt). Cada terminal nasce na pasta do projeto, com o histórico de comandos só daquele projeto (`terms/<projeto>/history` na pasta de dados do app) e com a conta do projeto para o Claude Code (`CLAUDE_CONFIG_DIR`), então `claude` digitado ali usa a mesma conta do chat. No zsh do macOS o `/etc/zshrc` força o `HISTFILE`, por isso o Veocode abre o zsh com um `ZDOTDIR` próprio que carrega a configuração normal da pessoa (`.zshenv`, `.zprofile`, `.zshrc` e `.zlogin` dela) e só no fim troca o histórico. Trocar de projeto ou de tela não fecha nada: cada terminal segue rodando e volta como estava (os últimos 256 KB de saída ficam guardados para redesenhar). Fechar a aba, remover o projeto ou fechar o app encerra o shell. É um terminal normal: nada impede um `cd` para outra pasta; a separação está no ponto de partida, no histórico e na conta, e quem fica presa à pasta é a IA, pelo nível de acesso. Os comandos que a IA roda continuam na aba "Comandos do agente", e o painel de baixo agora muda de altura arrastando a borda de cima. Cada projeto também tem a aba **Git** no painel da direita (`src-tauri/src/git.rs`, `src/git.ts`, `src/components/GitPanel.tsx`), só leitura: branch e upstream com ↑ commits para enviar e ↓ para baixar, mudanças desde o último commit (prontas, alteradas, novas e em conflito; clicar abre no editor), os últimos 40 commits marcando o que só existe neste computador e o que já está no remoto, o que chegou no remoto e ainda não está aqui, branches (com ↑↓, só local ou apagado no remoto), stash, remotos (endereços sem usuário nem token) e aviso de merge ou rebase no meio do caminho. Com o GitHub CLI (`gh`) logado, mostra também o repositório (público/privado, issues, PRs, estrelas, última versão), as últimas execuções do CI no branch e os PRs abertos com review e checks. A única ação é **Buscar** (`git fetch --all --prune`), que não mexe em arquivos nem branches; commit, push e pull ficam com a pessoa ou com a IA. O status relê a cada 8 s com a aba aberta, ao voltar para a janela e depois de mudanças no disco, sempre com `GIT_OPTIONAL_LOCKS=0` para não brigar com o git da pessoa. No Mapa e embaixo do nome do projeto aparece um resumo (↑ ↓ ● mudados). O **Painel** (segundo ícone do menu lateral; `src/views/Board.tsx`, `src/board.ts`, `src/feeds.ts`, `src/components/ChatPane.tsx`) mostra todos os projetos de uma vez e até 4 conversas lado a lado. Em **Todos**, cada projeto vira um cartão com a situação agora (pedindo permissão, trabalhando, com erro ou parado), a última fala da conversa, a conta, o nível de acesso, o git (↑ ↓ ● mudados), os agentes de IA abertos naquela pasta (inclusive o Claude aberto no Terminal ou no editor, achado pelo Raio-X) e os terminais; quem pede permissão vem primeiro, com a borda piscando. Em **Lado a lado**, os projetos escolhidos ocupam os cantos (superior esquerdo, superior direito, inferior esquerdo, inferior direito), cada um com a conversa rolando ao vivo (pedidos, respostas, passos agrupados), a resposta sendo escrita, os cartões de Permitir e Recusar, a caixa para pedir e o botão de parar; dá para trocar o projeto de um canto, mudar de lugar, ocupar a tela toda (Esc volta), abrir o projeto completo e tirar da grade sem parar nada. A grade fica guardada neste computador. Para isso a conversa de cada projeto passou a ser guardada separada (`src/feeds.ts`): os passos do Claude vêm do histórico dele lido num canal próprio (`agent_poll` com `channel: "board"`, para não tirar eventos da tela Projetos), e as falas e os passos das APIs vêm dos eventos do chat; pedidos mandados do Painel não aparecem mais na tela do projeto que estiver aberto. O projeto "demo · simulação" continua mostrando a animação do agente (`src/sim/agentSim.ts`).
+<p align="center">
+  <b>See and control what your AI coding agents are doing on your Mac.</b><br>
+  One window for every project, every AI account and everything the agents leave behind.
+</p>
 
-O Veocode **não mexe** nos arquivos dos seus projetos por conta própria. As exceções são pedidas por você: o nível de acesso grava `.claude/settings.local.json`, o chat faz o que o nível deixa, e o Inventário pode tirar uma skill ou um MCP que mora na pasta do projeto (com aviso antes). "Remover da lista" só tira a pasta do cadastro (`projects.json` na pasta de configuração do app).
+<p align="center">
+  <img alt="macOS" src="https://img.shields.io/badge/macOS-Apple%20Silicon%20%C2%B7%20Intel-26282e?style=flat-square&logo=apple">
+  <img alt="Tauri 2" src="https://img.shields.io/badge/Tauri%202-Rust-24C8DB?style=flat-square&logo=tauri&logoColor=white">
+  <img alt="SolidJS" src="https://img.shields.io/badge/SolidJS-TypeScript-2c4f7c?style=flat-square&logo=solid&logoColor=white">
+  <img alt="Free" src="https://img.shields.io/badge/price-free-2ea44f?style=flat-square">
+  <img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-555?style=flat-square">
+</p>
 
-## Rodar
+<p align="center">
+  <a href="https://witchmymac.com/veocode/"><b>witchmymac.com/veocode</b></a> ·
+  <a href="#install">Install</a> ·
+  <a href="#the-problem">The problem</a> ·
+  <a href="#screens">Screens</a> ·
+  <a href="#how-it-works">How it works</a> ·
+  <a href="#build-from-source">Build from source</a>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/projects.jpg" alt="Veocode: a project with an AI agent working, the file tree lighting up as it reads and edits files" width="900">
+</p>
+
+> [!NOTE]
+> The interface is in **Brazilian Portuguese** for now. Everything runs on your Mac: no account, no server, no telemetry.
+
+## Install
+
+Open **Terminal** and paste:
 
 ```bash
-npm install
-npm run tauri dev   # janela nativa (Rust + Tauri)
-npm run dev         # só a interface no navegador, em http://localhost:1420 (sem acesso a pastas)
-cd src-tauri && cargo test   # testes do lado Rust
+curl -fsSL https://witchmymac.com/install.sh | bash -s veocode
 ```
 
-## Stack
+The [witchmymac installer](https://witchmymac.com/install.sh) downloads the latest `.dmg` from this repository's [Releases](https://github.com/matthfaria96/Veocode/releases), checks its SHA-256 against the one GitHub publishes, copies **Veocode.app** to `/Applications` and opens it. Works on Apple Silicon and Intel, macOS 13 or later.
 
-- **Rust + Tauri 2**: backend nativo. Usa o WebView do sistema (WKWebView no macOS, WebView2 no Windows) em vez de embutir um Chromium como o Electron.
-- **Windows**: o código compila para Windows (`cargo check --target x86_64-pc-windows-gnu`, sem avisos), mas o app ainda não foi aberto nem testado numa máquina Windows. Só o macOS foi testado de verdade.
-- **SolidJS + TypeScript**: interface com reatividade fina e sem DOM virtual. Abre com ~98 KB gzip; o `xterm.js` do terminal (~71 KB gzip) só carrega quando a aba Terminal aparece pela primeira vez.
-- **Sem bibliotecas de UI**: CSS próprio com tokens em `:root` (fica fácil criar um tema claro depois). Ícones de `lucide-solid`; o terminal usa `xterm.js` e, no Rust, `portable-pty`.
-- **Ícone do app**: desenhado em `src-tauri/icons/source/veocode.svg` (a pasta do projeto, o V da marca e os cursores das contas). Depois de mudar o desenho: `rsvg-convert -w 1024 -h 1024 src-tauri/icons/source/veocode.svg -o icon.png && npx tauri icon icon.png -o src-tauri/icons` (gera o `.icns` do macOS, o `.ico` do Windows e os PNG).
+Prefer to do it by hand? Download the `.dmg` from [Releases](https://github.com/matthfaria96/Veocode/releases/latest), drag Veocode to Applications and, the first time, run `xattr -cr /Applications/Veocode.app` (the app is signed with the witchmymac certificate, not an Apple Developer ID).
 
-## Telas
+**What you need:** at least one AI to talk to. Veocode works with [Claude Code](https://docs.claude.com/en/docs/claude-code) (your Claude Pro/Max/Team login), DeepSeek and any OpenAI-compatible API (with your key), and local models through [Ollama](https://ollama.com).
 
-| Tela | O que mostra |
+## The problem
+
+AI coding agents are great, and they are also a black box running with your user's permissions:
+
+- You open Claude Code in three terminals, two editors and the desktop app, and lose track of **which one is working on what**, which one is waiting for your approval, and which account each is using.
+- Agents **install things globally** (`brew`, `npm -g`, `pip`), download models, start Docker containers and leave dev servers running on `localhost:3000` long after the session closed.
+- Their caches, session logs and sandboxes quietly grow to **tens of gigabytes**.
+- Skills, plugins and MCP servers pile up per account and per project, each one costing context tokens in every conversation, and nobody remembers what is installed where.
+- Permission rules live in hidden JSON files, so "what is this agent allowed to do in this folder?" has no easy answer.
+
+**Veocode is the dashboard for all of that.** It does not replace your agent or your editor: it sits next to them, reads what they write to disk and shows it, and gives you safe buttons to clean up.
+
+## Screens
+
+### Projects
+A real folder per project: live file tree, editor, Git panel and terminals. The agent's chat runs inside the app (Claude Code headless with `claude -p`, or DeepSeek / OpenAI-compatible / Ollama with a small set of file tools). Every step the agent takes — reading, searching, editing, running a command — is animated on the tree with a cursor in the account's color, so you *see* the work instead of scrolling logs. Permission requests show up as cards with **Allow** / **Deny**.
+
+![Projects](docs/screenshots/projects.jpg)
+
+### Accounts and AIs
+Several Claude accounts side by side (each one is its own `CLAUDE_CONFIG_DIR`), with the 5-hour and weekly plan limits, daily usage and default model. DeepSeek shows balance and models; Ollama shows what is installed locally. API keys go to the macOS Keychain.
+
+![Accounts](docs/screenshots/accounts.jpg)
+
+### Free chat
+A conversation outside any project, with any of your accounts. In **Só conversa** (just talk) the AI sees no files; in **Olhar o computador** (look at my computer) it can list, read and search your home folder to answer — never edit, delete or run commands — and credential folders (`.ssh`, `.aws`, Keychain, `.env` files…) stay blocked.
+
+![Free chat](docs/screenshots/chat.jpg)
+
+### Computer → Space and memory
+Everything the AIs left on this Mac, measured: Claude's own data (sessions, sandboxes, versions), package-manager and build caches, what Claude Code installed (read from its session history), local models (Ollama, LM Studio, Hugging Face), virtual machines and containers (Docker, Lima, UTM, Parallels, VirtualBox) with the project that created them, and the agents running right now with every process they started.
+
+![Space and memory](docs/screenshots/space.jpg)
+
+**Open ports** lists every program listening on localhost and spots **leftover dev servers**: a `vite`, `next dev` or `python -m http.server` still holding a port after the agent or terminal that started it is gone. Open it in the browser or stop it (and its child processes) with one click.
+
+![Open ports](docs/screenshots/ports.jpg)
+
+### Computer → Claude extras
+Every skill, slash command, subagent, plugin and MCP server, for every account and project: where it applies (one folder, the whole account), whether it is on or running, how much CPU/RAM/disk it uses and **how many tokens it adds to every conversation**. Turn things off or remove them; removals go through `claude plugin …` / `claude mcp remove` or to the Trash.
+
+![Claude extras](docs/screenshots/extras.jpg)
+
+### Built-in help
+Press <kbd>F1</kbd> anywhere: one illustrated page per screen, plus a glossary of the terms agents use.
+
+![Help](docs/screenshots/help.jpg)
+
+Other screens: **Overview**, the start screen (today's work across projects in numbers, up to four live chats you can drag around, and folders where you already used Claude), and **Settings** (light/dark theme, icon and animation styles). <kbd>⌘K</kbd> opens the command palette, <kbd>⌘1</kbd>–<kbd>⌘5</kbd> switch screens.
+
+## How it works
+
+```mermaid
+flowchart LR
+  subgraph UI["Window (SolidJS + TypeScript)"]
+    P[Projects / Board / Overview]
+    A[Accounts]
+    C[Computer]
+    L[Free chat]
+  end
+  subgraph Core["Native core (Rust + Tauri 2)"]
+    CH[chat.rs / apiagent.rs<br/>runs the agents]
+    AF[agent.rs / convos.rs<br/>reads session logs]
+    AC[access.rs<br/>permission rules]
+    XR[xray/*<br/>caches, installs, VMs,<br/>processes, ports]
+    INV[inventory.rs<br/>skills, plugins, MCP]
+    T[term.rs / git.rs<br/>terminals, Git]
+  end
+  P & L --> CH
+  P --> AF & AC & T
+  A --> AF
+  C --> XR & INV
+  CH -->|"claude -p (stream-json)"| CC[Claude Code]
+  CH -->|HTTPS| API[DeepSeek / OpenAI-compatible]
+  CH -->|localhost| OL[Ollama]
+  AF -.reads.-> LOGS["~/.claude*/projects/*.jsonl"]
+  AC -.writes.-> SET[".claude/settings.local.json"]
+  XR -.reads.-> SYS["disk, lsof, docker, limactl…"]
+```
+
+- **It reads, it doesn't hook.** Veocode follows the JSONL session logs Claude Code already writes under each account's `projects/` folder. Nothing is injected into Claude Code, and agents opened in your own terminal or editor show up too.
+- **Access levels are real.** Picking a level for a project (Read only, Suggest, Edit, Full) is translated into Claude Code permission rules in `.claude/settings.local.json` — only Veocode's own rules, with the previous content kept so it can be undone exactly — and passed with `--permission-mode` / `--settings` to the chats it runs. For API models, Veocode itself enforces the same rules on every tool call.
+- **Cleaning is reversible.** Caches, skills and leftovers go to the macOS **Trash**, never `rm`. Package removals are shown as commands for you to run. Stopping a process is only allowed for processes started by an agent, or leftover servers in your own folders, never system apps.
+- **Secrets stay secret.** MCP configs are shown with the *names* of environment variables, never their values. API keys live in the Keychain.
+
+## Build from source
+
+Requirements: macOS 13+, Node 20+, Rust (stable) and Xcode Command Line Tools (for the Swift dictation helper).
+
+```bash
+git clone https://github.com/matthfaria96/Veocode.git
+cd Veocode
+npm install
+npm run tauri dev          # the native app, with hot reload
+```
+
+```bash
+npm run dev                # UI only, in the browser at http://localhost:1420 (sample data, no disk access)
+```
+
+```bash
+cd src-tauri && cargo test # Rust tests
+```
+
+```bash
+rustup target add x86_64-apple-darwin
+npx tauri build --target universal-apple-darwin --bundles app   # universal Veocode.app
+```
+
+### Project layout
+
+| Path | What lives there |
 |---|---|
-| Visão geral | Tela de início: o dia em números e gráfico, até 4 conversas ao vivo (arraste para trocar de lugar) e a lista de projetos, com sugestões de pastas onde você já usou o Claude |
-| Projetos | Árvore de arquivos, editor, chat com o agente (o nível de acesso fica dentro dele), Git com desenho dos branches, Rastro (sobras para limpar, pastas fora do projeto, instalações e o que a IA consultou), atividade, terminal próprio e cursores; modo Simples/Avançado (coluna com todos os projetos) |
-| Contas e IAs | Uso de cada conta e matriz "quem usa o quê" (clique para trocar) |
-| Computador → Espaço e memória | (antigo Raio-X) Caches com limpeza, o que cada IA instalou, IAs locais (Ollama, LM Studio, Hugging Face), VMs/containers com o projeto de origem e IAs abertas com onde estão |
-| Computador → Extras do Claude | (antigos Inventário e Skills e MCP) Receitas, atalhos, ajudantes, conexões e pacotes: onde valem, quanto pesam, ligar, desligar e tirar, e ler cada receita |
-| Chat livre | Conversa sem projeto; opcionalmente lendo (só lendo) os arquivos da pasta pessoal |
-| Ajustes | Tema claro, escuro ou igual ao sistema; estilo dos ícones e das animações, com prévia; onde o app guarda as coisas |
-| Gráficos | Uso da semana em frase em cada conta, espaço das IAs ao longo dos dias (Espaço e memória) e passos por hora nas últimas 24 h em cada cartão da Visão geral |
-| Sininho (topo) | "Precisa de você": permissões, erros, conflitos, contas sem login, commits só neste computador e disco cheio, cada um levando direto ao lugar certo |
+| `src/views/` | One file per screen (`Workspace`, `Board`, `Accounts`, `System`, `Inventory`, `Livre`, `Settings`) |
+| `src/components/` | Shared UI: chat panel, file tree, editor, Git panel, terminal, dialogs |
+| `src/*.ts` | Client-side stores (one per area: `chat`, `accounts`, `xray`, `board`…) |
+| `src/help/` | Help texts (`topics.ts`) and their animated SVG scenes (`Scenes.tsx`) |
+| `src-tauri/src/` | Rust commands: agents, session logs, access rules, accounts, terminals, Git |
+| `src-tauri/src/xray/` | Machine scanners: caches, installs, VMs/containers, processes and ports, local models |
+| `src-tauri/voice/` | Swift helper for on-device dictation (Apple Speech) |
+| `docs/` | Screenshots and the original development notes (Portuguese) |
 
-`⌘K` / `Ctrl+K` abre a paleta de comandos. `F1` abre a ajuda.
+## FAQ
 
-## Próximas fases (sugestão)
+**Does it send my code anywhere?** Only to the AI you choose to chat with, exactly like using that AI directly. Veocode itself has no server and no analytics.
 
-1. ~~Projetos reais: abrir pasta, ler a árvore e os arquivos, observar mudanças~~ ✅ (`src-tauri/src/files.rs`, `projects.rs`, `watch.rs`)
-2. ~~Raio-X real: caches, instalações das IAs, VMs/containers, processos e portas~~ ✅ (`src-tauri/src/xray/`)
-3. ~~Contas: uma pasta de configuração do Claude Code por conta; DeepSeek e outras via API compatível com OpenAI; Ollama local~~ ✅ (`src-tauri/src/accounts/`)
-4. ~~Skills e MCP reais: o que cada conta, plugin e projeto traz, sem expor segredos~~ ✅ (`src-tauri/src/skills.rs`)
-5. ~~Nível de acesso aplicado de verdade: regras de permissão do Claude Code geradas pelo nível, por projeto~~ ✅ (`src-tauri/src/access.rs`)
-6. ~~Eventos reais do agente alimentando a mesma animação de cursores e atividade~~ ✅ (`src-tauri/src/agent.rs`, `src/agentFeed.ts`)
-7. ~~Chat dentro do Veocode: mandar pedidos para o Claude Code (modo `-p` com stream) e para DeepSeek/Ollama, com o nível de acesso valendo para todos~~ ✅ (`src-tauri/src/chat.rs`, `src/chat.ts`)
-8. ~~Ferramentas para DeepSeek/OpenAI/Ollama: ler e editar arquivos do projeto pelo Veocode, obedecendo o mesmo nível de acesso~~ ✅ (`src-tauri/src/tools.rs`, `apiagent.rs`)
-9. ~~Lista de conversas anteriores por projeto, para retomar uma sessão do Claude (ou uma conversa com API) pelo chat~~ ✅ (`src-tauri/src/convos.rs`)
-10. ~~Inventário: tudo o que as IAs usam, por projeto, com o que está rodando, o peso de cada coisa e como tirar~~ ✅ (`src-tauri/src/inventory.rs`, `src/views/Inventory.tsx`)
-11. ~~Ajuda ilustrada: botão perto de Ajustes explicando cada tela~~ ✅ (`src/help/`, `src/components/Help.tsx`)
-12. ~~Ajustes e tema de ícones (minimalista ou detalhado, com prévia)~~ ✅ (`src/views/Settings.tsx`, `src/components/icons.tsx`, `src-tauri/src/settings.rs`)
-13. ~~Chat livre, sem projeto (com opção de olhar o computador, só leitura)~~ ✅ (`src-tauri/src/livre.rs`, `src/views/Livre.tsx`)
-14. ~~Terminal próprio por projeto (pasta, histórico e conta do Claude de cada projeto)~~ ✅ (`src-tauri/src/term.rs`, `src/components/ProjectTerminal.tsx`)
-15. ~~Git e GitHub de cada projeto: o que falta enviar e baixar, mudanças, commits, branches, PRs e CI~~ ✅ (`src-tauri/src/git.rs`, `src/components/GitPanel.tsx`)
-16. ~~Painel: todos os projetos com a situação de cada um e até 4 chats ao vivo lado a lado~~ ✅ (`src/views/Board.tsx`, `src/components/ChatPane.tsx`, `src/feeds.ts`)
-17. ~~Rastro de cada projeto: pastas criadas fora, sobras de debug e backup, instalações, IAs locais e fontes consultadas, guardado mesmo se os históricos sumirem~~ ✅ (`src-tauri/src/trail.rs`, `src/components/TrailPanel.tsx`)
-18. ~~IAs locais e containers ligados ao projeto no Computador; desenho de branches e arquivos de cada commit no Git~~ ✅ (`src-tauri/src/xray/models.rs`, `src/components/CommitGraph.tsx`)
+**Does it change my Claude Code setup?** It reads your accounts' folders. The only files it writes are the permission rules for a project when you set an access level, and its own data in `~/Library/Application Support/com.veocode.app` (chats, terminal history, settings).
+
+**Windows / Linux?** The Rust side compiles for Windows, but only macOS is tested and released.
+
+## License
+
+[MIT](LICENSE) · Made by [Matheus Faria](https://github.com/matthfaria96) · Part of [witchmymac](https://witchmymac.com)
