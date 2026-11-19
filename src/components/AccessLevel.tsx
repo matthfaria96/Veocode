@@ -6,6 +6,7 @@ import { accountById, providers } from "../accounts";
 import { api, isTauri, prettyPath } from "../api";
 import { projects, showToast } from "../store";
 import ConfirmDialog from "./ConfirmDialog";
+import { tx } from "../i18n";
 
 const ruleIcon = { permitido: Check, pergunta: CircleHelp, bloqueado: Ban } as const;
 const order: Rule[] = ["permitido", "pergunta", "bloqueado"];
@@ -53,23 +54,23 @@ export default function AccessLevel(props: { projectId: string }) {
           <strong>{lvl().name}</strong>
           <span>{lvl().description}</span>
           <Show when={report()}>
-            <small class="mode-chip">Claude começa em: {modeText[report()!.mode] ?? report()!.mode}</small>
+            <small class="mode-chip">{tx("Claude começa em: {v}", { v: modeText[report()!.mode] ?? report()!.mode })}</small>
           </Show>
         </div>
       </div>
 
       {/* ---------------- vale de verdade? */}
-      <Show when={real()} fallback={<div class="file-card demo"><FileCode2 size={15} /><div><strong>Projeto de demonstração</strong><span>Mexa à vontade: aqui nada é gravado. Num projeto real, o nível vira regras que o Claude Code obedece.</span></div></div>}>
+      <Show when={real()} fallback={<div class="file-card demo"><FileCode2 size={15} /><div><strong>{tx("Projeto de demonstração")}</strong><span>{tx("Mexa à vontade: aqui nada é gravado. Num projeto real, o nível vira regras que o Claude Code obedece.")}</span></div></div>}>
         <Switch>
           <Match when={state() === "naoAplicado"}>
             <div class="file-card pending pop-in">
               <ShieldOff size={15} />
               <div>
-                <strong>Ainda não vale de verdade</strong>
-                <span>Grave as regras em <code>.claude/settings.local.json</code> e o Claude Code passa a obedecer este nível nesta pasta. Suas regras no arquivo continuam lá.</span>
+                <strong>{tx("Ainda não vale de verdade")}</strong>
+                <span>{tx("Grave as regras em")} <code>{tx(".claude/settings.local.json")}</code> {tx("e o Claude Code passa a obedecer este nível nesta pasta. Suas regras no arquivo continuam lá.")}</span>
                 <div class="file-actions">
-                  <button class="primary-btn small" disabled={busy()} onClick={() => applyAccess(props.projectId)}>Gravar no projeto</button>
-                  <button class="link-btn" onClick={() => setShowPreview(!showPreview())}>{showPreview() ? "Esconder" : "Ver o que será gravado"}</button>
+                  <button class="primary-btn small" disabled={busy()} onClick={() => applyAccess(props.projectId)}>{tx("Gravar no projeto")}</button>
+                  <button class="link-btn" onClick={() => setShowPreview(!showPreview())}>{showPreview() ? tx("Esconder") : tx("Ver o que será gravado")}</button>
                 </div>
               </div>
             </div>
@@ -78,10 +79,10 @@ export default function AccessLevel(props: { projectId: string }) {
             <div class="file-card ok pop-in">
               <ShieldCheck size={15} />
               <div>
-                <strong>Valendo no Claude Code</strong>
+                <strong>{tx("Valendo no Claude Code")}</strong>
                 <span class="mono-path" title={report()!.file}>{prettyPath(report()!.file)}</span>
                 <Show when={!isClaude()}>
-                  <span class="warn-text">{account().label} ({providers[account().provider].name}) não lê esse arquivo: para ele, o nível vale pelas ferramentas do chat do Veocode.</span>
+                  <span class="warn-text">{tx("{label} ({name}) não lê esse arquivo: para ele, o nível vale pelas ferramentas do chat do Veocode.", { label: account().label, name: providers[account().provider].name })}</span>
                 </Show>
               </div>
             </div>
@@ -91,13 +92,13 @@ export default function AccessLevel(props: { projectId: string }) {
               <div class="file-card changed pop-in">
                 <AlertTriangle size={15} />
                 <div>
-                  <strong>O arquivo foi mexido fora do Veocode</strong>
-                  <span>Faltam {(fs() as { missing: string[] }).missing.length} regra(s) deste nível:</span>
+                  <strong>{tx("O arquivo foi mexido fora do Veocode")}</strong>
+                  <span>{tx("Faltam {length} regra(s) deste nível:", { length: (fs() as { missing: string[] }).missing.length })}</span>
                   <ul class="rule-list">
                     <For each={(fs() as { missing: string[] }).missing.slice(0, 6)}>{(m) => <li><code>{m}</code></li>}</For>
                   </ul>
                   <div class="file-actions">
-                    <button class="primary-btn small" disabled={busy()} onClick={() => applyAccess(props.projectId)}>Gravar de novo</button>
+                    <button class="primary-btn small" disabled={busy()} onClick={() => applyAccess(props.projectId)}>{tx("Gravar de novo")}</button>
                   </div>
                 </div>
               </div>
@@ -108,7 +109,7 @@ export default function AccessLevel(props: { projectId: string }) {
               <div class="file-card changed pop-in">
                 <AlertTriangle size={15} />
                 <div>
-                  <strong>Não deu para ler o arquivo</strong>
+                  <strong>{tx("Não deu para ler o arquivo")}</strong>
                   <span>{(fs() as { message: string }).message}</span>
                 </div>
               </div>
@@ -121,10 +122,10 @@ export default function AccessLevel(props: { projectId: string }) {
       <div class="perm-list">
         <div class="perm fixed">
           <div class="perm-text">
-            <span>Ler arquivos do projeto</span>
-            <small>sempre, dentro da pasta</small>
+            <span>{tx("Ler arquivos do projeto")}</span>
+            <small>{tx("sempre, dentro da pasta")}</small>
           </div>
-          <span class="rule-tag permitido"><Check size={11} /> Permitido</span>
+          <span class="rule-tag permitido"><Check size={11} /> {tx("Permitido")}</span>
         </div>
         <For each={report()?.caps ?? []}>
           {(c) => (
@@ -133,8 +134,8 @@ export default function AccessLevel(props: { projectId: string }) {
                 <span>
                   {c.label}
                   <Show when={c.rule !== c.fromLevel}>
-                    <button class="tuned-tag" title={`Voltar ao padrão do nível (${ruleText[c.fromLevel]})`} onClick={() => setCap(props.projectId, c.id, null)}>
-                      ajustado <Undo2 size={10} />
+                    <button class="tuned-tag" title={tx("Voltar ao padrão do nível ({v})", { v: ruleText[c.fromLevel] })} onClick={() => setCap(props.projectId, c.id, null)}>
+                      {tx("ajustado")} <Undo2 size={10} />
                     </button>
                   </Show>
                 </span>
@@ -161,22 +162,22 @@ export default function AccessLevel(props: { projectId: string }) {
       {/* ---------------- avisos */}
       <Show when={real() && report()?.loosen.length}>
         <div class="loosen pop-in">
-          <div class="loosen-head"><AlertTriangle size={13} /> Regras de fora que deixam passar sem perguntar</div>
+          <div class="loosen-head"><AlertTriangle size={13} /> {tx("Regras de fora que deixam passar sem perguntar")}</div>
           <For each={report()!.loosen}>
             {(l) => (
               <div class="loosen-row">
                 <code>{l.rule}</code>
-                <small>em {l.source}</small>
+                <small>{tx("em {source}", { source: l.source })}</small>
               </div>
             )}
           </For>
-          <small class="loosen-foot">O que estiver Bloqueado continua bloqueado: bloqueio sempre vence. Essas regras só pulam a pergunta.</small>
+          <small class="loosen-foot">{tx("O que estiver Bloqueado continua bloqueado: bloqueio sempre vence. Essas regras só pulam a pergunta.")}</small>
         </div>
       </Show>
 
       <Show when={real() && report()?.ownRules.length}>
         <button class="fold-btn" onClick={() => setShowOwn(!showOwn())}>
-          {showOwn() ? <ChevronDown size={13} /> : <ChevronRight size={13} />} Suas regras neste arquivo <small>{report()!.ownRules.length} · o Veocode não mexe</small>
+          {showOwn() ? <ChevronDown size={13} /> : <ChevronRight size={13} />} {tx("Suas regras neste arquivo")} <small>{tx("{length} · o Veocode não mexe", { length: report()!.ownRules.length })}</small>
         </button>
         <Show when={showOwn()}>
           <ul class="rule-list boxed">
@@ -187,7 +188,7 @@ export default function AccessLevel(props: { projectId: string }) {
 
       <Show when={report() && (showPreview() || state() === "aplicado" || state() === "alterado" || !real())}>
         <button class="fold-btn" onClick={() => setShowPreview(!showPreview())}>
-          {showPreview() ? <ChevronDown size={13} /> : <ChevronRight size={13} />} Regras que o Veocode grava
+          {showPreview() ? <ChevronDown size={13} /> : <ChevronRight size={13} />} {tx("Regras que o Veocode grava")}
         </button>
       </Show>
       <Show when={showPreview() && report()}>
@@ -197,14 +198,14 @@ export default function AccessLevel(props: { projectId: string }) {
       {/* ---------------- ações */}
       <Show when={real()}>
         <div class="access-actions">
-          <button class="ghost-btn" disabled={!isClaude()} title={isClaude() ? "Abre o Terminal com o Claude Code nesta pasta, usando a conta do projeto" : "Só para contas do Claude"} onClick={() => openClaude(props.projectId)}>
-            <TerminalSquare size={14} /> Abrir o Claude aqui
+          <button class="ghost-btn" disabled={!isClaude()} title={isClaude() ? tx("Abre o Terminal com o Claude Code nesta pasta, usando a conta do projeto") : tx("Só para contas do Claude")} onClick={() => openClaude(props.projectId)}>
+            <TerminalSquare size={14} /> {tx("Abrir o Claude aqui")}
           </button>
           <Show when={state() === "aplicado" || state() === "alterado"}>
-            <button class="icon-btn" title="Mostrar o arquivo" onClick={() => api.reveal(report()!.file).catch((e) => showToast(String(e)))}>
+            <button class="icon-btn" title={tx("Mostrar o arquivo")} onClick={() => api.reveal(report()!.file).catch((e) => showToast(String(e)))}>
               <FolderOpen size={14} />
             </button>
-            <button class="icon-btn" title="Tirar as regras do Veocode deste projeto" onClick={() => setConfirmRemove(true)}>
+            <button class="icon-btn" title={tx("Tirar as regras do Veocode deste projeto")} onClick={() => setConfirmRemove(true)}>
               <Undo2 size={14} />
             </button>
           </Show>
@@ -213,16 +214,16 @@ export default function AccessLevel(props: { projectId: string }) {
 
       <Show when={confirmRemove()}>
         <ConfirmDialog
-          title="Tirar as regras do Veocode?"
-          confirmLabel="Tirar regras"
+          title={tx("Tirar as regras do Veocode?")}
+          confirmLabel={tx("Tirar regras")}
           onCancel={() => setConfirmRemove(false)}
           onConfirm={() => {
             setConfirmRemove(false);
             removeAccess(props.projectId);
           }}
         >
-          <p>O Veocode apaga do arquivo só o que ele mesmo gravou e devolve o modo que estava antes. As suas regras ficam.</p>
-          <p class="muted">Depois disso o Claude Code volta a seguir só as configurações normais dele nesta pasta.</p>
+          <p>{tx("O Veocode apaga do arquivo só o que ele mesmo gravou e devolve o modo que estava antes. As suas regras ficam.")}</p>
+          <p class="muted">{tx("Depois disso o Claude Code volta a seguir só as configurações normais dele nesta pasta.")}</p>
         </ConfirmDialog>
       </Show>
     </div>

@@ -9,6 +9,7 @@ import { alreadyShown } from "./chat";
 import { isTauri } from "./api";
 import { loadDir, openRealFile } from "./realProject";
 import { projectId, pushEvent, setWs, ws, type ActivityEvent, type Cursor, type FileMark } from "./store";
+import { tx } from "./i18n";
 
 export interface AgentEvent {
   id: string;
@@ -223,7 +224,7 @@ export function startAgentFeed(root: HTMLElement): () => void {
       return;
     }
     if (e.kind === "done") {
-      pushEvent({ ...tag,  kind: "done", title: "Terminou", agent: who, color, status: "ok", at: e.ts });
+      pushEvent({ ...tag,  kind: "done", title: tx("Terminou"), agent: who, color, status: "ok", at: e.ts });
       if (live) {
         setWs("running", false);
         // terminou: os cursores desta sessão somem

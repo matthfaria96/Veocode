@@ -96,7 +96,7 @@ fn text_of_user(v: &Value) -> Option<String> {
 fn origin_label(entry: &str) -> String {
     match entry {
         "cli" => "Terminal".into(),
-        "sdk-cli" => "sem terminal".into(),
+        "sdk-cli" => crate::i18n::tr("sem terminal", "headless").into(),
         "claude-vscode" => "VS Code".into(),
         "claude-desktop" => "app do Claude".into(),
         e if e.starts_with("sdk") => "SDK".into(),
@@ -225,7 +225,7 @@ pub fn strip_attach(content: &str) -> String {
 /// Grava a conversa e o resumo (escreve num temporário e troca, para não deixar arquivo pela metade).
 pub fn save_api(dir: &Path, id: &str, account: &str, msgs: &[Value]) -> Result<(), String> {
     if !valid_id(id) {
-        return Err("id inválido".into());
+        return Err(crate::i18n::tr("id inválido", "invalid id").into());
     }
     let prompts: Vec<String> = msgs
         .iter()
@@ -253,10 +253,10 @@ pub fn save_api(dir: &Path, id: &str, account: &str, msgs: &[Value]) -> Result<(
 
 pub fn load_api(dir: &Path, id: &str) -> Result<(String, Vec<Value>), String> {
     if !valid_id(id) {
-        return Err("id inválido".into());
+        return Err(crate::i18n::tr("id inválido", "invalid id").into());
     }
-    let v: Value = serde_json::from_slice(&fs::read(dir.join(format!("{id}.json"))).map_err(|_| "conversa não encontrada".to_string())?)
-        .map_err(|_| "conversa ilegível".to_string())?;
+    let v: Value = serde_json::from_slice(&fs::read(dir.join(format!("{id}.json"))).map_err(|_| crate::i18n::tr("conversa não encontrada", "conversation not found").to_string())?)
+        .map_err(|_| crate::i18n::tr("conversa ilegível", "unreadable conversation").to_string())?;
     let account = v.get("account").and_then(Value::as_str).unwrap_or("").to_string();
     let msgs = v.get("messages").and_then(Value::as_array).cloned().unwrap_or_default();
     Ok((account, msgs))

@@ -9,6 +9,7 @@ import { draftOf, dropDraft, edit, isUnsaved, saveNow, textOf } from "../editing
 import { openRealFile } from "../realProject";
 import { defaultFileContent, fileContents } from "../data/mock";
 import { closeTab, currentProject, openFile, projectId, showToast, ws } from "../store";
+import { tx } from "../i18n";
 
 type Tok = { t: string; c?: string };
 
@@ -91,7 +92,7 @@ function RealCode(props: { ext: string }) {
   return (
     <Switch>
       <Match when={!view() || view()!.kind === "loading"}>
-        <div class="editor-empty">carregando…</div>
+        <div class="editor-empty">{tx("carregando…")}</div>
       </Match>
       <Match when={view()!.kind === "error" && view()} keyed>
         {(v) => <div class="editor-empty">{(v as { message: string }).message}</div>}
@@ -103,9 +104,9 @@ function RealCode(props: { ext: string }) {
         <div class="editor-empty">
           <div class="editor-other">
             <span>
-              {view()!.kind === "binary" ? "Este arquivo não é texto" : "Arquivo grande demais para o editor"} ({formatSize((view() as { size: number }).size)}).
+              {view()!.kind === "binary" ? tx("Este arquivo não é texto") : tx("Arquivo grande demais para o editor")} ({formatSize((view() as { size: number }).size)}).
             </span>
-            <button class="primary-btn small" onClick={() => api.openEntry(projectId(), path()).catch((e) => showToast(String(e)))}><ExternalLink size={13} /> Abrir com o programa padrão</button>
+            <button class="primary-btn small" onClick={() => api.openEntry(projectId(), path()).catch((e) => showToast(String(e)))}><ExternalLink size={13} /> {tx("Abrir com o programa padrão")}</button>
           </div>
         </div>
       </Match>
@@ -133,7 +134,7 @@ function RealCode(props: { ext: string }) {
               spellcheck={false}
               autocomplete="off"
               autocapitalize="off"
-              aria-label={`Conteúdo de ${path()}`}
+              aria-label={tx("Conteúdo de {path}", { path: path() })}
               rows={Math.max(lines().length, text()?.split("\n").length ?? 1)}
               onInput={(e) => edit(path(), e.currentTarget.value)}
               onKeyDown={onKey}
@@ -151,14 +152,14 @@ function SaveState() {
   const d = () => draftOf(ws.activeFile);
   return (
     <span class="save-state" classList={{ err: d()?.status === "error" }}>
-      <Show when={d()} fallback={<span>Clique no texto para editar · grava sozinho</span>}>
+      <Show when={d()} fallback={<span>{tx("Clique no texto para editar · grava sozinho")}</span>}>
         {(x) => (
           <Switch>
-            <Match when={x().status === "editing" || x().status === "saving"}><span class="spinner inline" /> Salvando…</Match>
-            <Match when={x().status === "saved"}><Check size={12} /> Salvo</Match>
+            <Match when={x().status === "editing" || x().status === "saving"}><span class="spinner inline" /> {tx("Salvando…")}</Match>
+            <Match when={x().status === "saved"}><Check size={12} /> {tx("Salvo")}</Match>
             <Match when={x().status === "error"}>
-              <AlertTriangle size={12} /> Não salvou: {x().error}
-              <button class="link-btn" onClick={() => void saveNow(ws.activeFile)}>Tentar de novo</button>
+              <AlertTriangle size={12} /> {tx("Não salvou: {error}", { error: x().error })}
+              <button class="link-btn" onClick={() => void saveNow(ws.activeFile)}>{tx("Tentar de novo")}</button>
             </Match>
           </Switch>
         )}
@@ -173,11 +174,11 @@ async function closeRealTab(path: string) {
     const ok = await saveNow(path);
     if (!ok) {
       const r = await ask({
-        title: `Não deu para salvar ${path.split("/").pop()}`,
-        body: "Se fechar agora, o que você escreveu depois da última gravação se perde.",
+        title: tx("Não deu para salvar {pop}", { pop: path.split("/").pop() }),
+        body: tx("Se fechar agora, o que você escreveu depois da última gravação se perde."),
         options: [
-          { id: "cancel", label: "Voltar e tentar de novo", tone: "ghost" },
-          { id: "drop", label: "Fechar sem salvar", tone: "danger" },
+          { id: "cancel", label: tx("Voltar e tentar de novo"), tone: "ghost" },
+          { id: "drop", label: tx("Fechar sem salvar"), tone: "danger" },
         ],
       });
       if (r?.id !== "drop") return;
@@ -205,13 +206,13 @@ export default function Editor() {
       <div class="tabs">
         <For each={ws.openTabs}>
           {(path) => (
-            <div class="tab" classList={{ active: ws.activeFile === path, edited: !currentProject().demo && isUnsaved(path) }} title={!currentProject().demo && isUnsaved(path) ? "Salvando…" : path} onClick={() => (currentProject().demo ? openFile(path) : openRealFile(path))}>
+            <div class="tab" classList={{ active: ws.activeFile === path, edited: !currentProject().demo && isUnsaved(path) }} title={!currentProject().demo && isUnsaved(path) ? tx("Salvando…") : path} onClick={() => (currentProject().demo ? openFile(path) : openRealFile(path))}>
               <span class="tab-icon"><FileIcon name={path.split("/").pop() ?? path} size={12} /></span>
               <span class="tab-name">{path.split("/").pop()}</span>
               <span class="tab-dot" />
               <button
                 class="tab-close"
-                title="Fechar"
+                title={tx("Fechar")}
                 onClick={(e) => {
                   e.stopPropagation();
                   if (currentProject().demo) closeTab(path);
@@ -244,11 +245,11 @@ function EditorHome() {
     <div class="editor-empty editor-home">
       <div class="eh-glow" aria-hidden="true" />
       <strong>{p().name}</strong>
-      <p>{p().demo ? "Nenhum arquivo aberto." : "Converse com a IA no centro, ou abra um arquivo para ler e editar."}</p>
+      <p>{p().demo ? tx("Nenhum arquivo aberto.") : tx("Converse com a IA no centro, ou abra um arquivo para ler e editar.")}</p>
       <div class="eh-tips">
-        <span style={{ "--i": 0 }}><MessageSquare size={14} /> Peça algo à IA <em>no centro</em></span>
-        <span style={{ "--i": 1 }}><FileText size={14} /> Abra um arquivo <em>na árvore à esquerda</em></span>
-        <span style={{ "--i": 2 }}><Search size={14} /> Busque qualquer coisa <kbd>⌘K</kbd></span>
+        <span style={{ "--i": 0 }}><MessageSquare size={14} /> {tx("Peça algo à IA")} <em>{tx("no centro")}</em></span>
+        <span style={{ "--i": 1 }}><FileText size={14} /> {tx("Abra um arquivo")} <em>{tx("na árvore à esquerda")}</em></span>
+        <span style={{ "--i": 2 }}><Search size={14} /> {tx("Busque qualquer coisa")} <kbd>⌘K</kbd></span>
       </div>
     </div>
   );

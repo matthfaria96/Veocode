@@ -7,6 +7,7 @@ import { isTauri } from "./api";
 import { chatOf, setInput } from "./chat";
 import { LIVRE, livre, setLivre } from "./livre";
 import { showToast } from "./store";
+import { locale, tx } from "./i18n";
 
 type Ev = { t: "ready" | "level" | "text" | "note" | "done" | "error" | "end"; v?: unknown; id: number };
 export type VoiceState = { key: string; phase: "starting" | "listening" | "finishing"; level: number; id: number };
@@ -20,7 +21,8 @@ let base = ""; // o que já estava escrito antes de começar a falar
 let off: UnlistenFn | undefined;
 let guard: number | undefined;
 
-const lang = () => (navigator.language?.toLowerCase().startsWith("pt") ? "pt-BR" : navigator.language || "pt-BR");
+// o ditado entende o idioma da tela (Ajustes → Idioma)
+const lang = () => locale();
 
 // o Chat livre guarda o texto da caixa no próprio store; os projetos, no chat de cada aba
 const inputOf = (key: string) => (key === LIVRE ? livre.input : chatOf(key).input);
@@ -57,7 +59,7 @@ function handle(e: Ev) {
       showToast(String(e.v ?? ""));
       return;
     case "error":
-      showToast(String(e.v ?? "O ditado parou"));
+      showToast(String(e.v ?? tx("O ditado parou")));
       return end();
     case "end":
       return end();
@@ -78,7 +80,7 @@ export async function toggleVoice(key: string) {
   const v = voice();
   if (v?.key === key) return stopVoice();
   if (v) await cancelVoice(false);
-  if (!isTauri) return showToast("O ditado funciona no app");
+  if (!isTauri) return showToast(tx("O ditado funciona no app"));
   off ??= await listen<Ev>("voice", (e) => handle(e.payload));
   base = inputOf(key);
   setVoice({ key, phase: "starting", level: 0, id: -1 });

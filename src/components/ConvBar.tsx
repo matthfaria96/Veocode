@@ -8,6 +8,7 @@ import { chatOf } from "../chat";
 import { activeKey, CACHE_TTL, closeTab, concludeTab, continueFresh, fmtTokens, newTab, renameTab, selectTab, tabsOf, weightOf } from "../convTabs";
 import { ws } from "../store";
 import type { View } from "./ChatPanel";
+import { tx, txn } from "../i18n";
 
 // relógio de minuto em minuto (para saber se o cache da conversa já esfriou)
 const [now, setNow] = createSignal(Date.now());
@@ -18,7 +19,7 @@ const useClock = () => {
 
 const ago = (ms: number) => {
   const m = Math.round(ms / 60_000);
-  return m < 60 ? `${m} min` : m < 1440 ? `${Math.round(m / 60)} h` : `${Math.round(m / 1440)} dia(s)`;
+  return m < 60 ? `${m} min` : m < 1440 ? `${Math.round(m / 60)} h` : txn(Math.round(m / 1440), "{n} dia", "{n} dias");
 };
 
 /** Botão só de ícone; o nome e uma linha de explicação aparecem ao passar o mouse. */
@@ -49,7 +50,7 @@ export function ConvTabsBar(props: { pid: string; view: View; onView: (v: View) 
                 role="tab"
                 aria-selected={on()}
                 classList={{ on: on(), busy: c().busy, ask: c().perms.length > 0, err: !!c().error }}
-                title={`${t.title}${c().busy ? " · trabalhando" : c().perms.length ? " · esperando você" : ""}\nDois cliques para renomear`}
+                title={tx("{title}{v}\nDois cliques para renomear", { title: t.title, v: c().busy ? tx(" · trabalhando") : c().perms.length ? tx(" · esperando você") : "" })}
                 onClick={() => {
                   if (props.view !== "chat") props.onView("chat");
                   selectTab(props.pid, t.key);
@@ -57,7 +58,7 @@ export function ConvTabsBar(props: { pid: string; view: View; onView: (v: View) 
                 onDblClick={() => setEditing(t.key)}
               >
                 <i class="conv-dot" />
-                <Show when={editing() === t.key} fallback={<span class="conv-title">{t.title}</span>}>
+                <Show when={editing() === t.key} fallback={<span class="conv-title">{tx(t.title)}</span>}>
                   <input
                     class="conv-rename"
                     value={t.title}
@@ -73,39 +74,39 @@ export function ConvTabsBar(props: { pid: string; view: View; onView: (v: View) 
                     }}
                   />
                 </Show>
-                <button class="conv-act" title="Concluir: o resumo vai para a memória do projeto e a aba fecha" onClick={(e) => (e.stopPropagation(), void concludeTab(props.pid, t.key))}>
+                <button class="conv-act" title={tx("Concluir: o resumo vai para a memória do projeto e a aba fecha")} onClick={(e) => (e.stopPropagation(), void concludeTab(props.pid, t.key))}>
                   <Check size={11} />
                 </button>
-                <button class="conv-act" title="Fechar a aba (a conversa fica no histórico)" onClick={(e) => (e.stopPropagation(), void closeTab(props.pid, t.key))}>
+                <button class="conv-act" title={tx("Fechar a aba (a conversa fica no histórico)")} onClick={(e) => (e.stopPropagation(), void closeTab(props.pid, t.key))}>
                   <X size={11} />
                 </button>
               </div>
             );
           }}
         </For>
-        <button class="conv-new" title="Nova conversa (as outras continuam)" onClick={() => (props.view !== "chat" && props.onView("chat"), newTab(props.pid))}>
+        <button class="conv-new" title={tx("Nova conversa (as outras continuam)")} onClick={() => (props.view !== "chat" && props.onView("chat"), newTab(props.pid))}>
           <Plus size={14} />
         </button>
       </div>
       <Show when={ctx()}>
-        <span class={`conv-ctx ${weightOf(ctx())}`} title={`Esta conversa carrega ${fmtTokens(ctx()!)} tokens. Cada mensagem manda tudo de novo para o Claude (com desconto de cache enquanto você está ativo). Conversas acima de ~150 mil gastam bem mais: conclua e comece outra.`}>
+        <span class={`conv-ctx ${weightOf(ctx())}`} title={tx("Esta conversa carrega {v} tokens. Cada mensagem manda tudo de novo para o Claude (com desconto de cache enquanto você está ativo). Conversas acima de ~150 mil gastam bem mais: conclua e comece outra.", { v: fmtTokens(ctx()!) })}>
           <Gauge size={12} /> {fmtTokens(ctx()!)}
         </span>
       </Show>
       <div class="conv-tools">
-        <Tool icon={Eye} name="Fora do Veocode" hint="Claude rodando nesta pasta pelo Terminal, editor ou app do Claude. Só para acompanhar." on={props.view === "ext"} onClick={() => props.onView("ext")}>
+        <Tool icon={Eye} name={tx("Fora do Veocode")} hint={tx("Claude rodando nesta pasta pelo Terminal, editor ou app do Claude. Só para acompanhar.")} on={props.view === "ext"} onClick={() => props.onView("ext")}>
           <Show when={props.extCount > 0}><i class="ctool-badge">{props.extCount > 9 ? "9+" : props.extCount}</i></Show>
         </Tool>
         <i class="conv-sep" />
         <div class="ctool-pair" classList={{ on: props.view === "act" || bottomOpen() }}>
-          <Tool icon={Activity} name="Atividade" hint="Atividade, comandos do agente e terminal numa aba, no lugar da conversa" on={props.view === "act"} onClick={() => props.onView("act")}>
+          <Tool icon={Activity} name="Atividade" hint={tx("Atividade, comandos do agente e terminal numa aba, no lugar da conversa")} on={props.view === "act"} onClick={() => props.onView("act")}>
             <Show when={ws.running}><i class="ctool-live" /></Show>
           </Tool>
-          <Tool icon={PanelBottom} name={bottomOpen() ? "Esconder o painel de baixo" : "Painel embaixo"} hint="Mostra a atividade embaixo da conversa, para ver as duas juntas" on={bottomOpen()} onClick={() => setBottomOpen(!bottomOpen())} />
+          <Tool icon={PanelBottom} name={bottomOpen() ? tx("Esconder o painel de baixo") : tx("Painel embaixo")} hint={tx("Mostra a atividade embaixo da conversa, para ver as duas juntas")} on={bottomOpen()} onClick={() => setBottomOpen(!bottomOpen())} />
         </div>
         <i class="conv-sep" />
-        <Tool icon={History} name="Histórico" hint="Conversas anteriores deste projeto" on={props.view === "hist"} onClick={() => props.onView("hist")} />
-        <Tool icon={Brain} name="Memória" hint="O que o Claude já sabe deste projeto sem reler conversas antigas" on={props.view === "mem"} onClick={() => props.onView("mem")} />
+        <Tool icon={History} name={tx("Histórico")} hint={tx("Conversas anteriores deste projeto")} on={props.view === "hist"} onClick={() => props.onView("hist")} />
+        <Tool icon={Brain} name={tx("Memória")} hint={tx("O que o Claude já sabe deste projeto sem reler conversas antigas")} on={props.view === "mem"} onClick={() => props.onView("mem")} />
       </div>
     </div>
   );
@@ -130,13 +131,13 @@ export function EconomyHint(props: { pid: string }) {
       <div class="eco-hint pop-in" classList={{ cold: kind() === "cold" }}>
         <Sparkles size={14} />
         <span>
-          <Show when={kind() === "cold"} fallback={<>Conversa pesada: cada mensagem manda <b>{fmtTokens(c().context!)}</b> tokens de novo.</>}>
-            Parada há {ago(idle())}: a próxima mensagem relê <b>{fmtTokens(c().context!)}</b> tokens sem o desconto do cache.
+          <Show when={kind() === "cold"} fallback={<>{tx("Conversa pesada: cada mensagem manda")} <b>{fmtTokens(c().context!)}</b> {tx("tokens de novo.")}</>}>
+            {tx("Parada há {ago}: a próxima mensagem relê", { ago: ago(idle()) })} <b>{fmtTokens(c().context!)}</b> {tx("tokens sem o desconto do cache.")}
           </Show>
         </span>
-        <button class="primary-btn small" title="Abre outra aba com um resumo desta já na caixa" onClick={() => continueFresh(props.pid, k())}>Nova com resumo</button>
-        <button class="ghost-btn small" title="Guarda o resumo na memória do projeto e fecha a aba" onClick={() => void concludeTab(props.pid, k())}>Concluir</button>
-        <button class="icon-btn small" title="Continuar nesta mesmo" onClick={() => setHidden({ ...hidden(), [k()]: true })}><X size={12} /></button>
+        <button class="primary-btn small" title={tx("Abre outra aba com um resumo desta já na caixa")} onClick={() => continueFresh(props.pid, k())}>{tx("Nova com resumo")}</button>
+        <button class="ghost-btn small" title={tx("Guarda o resumo na memória do projeto e fecha a aba")} onClick={() => void concludeTab(props.pid, k())}>{tx("Concluir")}</button>
+        <button class="icon-btn small" title={tx("Continuar nesta mesmo")} onClick={() => setHidden({ ...hidden(), [k()]: true })}><X size={12} /></button>
       </div>
     </Show>
   );

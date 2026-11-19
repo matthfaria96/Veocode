@@ -81,23 +81,23 @@ pub fn known(projects: &[(String, PathBuf)]) -> Vec<CacheSpec> {
         let suffix = if i == 0 { String::new() } else { format!(" ({})", pretty(dir)) };
         out.push(spec(
             &format!("claude-history-{i}"),
-            &format!("Históricos de sessões do Claude Code{suffix}"),
+            &crate::trf!("Históricos de sessões do Claude Code{suffix}", "Claude Code session histories{suffix}"),
             "ia",
             "Claude Code",
             vec![dir.join("projects")],
-            Some("Apaga as conversas salvas: não dá mais para retomar sessões antigas (/resume). Feche o Claude Code antes."),
+            Some(crate::i18n::tr("Apaga as conversas salvas: não dá mais para retomar sessões antigas (/resume). Feche o Claude Code antes.", "Deletes the saved conversations: old sessions can no longer be resumed (/resume). Quit Claude Code first.")),
         ));
         out.push(spec(
             &format!("claude-file-history-{i}"),
-            &format!("Cópias de arquivos editados pelo Claude{suffix}"),
+            &crate::trf!("Cópias de arquivos editados pelo Claude{suffix}", "Copies of files edited by Claude{suffix}"),
             "ia",
             "Claude Code",
             vec![dir.join("file-history")],
-            Some("São os pontos de restauração das edições. Sem elas, não dá para desfazer edições antigas pelo Claude."),
+            Some(crate::i18n::tr("São os pontos de restauração das edições. Sem elas, não dá para desfazer edições antigas pelo Claude.", "They're the restore points for edits. Without them, Claude can't undo old edits.")),
         ));
         out.push(spec(
             &format!("claude-cache-{i}"),
-            &format!("Cache do Claude Code{suffix}"),
+            &crate::trf!("Cache do Claude Code{suffix}", "Claude Code cache{suffix}"),
             "ia",
             "Claude Code",
             vec![dir.join("cache"), dir.join("shell-snapshots"), dir.join("downloads")],
@@ -105,22 +105,22 @@ pub fn known(projects: &[(String, PathBuf)]) -> Vec<CacheSpec> {
         ));
     }
 
-    out.push(spec("ollama", "Modelos locais (Ollama)", "ia", "Ollama", vec![h.join(".ollama/models")], Some("São os modelos baixados. Para usar de novo, o Ollama baixa tudo outra vez (vários GB).")));
-    out.push(spec("huggingface", "Modelos e datasets (Hugging Face)", "ia", "Hugging Face", vec![h.join(".cache/huggingface")], Some("Modelos baixados precisam ser baixados de novo.")));
+    out.push(spec("ollama", "Modelos locais (Ollama)", "ia", "Ollama", vec![h.join(".ollama/models")], Some(crate::i18n::tr("São os modelos baixados. Para usar de novo, o Ollama baixa tudo outra vez (vários GB).", "These are the downloaded models. To use them again, Ollama downloads everything again (several GB)."))));
+    out.push(spec("huggingface", crate::i18n::tr("Modelos e datasets (Hugging Face)", "Models and datasets (Hugging Face)"), "ia", "Hugging Face", vec![h.join(".cache/huggingface")], Some(crate::i18n::tr("Modelos baixados precisam ser baixados de novo.", "Downloaded models have to be downloaded again."))));
 
-    out.push(spec("npm", "Cache do npm", "pacotes", "npm", vec![h.join(".npm/_cacache"), c.join("npm-cache/_cacache")], None));
-    out.push(spec("pnpm", "Store do pnpm", "pacotes", "pnpm", vec![h.join("Library/pnpm/store"), h.join(".local/share/pnpm/store"), c.join("pnpm/store")], Some("Projetos com node_modules do pnpm apontam para cá; rode pnpm install de novo neles.")));
-    out.push(spec("bun", "Cache do Bun", "pacotes", "bun", vec![h.join(".bun/install/cache")], None));
-    out.push(spec("yarn", "Cache do Yarn", "pacotes", "yarn", vec![c.join("Yarn"), c.join("yarn")], None));
-    out.push(spec("pip", "Cache do pip", "pacotes", "pip", vec![c.join("pip"), c.join("pip/Cache")], None));
-    out.push(spec("uv", "Cache do uv", "pacotes", "uv", vec![h.join(".cache/uv"), c.join("uv")], None));
-    out.push(spec("cargo", "Registro e git do Cargo", "pacotes", "cargo", vec![h.join(".cargo/registry"), h.join(".cargo/git")], None));
-    out.push(spec("brew", "Downloads do Homebrew", "pacotes", "brew", vec![c.join("Homebrew")], None));
-    out.push(spec("xcode", "DerivedData do Xcode", "build", "Xcode", vec![h.join("Library/Developer/Xcode/DerivedData")], None));
+    out.push(spec("npm", crate::i18n::tr("Cache do npm", "npm cache"), "pacotes", "npm", vec![h.join(".npm/_cacache"), c.join("npm-cache/_cacache")], None));
+    out.push(spec("pnpm", crate::i18n::tr("Store do pnpm", "pnpm store"), "pacotes", "pnpm", vec![h.join("Library/pnpm/store"), h.join(".local/share/pnpm/store"), c.join("pnpm/store")], Some(crate::i18n::tr("Projetos com node_modules do pnpm apontam para cá; rode pnpm install de novo neles.", "Projects with pnpm node_modules point here; run pnpm install in them again."))));
+    out.push(spec("bun", crate::i18n::tr("Cache do Bun", "Bun cache"), "pacotes", "bun", vec![h.join(".bun/install/cache")], None));
+    out.push(spec("yarn", crate::i18n::tr("Cache do Yarn", "Yarn cache"), "pacotes", "yarn", vec![c.join("Yarn"), c.join("yarn")], None));
+    out.push(spec("pip", crate::i18n::tr("Cache do pip", "pip cache"), "pacotes", "pip", vec![c.join("pip"), c.join("pip/Cache")], None));
+    out.push(spec("uv", crate::i18n::tr("Cache do uv", "uv cache"), "pacotes", "uv", vec![h.join(".cache/uv"), c.join("uv")], None));
+    out.push(spec("cargo", crate::i18n::tr("Registro e git do Cargo", "Cargo registry and git"), "pacotes", "cargo", vec![h.join(".cargo/registry"), h.join(".cargo/git")], None));
+    out.push(spec("brew", crate::i18n::tr("Downloads do Homebrew", "Homebrew downloads"), "pacotes", "brew", vec![c.join("Homebrew")], None));
+    out.push(spec("xcode", crate::i18n::tr("DerivedData do Xcode", "Xcode DerivedData"), "build", "Xcode", vec![h.join("Library/Developer/Xcode/DerivedData")], None));
 
     for (name, root) in projects {
         let dirs = ["target", "src-tauri/target", "node_modules", ".next"].map(|d| root.join(d)).to_vec();
-        out.push(spec(&format!("build-{name}"), &format!("Builds e dependências · {name}"), "build", name, dirs, Some("Ficam de novo prontos no próximo build / npm install.")));
+        out.push(spec(&format!("build-{name}"), &crate::trf!("Builds e dependências · {name}", "Builds and dependencies · {name}"), "build", name, dirs, Some(crate::i18n::tr("Ficam de novo prontos no próximo build / npm install.", "They're ready again on the next build / npm install."))));
     }
 
     out.into_iter().flatten().collect()

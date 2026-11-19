@@ -16,12 +16,13 @@ import { dismissable } from "../dismiss";
 import ChatPane from "../components/ChatPane";
 import { ProjectIcon } from "../components/icons";
 import { CountUp, ProviderMark, Toggle } from "../components/ui";
+import { locale, tx, txn } from "../i18n";
 
 const greet = () => {
   const h = new Date().getHours();
-  return h < 5 ? "Boa madrugada" : h < 12 ? "Bom dia" : h < 18 ? "Boa tarde" : "Boa noite";
+  return h < 5 ? tx("Boa madrugada") : h < 12 ? tx("Bom dia") : h < 18 ? tx("Boa tarde") : tx("Boa noite");
 };
-const today = () => new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" });
+const today = () => new Date().toLocaleDateString(locale(), { weekday: "long", day: "numeric", month: "long" });
 const ago = (secs: number) => since(secs);
 
 /** Visão geral: a tela de boas-vindas. Mostra o dia, os projetos ao vivo (arrastáveis) e o que dá para adicionar. */
@@ -70,16 +71,16 @@ export default function Board() {
       <Show when={real().length} fallback={<Show when={projectsReady()} fallback={<Show when={projectsSlow()} fallback={<div class="loading-rows"><div /><div /></div>}><PermWait /></Show>}><Discover /></Show>}>
         <div class="home-bar">
           <div>
-            <h2>Na tela agora</h2>
-            <small><Hand size={12} /> Arraste pelo título para trocar de lugar · o ✕ tira da tela · arraste um projeto lá de baixo para pôr</small>
+            <h2>{tx("Na tela agora")}</h2>
+            <small><Hand size={12} /> {tx("Arraste pelo título para trocar de lugar · o ✕ tira da tela · arraste um projeto lá de baixo para pôr")}</small>
           </div>
-          <label class="focus-switch" classList={{ on: homeFocus() }} title={homeFocus() ? "Sair do modo foco (volta o resumo do dia e os cartões)" : "Modo foco: só os projetos na tela, os outros numa faixa embaixo (F)"}>
+          <label class="focus-switch" classList={{ on: homeFocus() }} title={homeFocus() ? tx("Sair do modo foco (volta o resumo do dia e os cartões)") : tx("Modo foco: só os projetos na tela, os outros numa faixa embaixo (F)")}>
             <Maximize size={13} />
-            <span>Foco</span>
+            <span>{tx("Foco")}</span>
             <Toggle on={homeFocus()} onChange={setHomeFocus} />
           </label>
           <Show when={real().length > 1}>
-            <div class="layout-picks" role="radiogroup" aria-label="Quantos projetos na tela">
+            <div class="layout-picks" role="radiogroup" aria-label={tx("Quantos projetos na tela")}>
               <For each={layouts}>
                 {(l) => (
                   <button
@@ -87,7 +88,7 @@ export default function Board() {
                     aria-checked={layout() === l.id}
                     classList={{ active: layout() === l.id }}
                     disabled={l.slots > real().length}
-                    title={l.slots > real().length ? `${l.label} (precisa de ${l.slots} projetos)` : l.label}
+                    title={l.slots > real().length ? tx("{label} (precisa de {slots} projetos)", { label: l.label, slots: l.slots }) : l.label}
                     onClick={() => { setMaximized(null); setLayout(l.id); }}
                   >
                     <LayoutIcon id={l.id} />
@@ -102,8 +103,8 @@ export default function Board() {
           fallback={
             <div class="board-empty" classList={{ "drop-on": dropOver() === "__empty", "is-dragging": !!drag() }} data-drop-pane="__empty">
               <span class="board-empty-icon"><LayoutGrid size={22} /></span>
-              <strong>Nenhum projeto na tela</strong>
-              <span>Arraste um projeto lá de baixo para cá, ou use o <b>+</b> do cartão dele.</span>
+              <strong>{tx("Nenhum projeto na tela")}</strong>
+              <span>{tx("Arraste um projeto lá de baixo para cá, ou use o")} <b>+</b> {tx("do cartão dele.")}</span>
             </div>
           }
         >
@@ -118,8 +119,8 @@ export default function Board() {
         <div class="home-shelf" classList={{ hidden: homeFocus() }}>
           <div class="home-bar">
             <div>
-              <h2>Seus projetos</h2>
-              <small>{real().length} {real().length === 1 ? "projeto" : "projetos"} · clique para abrir, arraste para a tela</small>
+              <h2>{tx("Seus projetos")}</h2>
+              <small>{txn(real().length, "{n} projeto · clique para abrir, arraste para a tela", "{n} projetos · clique para abrir, arraste para a tela")}</small>
             </div>
           </div>
           <div class="shelf-list">
@@ -134,7 +135,7 @@ export default function Board() {
           <Portal>
             <div class="drag-ghost" classList={{ hit: !!dropOver() }} style={{ transform: `translate(${d().x + 14}px, ${d().y + 10}px)` }}>
               <GripVertical size={13} /> {d().label}
-              <small>{dropOver() ? (d().kind === "pane" ? "solte para trocar de lugar" : "solte para pôr aqui") : "leve até um painel"}</small>
+              <small>{dropOver() ? (d().kind === "pane" ? tx("solte para trocar de lugar") : tx("solte para pôr aqui")) : tx("leve até um painel")}</small>
             </div>
           </Portal>
         )}
@@ -160,10 +161,10 @@ export default function Board() {
     const asking = () => real().filter((p) => ["ask", "error"].includes(projectState(p.id).tone)).length;
     const changed = () => real().reduce((t, p) => t + (git.summaries[p.id]?.changed ?? 0), 0);
     const line = () => {
-      if (!real().length) return "Vamos começar: escolha abaixo as pastas em que você quer trabalhar com IA.";
-      if (asking()) return `${asking() === 1 ? "Um projeto precisa" : `${asking()} projetos precisam`} de você.`;
-      if (working()) return `${working() === 1 ? "Uma IA está" : `${working()} IAs estão`} trabalhando agora.`;
-      return steps() ? "Tudo em ordem. Veja abaixo como foi o dia." : "Tudo calmo por aqui. Peça algo em qualquer projeto abaixo.";
+      if (!real().length) return tx("Vamos começar: escolha abaixo as pastas em que você quer trabalhar com IA.");
+      if (asking()) return txn(asking(), "Um projeto precisa de você.", "{n} projetos precisam de você.");
+      if (working()) return tx("{v} trabalhando agora.", { v: working() === 1 ? tx("Uma IA está") : tx("{working} IAs estão", { working: working() }) });
+      return steps() ? tx("Tudo em ordem. Veja abaixo como foi o dia.") : tx("Tudo calmo por aqui. Peça algo em qualquer projeto abaixo.");
     };
     const W = 520;
     const H = 86;
@@ -181,11 +182,11 @@ export default function Board() {
       return close ? `${d} L ${W} ${H} L 0 ${H} Z` : d;
     };
     const tiles = () => [
-      { label: "Projetos", value: real().length, icon: FolderPlus, color: "#8b7bff" },
-      { label: "Trabalhando agora", value: working(), icon: Zap, color: "#34d399", live: working() > 0 },
-      { label: "Esperando você", value: asking(), icon: Hand, color: "#fbbf24", live: asking() > 0 },
-      { label: "Passos da IA hoje", value: steps(), icon: Activity, color: "#38bdf8" },
-      { label: "Arquivos mudados", value: changed(), icon: GitBranch, color: "#f472b6" },
+      { label: tx("Projetos"), value: real().length, icon: FolderPlus, color: "#8b7bff" },
+      { label: tx("Trabalhando agora"), value: working(), icon: Zap, color: "#34d399", live: working() > 0 },
+      { label: tx("Esperando você"), value: asking(), icon: Hand, color: "#fbbf24", live: asking() > 0 },
+      { label: tx("Passos da IA hoje"), value: steps(), icon: Activity, color: "#38bdf8" },
+      { label: tx("Arquivos mudados"), value: changed(), icon: GitBranch, color: "#f472b6" },
     ];
     return (
       <section class="home-hero">
@@ -197,7 +198,7 @@ export default function Board() {
             <h1>{greet()}</h1>
             <p>{line()}</p>
           </div>
-          <div class="home-chart" title="Passos das IAs em todos os projetos, hora a hora, nas últimas 24 h">
+          <div class="home-chart" title={tx("Passos das IAs em todos os projetos, hora a hora, nas últimas 24 h")}>
             <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
               <defs>
                 <linearGradient id="home-area" x1="0" y1="0" x2="0" y2="1">
@@ -212,7 +213,7 @@ export default function Board() {
               <path d={path(true)} fill="url(#home-area)" class="home-area" />
               <path d={path(false)} fill="none" stroke="url(#home-line)" stroke-width="2.2" class="home-line" vector-effect="non-scaling-stroke" />
             </svg>
-            <div class="home-chart-axis"><span>24 h atrás</span><span>12 h</span><span>agora</span></div>
+            <div class="home-chart-axis"><span>{tx("24 h atrás")}</span><span>12 h</span><span>{tx("agora")}</span></div>
           </div>
         </div>
         <div class="home-tiles">
@@ -238,18 +239,18 @@ export default function Board() {
       <section class="discover">
         <div class="home-bar">
           <div>
-            <h2>Comece por aqui</h2>
-            <small>{found().length ? "Achamos estas pastas onde você já usou o Claude. Um clique e ela vira projeto." : "Escolha uma pasta do seu computador para trabalhar com a IA."}</small>
+            <h2>{tx("Comece por aqui")}</h2>
+            <small>{found().length ? tx("Achamos estas pastas onde você já usou o Claude. Um clique e ela vira projeto.") : tx("Escolha uma pasta do seu computador para trabalhar com a IA.")}</small>
           </div>
-          <Show when={isTauri}><button class="ghost-btn" onClick={() => void addProjectFromPicker()}><FolderPlus size={14} /> Escolher outra pasta</button></Show>
+          <Show when={isTauri}><button class="ghost-btn" onClick={() => void addProjectFromPicker()}><FolderPlus size={14} /> {tx("Escolher outra pasta")}</button></Show>
         </div>
         <Show when={foundLoaded()} fallback={<div class="loading-rows"><div /><div /></div>}>
           <div class="found-grid">
             <For each={found()}>{(f, i) => <FoundCard f={f} i={i()} />}</For>
             <button class="found-card pick" style={{ "--i": found().length }} onClick={() => void addProjectFromPicker()}>
               <span class="found-icon"><Plus size={20} /></span>
-              <strong>Outra pasta</strong>
-              <small>Escolher no Finder</small>
+              <strong>{tx("Outra pasta")}</strong>
+              <small>{tx("Escolher no Finder")}</small>
             </button>
           </div>
         </Show>
@@ -268,8 +269,8 @@ export default function Board() {
       <button class="found-card" style={{ "--i": props.i }} disabled={busy()} onClick={() => void add()} title={props.f.path}>
         <span class="found-icon"><ProjectIcon id={props.f.path} name={props.f.name} stack="" size={26} /></span>
         <strong>{props.f.name}</strong>
-        <small>{props.f.sessions} {props.f.sessions === 1 ? "conversa" : "conversas"} · {ago(props.f.last)}</small>
-        <span class="found-add">{busy() ? <span class="spinner inline" /> : <><Plus size={12} /> Adicionar</>}</span>
+        <small>{txn(props.f.sessions, "{n} conversa", "{n} conversas")} · {ago(props.f.last)}</small>
+        <span class="found-add">{busy() ? <span class="spinner inline" /> : <><Plus size={12} /> {tx("Adicionar")}</>}</span>
       </button>
     );
   }
@@ -300,7 +301,7 @@ export default function Board() {
         style={{ "--c": a().color, "--i": props.i }}
         onPointerDown={(e) => startDrag(e, props.id, "project", p().name, (target) => replacePane(target, props.id))}
         onClick={open}
-        title="Clique para abrir · arraste para um painel da tela"
+        title={tx("Clique para abrir · arraste para um painel da tela")}
       >
         <div class="board-card-top">
           <ProjectIcon id={p().id} name={p().name} stack={p().stack} size={22} />
@@ -308,19 +309,19 @@ export default function Board() {
             <strong>{p().name}</strong>
             <span class={`board-state ${st().tone}`}><i /><span>{st().label}</span><small>{st().at ? since(st().at / 1000) : ""}</small></span>
           </div>
-          <Show when={inGrid(props.id)} fallback={<button class="board-pin" title="Pôr na tela" onPointerDown={(e) => e.stopPropagation()} onClick={(e) => (e.stopPropagation(), replacePane(undefined, props.id))}><Plus size={13} /></button>}>
-            <span class="shelf-on" title="Está na tela agora">na tela</span>
+          <Show when={inGrid(props.id)} fallback={<button class="board-pin" title={tx("Pôr na tela")} onPointerDown={(e) => e.stopPropagation()} onClick={(e) => (e.stopPropagation(), replacePane(undefined, props.id))}><Plus size={13} /></button>}>
+            <span class="shelf-on" title={tx("Está na tela agora")}>{tx("na tela")}</span>
           </Show>
           <CardMenu id={props.id} open={open} />
         </div>
         <div class="board-last" classList={{ none: !last() }}>
-          <Show when={last()} fallback={<span>Nenhuma conversa nas últimas 24 h</span>}>
-            {(l) => <span><b>{l().kind === "user" ? "Você: " : `${a().label}: `}</b>{l().title.replace(/[#*`>_]/g, "").slice(0, 140)}</span>}
+          <Show when={last()} fallback={<span>{tx("Nenhuma conversa nas últimas 24 h")}</span>}>
+            {(l) => <span><b>{l().kind === "user" ? tx("Você: ") : `${a().label}: `}</b>{l().title.replace(/[#*`>_]/g, "").slice(0, 140)}</span>}
           </Show>
         </div>
         <DayStrip id={props.id} />
         <div class="board-chips">
-          <span class="board-chip" title={`Conta: ${a().label}`}><ProviderMark id={a().id} size={13} /> {a().label}</span>
+          <span class="board-chip" title={tx("Conta: {label}", { label: a().label })}><ProviderMark id={a().id} size={13} /> {a().label}</span>
           <Show when={g()?.repo}>
             <For each={gitWords(g()).slice(0, 2)}>{(w) => <span class="board-chip" title={w.tip}>{w.text}</span>}</For>
           </Show>
@@ -344,18 +345,18 @@ export default function Board() {
     const act = (f: () => void) => (e: MouseEvent) => (e.stopPropagation(), close(), f());
     return (
       <>
-        <button class="board-more" ref={btn} title="Mais opções" aria-haspopup="menu" aria-expanded={!!pos()} onPointerDown={(e) => e.stopPropagation()} onClick={toggle}><MoreHorizontal size={15} /></button>
+        <button class="board-more" ref={btn} title={tx("Mais opções")} aria-haspopup="menu" aria-expanded={!!pos()} onPointerDown={(e) => e.stopPropagation()} onClick={toggle}><MoreHorizontal size={15} /></button>
         <Show when={pos()}>
           {(p) => (
             <Portal>
               <div class="menu pop-in card-menu" role="menu" ref={(el) => dismissable(el, close, () => btn)} style={{ left: `${p().left}px`, top: `${p().top}px` }} onPointerDown={(e) => e.stopPropagation()}>
-                <button class="menu-item" onClick={act(props.open)}><SquareArrowOutUpRight size={15} /><span>Abrir</span></button>
+                <button class="menu-item" onClick={act(props.open)}><SquareArrowOutUpRight size={15} /><span>{tx("Abrir")}</span></button>
                 <Show when={!inGrid(props.id)}>
-                  <button class="menu-item" onClick={act(() => replacePane(undefined, props.id))}><LayoutGrid size={15} /><span>Pôr na tela</span></button>
+                  <button class="menu-item" onClick={act(() => replacePane(undefined, props.id))}><LayoutGrid size={15} /><span>{tx("Pôr na tela")}</span></button>
                 </Show>
-                <button class="menu-item" onClick={act(() => { const a = absPathOf(props.id); if (a) api.reveal(a).catch((e) => showToast(String(e))); })}><FolderOpen size={15} /><span>Mostrar no Finder</span></button>
+                <button class="menu-item" onClick={act(() => { const a = absPathOf(props.id); if (a) api.reveal(a).catch((e) => showToast(String(e))); })}><FolderOpen size={15} /><span>{tx("Mostrar no Finder")}</span></button>
                 <div class="menu-sep" />
-                <button class="menu-item danger" onClick={act(() => askCloseProject(props.id))}><FolderMinus size={15} /><span>Fechar projeto…</span></button>
+                <button class="menu-item danger" onClick={act(() => askCloseProject(props.id))}><FolderMinus size={15} /><span>{tx("Fechar projeto…")}</span></button>
               </div>
             </Portal>
           )}
@@ -369,7 +370,7 @@ export default function Board() {
   function Dock() {
     const off = () => shelf().filter((p) => !inGrid(p.id));
     return (
-      <div class="home-dock" role="list" aria-label="Projetos fora da tela">
+      <div class="home-dock" role="list" aria-label={tx("Projetos fora da tela")}>
         <For each={off()}>
           {(p, i) => {
             const st = () => projectState(p.id);
@@ -381,20 +382,20 @@ export default function Board() {
                 role="listitem"
                 classList={{ lifted: drag()?.id === p.id }}
                 style={{ "--c": a().color, "--i": i() }}
-                title={`${p.name} · ${st().label}\nClique para pôr na tela · arraste até um painel para trocar`}
+                title={tx("{name} · {label}\nClique para pôr na tela · arraste até um painel para trocar", { name: p.name, label: st().label })}
                 onPointerDown={(e) => startDrag(e, p.id, "project", p.name, (target) => replacePane(target, p.id))}
                 onClick={() => replacePane(undefined, p.id)}
               >
                 <ProjectIcon id={p.id} name={p.name} stack={p.stack} size={18} />
                 <span class="dock-name">{p.name}</span>
                 <i class="dock-dot" />
-                <button class="dock-open" title="Abrir o projeto" onPointerDown={(e) => e.stopPropagation()} onClick={(e) => (e.stopPropagation(), open())}><ArrowUpRight size={12} /></button>
+                <button class="dock-open" title={tx("Abrir o projeto")} onPointerDown={(e) => e.stopPropagation()} onClick={(e) => (e.stopPropagation(), open())}><ArrowUpRight size={12} /></button>
               </div>
             );
           }}
         </For>
         <Show when={!off().length}>
-          <span class="dock-note">Todos os projetos estão na tela</span>
+          <span class="dock-note">{tx("Todos os projetos estão na tela")}</span>
         </Show>
         <AddCard dock />
       </div>
@@ -432,13 +433,13 @@ export default function Board() {
           fallback={
             <button class="board-card mini shelf-add" classList={{ open: !!pos() }} ref={btn} onClick={toggle} style={{ "--i": shelf().length }}>
               <span class="found-icon"><Plus size={20} /></span>
-              <strong>Adicionar projeto</strong>
-              <small>{found().length ? `${found().length} ${found().length === 1 ? "pasta sugerida" : "pastas sugeridas"}` : "escolher uma pasta"}</small>
+              <strong>{tx("Adicionar projeto")}</strong>
+              <small>{found().length ? txn(found().length, "{n} pasta sugerida", "{n} pastas sugeridas") : tx("escolher uma pasta")}</small>
             </button>
           }
         >
-          <button class="dock-add" classList={{ open: !!pos() }} ref={btn} onClick={toggle} title="Adicionar projeto">
-            <Plus size={14} /> <span>Adicionar</span>
+          <button class="dock-add" classList={{ open: !!pos() }} ref={btn} onClick={toggle} title={tx("Adicionar projeto")}>
+            <Plus size={14} /> <span>{tx("Adicionar")}</span>
           </button>
         </Show>
         <Show when={pos()}>
@@ -449,8 +450,8 @@ export default function Board() {
                 ref={(el) => ((menu = el), dismissable(el, close, () => btn))}
                 style={{ left: `${p().left}px`, top: p().top != null ? `${p().top}px` : "auto", bottom: p().bottom != null ? `${p().bottom}px` : "auto", "max-height": `${p().max}px` }}
               >
-                <small class="menu-title">Onde você já usou o Claude</small>
-                <For each={found().slice(0, 8)} fallback={<small class="menu-title">Nenhuma sugestão por aqui</small>}>
+                <small class="menu-title">{tx("Onde você já usou o Claude")}</small>
+                <For each={found().slice(0, 8)} fallback={<small class="menu-title">{tx("Nenhuma sugestão por aqui")}</small>}>
                   {(f) => (
                     <button class="menu-item" onClick={() => (close(), void addProjectPath(f.path, false))} title={f.path}>
                       <ProjectIcon id={f.path} name={f.name} stack="" size={16} />
@@ -460,7 +461,7 @@ export default function Board() {
                   )}
                 </For>
                 <div class="menu-sep" />
-                <button class="menu-item" onClick={() => (close(), void addProjectFromPicker())}><FolderPlus size={16} /><span>Escolher outra pasta…</span></button>
+                <button class="menu-item" onClick={() => (close(), void addProjectFromPicker())}><FolderPlus size={16} /><span>{tx("Escolher outra pasta…")}</span></button>
               </div>
             </Portal>
           )}
@@ -490,7 +491,7 @@ function NeedsStrip() {
   return (
     <Show when={top().length}>
       <div class="needs-strip">
-        <strong>Precisa de você</strong>
+        <strong>{tx("Precisa de você")}</strong>
         <For each={top()}>
           {(n) => (
             <button class={`needs-chip ${n.urgency}`} onClick={() => n.go()} title={n.detail}>
@@ -524,11 +525,11 @@ function DayStrip(props: { id: string }) {
   };
   return (
     <Show when={total() > 0}>
-      <div class="day-strip" title="Passos da IA em cada hora das últimas 24 h (a última barra é a hora atual)">
+      <div class="day-strip" title={tx("Passos da IA em cada hora das últimas 24 h (a última barra é a hora atual)")}>
         <div class="day-bars" aria-hidden="true">
           <For each={hours()}>{(n, i) => <span classList={{ now: i() === 23, zero: !n }} style={{ height: `${n ? Math.max(12, (n / max()) * 100) : 6}%` }} />}</For>
         </div>
-        <small>{total()} {total() === 1 ? "passo" : "passos"} nas últimas 24 h · mais movimento por volta das {busiest()}</small>
+        <small>{txn(total(), "{n} passo nas últimas 24 h · mais movimento por volta das {busiest}", "{n} passos nas últimas 24 h · mais movimento por volta das {busiest}", { busiest: busiest() })}</small>
       </div>
     </Show>
   );
@@ -540,8 +541,8 @@ function PermWait() {
     <div class="perm-wait pop-in">
       <span class="perm-wait-dot" />
       <div>
-        <strong>Esperando a permissão do macOS</strong>
-        <small>Depois de atualizar o Veocode, o macOS pergunta de novo se ele pode abrir a pasta dos seus projetos (ex.: Documentos). Clique em <b>Permitir</b> no aviso do sistema e os projetos aparecem aqui sozinhos.</small>
+        <strong>{tx("Esperando a permissão do macOS")}</strong>
+        <small>{tx("Depois de atualizar o Veocode, o macOS pergunta de novo se ele pode abrir a pasta dos seus projetos (ex.: Documentos). Clique em")} <b>{tx("Permitir")}</b> {tx("no aviso do sistema e os projetos aparecem aqui sozinhos.")}</small>
       </div>
     </div>
   );

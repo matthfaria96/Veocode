@@ -238,13 +238,13 @@ pub fn snapshot(sys: &mut System) -> Vec<AgentGroup> {
 pub fn kill(sys: &mut System, pid: u32) -> Result<(), String> {
     let groups = snapshot(sys);
     if !groups.iter().any(|g| g.children.iter().any(|c| c.pid == pid)) {
-        return Err("esse processo não foi iniciado por um agente de IA".into());
+        return Err(crate::i18n::tr("esse processo não foi iniciado por um agente de IA", "that process wasn't started by an AI agent").into());
     }
-    let p = sys.process(Pid::from_u32(pid)).ok_or("processo já terminou")?;
+    let p = sys.process(Pid::from_u32(pid)).ok_or(crate::i18n::tr("processo já terminou", "the process already ended"))?;
     match p.kill_with(Signal::Term) {
         Some(true) => Ok(()),
         _ if p.kill() => Ok(()),
-        _ => Err("o sistema não deixou encerrar".into()),
+        _ => Err(crate::i18n::tr("o sistema não deixou encerrar", "the system didn't allow ending it").into()),
     }
 }
 // ---------------------------------------------------------------- portas abertas
@@ -436,7 +436,7 @@ pub fn ports(sys: &mut System, projects: &[(String, PathBuf)], home: &std::path:
 /// Encerra uma árvore que sobrou (de baixo para cima). Recusa qualquer coisa que não esteja na lista de restos.
 pub fn kill_leftover(sys: &mut System, pid: u32, projects: &[(String, PathBuf)], home: &std::path::Path) -> Result<(), String> {
     let report = ports(sys, projects, home);
-    let l = report.leftovers.iter().find(|l| l.pid == pid).ok_or("esse servidor não está na lista do que sobrou")?;
+    let l = report.leftovers.iter().find(|l| l.pid == pid).ok_or(crate::i18n::tr("esse servidor não está na lista do que sobrou", "that server isn't in the leftovers list"))?;
     let mut failed = 0;
     for p in l.pids.iter().rev() {
         if let Some(proc_) = sys.process(Pid::from_u32(*p)) {
@@ -445,7 +445,7 @@ pub fn kill_leftover(sys: &mut System, pid: u32, projects: &[(String, PathBuf)],
             }
         }
     }
-    if failed == l.pids.len() { Err("o sistema não deixou encerrar".into()) } else { Ok(()) }
+    if failed == l.pids.len() { Err(crate::i18n::tr("o sistema não deixou encerrar", "the system didn't allow ending it").into()) } else { Ok(()) }
 }
 
 #[cfg(test)]

@@ -5,6 +5,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
+import { dec, tx } from "./i18n";
 
 export const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
@@ -43,7 +44,7 @@ export interface FsChange {
   changes: { path: string; exists: boolean; isDir: boolean }[];
 }
 
-const needsApp = () => Promise.reject(new Error("Abra pelo app (npm run tauri dev) para acessar pastas de verdade."));
+const needsApp = () => Promise.reject(new Error(tx("Abra pelo app (npm run tauri dev) para acessar pastas de verdade.")));
 
 export const api = {
   listProjects: (): Promise<ProjectInfo[]> => (isTauri ? invoke("list_projects") : Promise.resolve([])),
@@ -71,7 +72,7 @@ export const api = {
   /** Abre o seletor de pastas do sistema. Devolve null se a pessoa cancelar. */
   pickFolder: async (): Promise<string | null> => {
     if (!isTauri) return needsApp();
-    const picked = await open({ directory: true, multiple: false, title: "Escolha a pasta do projeto" });
+    const picked = await open({ directory: true, multiple: false, title: tx("Escolha a pasta do projeto") });
     return typeof picked === "string" ? picked : null;
   },
 
@@ -88,7 +89,7 @@ export const api = {
 export const prettyPath = (p: string) => p.replace(/^\/Users\/[^/]+/, "~").replace(/^[A-Za-z]:\\Users\\[^\\]+/, "~");
 
 export const formatSize = (b: number) =>
-  b >= 1024 ** 2 ? `${(b / 1024 ** 2).toFixed(1).replace(".", ",")} MB` : b >= 1024 ? `${Math.round(b / 1024)} KB` : `${b} B`;
+  b >= 1024 ** 2 ? `${dec(b / 1024 ** 2)} MB` : b >= 1024 ? `${Math.round(b / 1024)} KB` : `${b} B`;
 
 // ---------------------------------------------------------------- Raio-X
 

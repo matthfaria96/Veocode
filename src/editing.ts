@@ -5,6 +5,7 @@
 import { createStore } from "solid-js/store";
 import { api } from "./api";
 import { projectId, setWs, showToast, ws } from "./store";
+import { tx } from "./i18n";
 
 const AUTOSAVE_MS = 700;
 
@@ -70,7 +71,7 @@ async function save(pid: string, path: string): Promise<boolean> {
   } catch (e) {
     const msg = String(e instanceof Error ? e.message : e);
     setDrafts(k, { ...drafts[k], status: "error", error: msg });
-    showToast(`Não salvou ${path.split("/").pop()}: ${msg}`);
+    showToast(tx("Não salvou {pop}: {msg}", { pop: path.split("/").pop(), msg }));
     return false;
   }
 }

@@ -5,6 +5,7 @@ import { createStore, produce, reconcile } from "solid-js/store";
 import { isTauri, xrayApi, type AgentGroup, type CacheSpec, type InstallReport, type MachineReport, type ModelReport, type PortReport } from "./api";
 import { caches as mockCaches, installed as mockInstalled, machines as mockMachines, processes as mockProcs } from "./data/mock";
 import { showToast } from "./store";
+import { tx } from "./i18n";
 
 export interface CacheRow extends CacheSpec {
   size: number | null; // null = medindo
@@ -80,7 +81,7 @@ export async function loadCaches() {
     await Promise.all([worker(), worker(), worker()]);
     noteDisk(xray.caches.reduce((t, c) => t + (c.size ?? 0), 0));
   } catch (e) {
-    showToast(`Não deu para ler esta parte do computador: ${errMsg(e)}`);
+    showToast(tx("Não deu para ler esta parte do computador: {v}", { v: errMsg(e) }));
   }
 }
 
@@ -89,7 +90,7 @@ export async function trashCaches(ids: string[]) {
   if (!isTauri) {
     await new Promise((r) => setTimeout(r, 700));
     ids.forEach((id) => setXray("caches", (c) => c.id === id, { size: 0, trashing: false, selected: false }));
-    showToast("Navegador: simulação, nada foi movido");
+    showToast(tx("Navegador: simulação, nada foi movido"));
     return;
   }
   const failed: string[] = [];
@@ -102,7 +103,7 @@ export async function trashCaches(ids: string[]) {
     }
     setXray("caches", (c) => c.id === id, "trashing", false);
   }
-  showToast(failed.length ? `Não deu para mover: ${failed.join("; ")}` : "Movido para a Lixeira");
+  showToast(failed.length ? tx("Não deu para mover: {v}", { v: failed.join("; ") }) : tx("Movido para a Lixeira"));
   // some caches deixam de existir; recarrega a lista
   setTimeout(loadCaches, 900);
 }
@@ -135,7 +136,7 @@ export async function loadInstalls() {
   try {
     setXray("installs", await xrayApi.installs());
   } catch (e) {
-    showToast(`Não deu para ler esta parte do computador: ${errMsg(e)}`);
+    showToast(tx("Não deu para ler esta parte do computador: {v}", { v: errMsg(e) }));
   }
   setXray("installsLoading", false);
 }
@@ -146,7 +147,7 @@ export async function loadMachines() {
   if (!isTauri) {
     setXray("machines", {
       machines: mockMachines.map((m) => ({
-        id: m.id, name: m.name, kind: m.kind, engine: m.engine, running: m.status === "rodando", statusText: m.status,
+        id: m.id, name: m.name, kind: m.kind, engine: m.engine, running: m.status === "rodando", statusText: tx(m.status),
         detail: null, cpu: m.status === "rodando" ? `${m.cpu}%` : null, ram: m.ram, disk: m.disk, ports: m.ports ?? null, canToggle: m.engine === "Docker",
       })),
       engines: [],
@@ -157,7 +158,7 @@ export async function loadMachines() {
   try {
     setXray("machines", await xrayApi.machines());
   } catch (e) {
-    showToast(`Não deu para ler esta parte do computador: ${errMsg(e)}`);
+    showToast(tx("Não deu para ler esta parte do computador: {v}", { v: errMsg(e) }));
   }
   setXray("machinesLoading", false);
 }
@@ -177,7 +178,7 @@ export async function loadModels() {
   try {
     setXray("models", await xrayApi.models());
   } catch (e) {
-    showToast(`Não deu para procurar as IAs locais: ${errMsg(e)}`);
+    showToast(tx("Não deu para procurar as IAs locais: {v}", { v: errMsg(e) }));
   }
   setXray("modelsLoading", false);
 }
@@ -187,7 +188,7 @@ export async function toggleMachine(engine: string, id: string, start: boolean) 
   setXray("busy", key, true);
   try {
     if (isTauri) await xrayApi.toggleMachine(engine, id, start);
-    showToast(start ? "Pronto, está ligado" : "Pronto, está desligado");
+    showToast(start ? tx("Pronto, está ligado") : tx("Pronto, está desligado"));
     await loadMachines();
   } catch (e) {
     showToast(errMsg(e));
@@ -233,7 +234,7 @@ export async function refreshProcs() {
 export async function killProc(pid: number) {
   try {
     if (isTauri) await xrayApi.kill(pid);
-    showToast("Pronto, o programa foi fechado");
+    showToast(tx("Pronto, o programa foi fechado"));
     setTimeout(refreshProcs, 400);
   } catch (e) {
     showToast(errMsg(e));
@@ -261,7 +262,7 @@ export async function killLeftover(pid: number) {
   setXray("busy", `l:${pid}`, true);
   try {
     if (isTauri) await xrayApi.killLeftover(pid);
-    showToast("Pronto, o servidor foi fechado");
+    showToast(tx("Pronto, o servidor foi fechado"));
     setTimeout(refreshPorts, 400);
   } catch (e) {
     showToast(errMsg(e));

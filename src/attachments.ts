@@ -7,6 +7,7 @@ import { createSignal } from "solid-js";
 import { createStore } from "solid-js/store";
 import { isTauri } from "./api";
 import { showToast } from "./store";
+import { tx } from "./i18n";
 
 export type Att = { path: string; name: string; kind: "image" | "pdf" | "text" | "other"; bytes: number; thumb?: string | null };
 
@@ -26,7 +27,7 @@ function addAtts(pid: string, list: Att[]) {
   const cur = attsOf(pid);
   const fresh = list.filter((a) => !cur.some((c) => c.path === a.path));
   const room = MAX - cur.length;
-  if (fresh.length > room) showToast(`Até ${MAX} anexos por mensagem`);
+  if (fresh.length > room) showToast(tx("Até {MAX} anexos por mensagem", { MAX }));
   if (fresh.length) setAtts(pid, [...cur, ...fresh.slice(0, Math.max(0, room))]);
 }
 
@@ -42,8 +43,8 @@ export async function addPaths(pid: string, paths: string[]) {
 
 /** Clipe: abre o seletor do sistema (vários arquivos, de qualquer pasta). */
 export async function pickFiles(pid: string) {
-  if (!isTauri) return showToast("No navegador não dá para escolher arquivos: abra pelo app");
-  const picked = await open({ multiple: true, directory: false, title: "Anexar à conversa" });
+  if (!isTauri) return showToast(tx("No navegador não dá para escolher arquivos: abra pelo app"));
+  const picked = await open({ multiple: true, directory: false, title: tx("Anexar à conversa") });
   const list = Array.isArray(picked) ? picked : typeof picked === "string" ? [picked] : [];
   await addPaths(pid, list);
 }
@@ -95,7 +96,7 @@ export async function watchDrops(): Promise<() => void> {
       const pid = target(p.position);
       setDropPid(null);
       if (pid) void addPaths(pid, p.paths);
-      else if (p.paths.length) showToast("Solte os arquivos em cima da caixa de mensagem para anexar");
+      else if (p.paths.length) showToast(tx("Solte os arquivos em cima da caixa de mensagem para anexar"));
     } else setDropPid(null);
   });
 }

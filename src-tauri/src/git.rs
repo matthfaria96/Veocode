@@ -137,7 +137,7 @@ pub struct Summary {
 // ---------------------------------------------------------------- rodar o git
 
 fn git_bin() -> Result<PathBuf, String> {
-    crate::xray::util::which("git").ok_or_else(|| "O git não está instalado neste computador.".into())
+    crate::xray::util::which("git").ok_or_else(|| crate::i18n::tr("O git não está instalado neste computador.", "git isn't installed on this computer.").into())
 }
 
 fn command(bin: &Path, root: &Path, args: &[&str]) -> Command {
@@ -309,21 +309,21 @@ pub fn fetch(root: &Path) -> Result<(), String> {
     match run_cmd(c, Duration::from_secs(90)) {
         Ok((true, _, _)) => Ok(()),
         Ok((false, _, err)) => Err(fetch_error(&err)),
-        Err(e) => Err(format!("Não deu para buscar: {e}.")),
+        Err(e) => Err(crate::trf!("Não deu para buscar: {e}.", "Couldn't fetch: {e}.")),
     }
 }
 
 fn fetch_error(err: &str) -> String {
     let e = err.to_lowercase();
     if e.contains("authentication") || e.contains("could not read username") || e.contains("permission denied") || e.contains("terminal prompts disabled") {
-        "O remoto pediu login. Entre pelo Terminal (por exemplo `gh auth login` ou com a sua chave SSH) e busque de novo.".into()
+        crate::i18n::tr("O remoto pediu login. Entre pelo Terminal (por exemplo `gh auth login` ou com a sua chave SSH) e busque de novo.", "The remote asked for a login. Sign in from Terminal (for example `gh auth login` or with your SSH key) and fetch again.").into()
     } else if e.contains("could not resolve host") || e.contains("network") || e.contains("timed out") {
-        "Sem conexão com o remoto agora.".into()
+        crate::i18n::tr("Sem conexão com o remoto agora.", "No connection to the remote right now.").into()
     } else if e.contains("does not appear to be a git repository") || e.contains("not found") {
-        "O remoto não foi encontrado (o endereço mudou ou o repositório foi apagado?).".into()
+        crate::i18n::tr("O remoto não foi encontrado (o endereço mudou ou o repositório foi apagado?).", "The remote wasn't found (did the address change or was the repository deleted?).").into()
     } else {
-        let first = err.lines().find(|l| !l.trim().is_empty()).unwrap_or("erro desconhecido");
-        format!("O git não conseguiu buscar: {}", first.trim().trim_start_matches("fatal: "))
+        let first = err.lines().find(|l| !l.trim().is_empty()).unwrap_or(crate::i18n::tr("erro desconhecido", "unknown error"));
+        crate::trf!("O git não conseguiu buscar: {}", "git couldn't fetch: {}", first.trim().trim_start_matches("fatal: "))
     }
 }
 
@@ -332,10 +332,10 @@ const LOG_FORMAT: &str = "--format=%H%x1f%h%x1f%an%x1f%at%x1f%s%x1f%D%x1f%P%x1e"
 /// Arquivos que um commit mudou, com linhas adicionadas/removidas.
 pub fn commit_files(root: &Path, hash: &str) -> Result<Vec<CommitFile>, String> {
     if !hash.chars().all(|c| c.is_ascii_hexdigit()) || hash.is_empty() {
-        return Err("commit inválido".into());
+        return Err(crate::i18n::tr("commit inválido", "invalid commit").into());
     }
     let g = Git { bin: git_bin()?, root: root.to_path_buf() };
-    let names = g.out(&["show", "--format=", "--name-status", "-M", "-z", "--first-parent", hash]).ok_or("o git não achou esse commit")?;
+    let names = g.out(&["show", "--format=", "--name-status", "-M", "-z", "--first-parent", hash]).ok_or(crate::i18n::tr("o git não achou esse commit", "git couldn't find that commit"))?;
     let nums = g.out(&["show", "--format=", "--numstat", "-M", "--first-parent", hash]).unwrap_or_default();
     Ok(parse_commit_files(&names, &nums))
 }
@@ -379,17 +379,17 @@ fn parse_commit_files(names: &str, nums: &str) -> Vec<CommitFile> {
 /// O diff de um arquivo num commit (cortado em 200 KB).
 pub fn commit_diff(root: &Path, hash: &str, path: &str) -> Result<String, String> {
     if !hash.chars().all(|c| c.is_ascii_hexdigit()) || hash.is_empty() {
-        return Err("commit inválido".into());
+        return Err(crate::i18n::tr("commit inválido", "invalid commit").into());
     }
     let g = Git { bin: git_bin()?, root: root.to_path_buf() };
-    let mut d = g.out(&["show", "--format=", "-M", "--first-parent", "--no-color", hash, "--", path]).ok_or("o git não mostrou esse arquivo")?;
+    let mut d = g.out(&["show", "--format=", "-M", "--first-parent", "--no-color", hash, "--", path]).ok_or(crate::i18n::tr("o git não mostrou esse arquivo", "git didn't show that file"))?;
     if d.len() > 200_000 {
         let mut cut = 200_000;
         while !d.is_char_boundary(cut) {
             cut -= 1;
         }
         d.truncate(cut);
-        d.push_str("\n… (diff muito grande, cortado aqui)");
+        d.push_str(crate::i18n::tr("\n… (diff muito grande, cortado aqui)", "\n… (diff too large, cut here)"));
     }
     Ok(d)
 }
@@ -714,11 +714,11 @@ pub fn github(root: &Path, branch: Option<&str>) -> Result<GitHub, String> {
 fn gh_error(e: &str) -> String {
     let l = e.to_lowercase();
     if l.contains("could not resolve to a repository") || l.contains("not found") {
-        "O GitHub não achou este repositório (é privado de outra conta ou foi apagado?).".into()
+        crate::i18n::tr("O GitHub não achou este repositório (é privado de outra conta ou foi apagado?).", "GitHub couldn't find this repository (is it private to another account or deleted?).").into()
     } else if l.contains("could not resolve host") || l.contains("network") || l.contains("timeout") || l.contains("demorou") {
-        "Sem conexão com o GitHub agora.".into()
+        crate::i18n::tr("Sem conexão com o GitHub agora.", "No connection to GitHub right now.").into()
     } else {
-        format!("O GitHub CLI respondeu: {e}")
+        crate::trf!("O GitHub CLI respondeu: {e}", "The GitHub CLI answered: {e}")
     }
 }
 

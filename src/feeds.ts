@@ -16,6 +16,7 @@ import type { AgentEvent } from "./agentFeed";
 import { isTauri } from "./api";
 import { projects } from "./store";
 import { hidden } from "./every";
+import { tx } from "./i18n";
 
 export interface FeedItem {
   id: string;
@@ -106,9 +107,9 @@ function fromAgent(pid: string, e: AgentEvent) {
       return;
     }
     case "done":
-      return push(pid, { id: e.id, kind: "done", title: e.title || "Terminou", detail: e.detail, status: e.status, ts });
+      return push(pid, { id: e.id, kind: "done", title: e.title || tx("Terminou"), detail: e.detail, status: e.status, ts });
     default:
-      return push(pid, { id: e.id, kind: "step", step: e.kind, title: e.title, detail: e.detail, status: e.status, ts, sub: e.sub ? (e.subLabel ?? "subagente") : null });
+      return push(pid, { id: e.id, kind: "step", step: e.kind, title: e.title, detail: e.detail, status: e.status, ts, sub: e.sub ? (e.subLabel ?? tx("subagente")) : null });
   }
 }
 
@@ -126,10 +127,10 @@ export function feedChat(pid: string, e: { kind: string; text?: string; event?: 
       if (e.event && !claude) fromAgent(pid, e.event);
       return;
     case "done":
-      if (!claude || !e.ok) push(pid, { id: localId(), kind: "done", title: e.ok ? "Terminou" : "Parou", detail: e.detail, status: e.ok ? "ok" : "error", ts: Date.now() });
+      if (!claude || !e.ok) push(pid, { id: localId(), kind: "done", title: e.ok ? tx("Terminou") : tx("Parou"), detail: e.detail, status: e.ok ? "ok" : "error", ts: Date.now() });
       return;
     case "error":
-      return push(pid, { id: localId(), kind: "error", title: e.message ?? "Erro", status: "error", ts: Date.now() });
+      return push(pid, { id: localId(), kind: "error", title: e.message ?? tx("Erro"), status: "error", ts: Date.now() });
   }
 }
 

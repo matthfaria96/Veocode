@@ -5,6 +5,7 @@ import { projectChat } from "./chat";
 import { feedOf } from "./feeds";
 import { absPathOf, projects } from "./store";
 import { xray } from "./xray";
+import { tx } from "./i18n";
 
 const load = <T,>(key: string, fallback: T): T => {
   try {
@@ -45,11 +46,11 @@ export function togglePin(id: string) {
 /** Como a tela se divide: 1 grande, 2 lado a lado, 2 um em cima do outro, 3 (um grande e dois menores) ou 4. */
 export type Layout = "1" | "2c" | "2r" | "3" | "4";
 export const layouts: { id: Layout; slots: number; label: string }[] = [
-  { id: "1", slots: 1, label: "Um projeto, tela inteira" },
-  { id: "2c", slots: 2, label: "Dois lado a lado" },
-  { id: "2r", slots: 2, label: "Dois, um em cima do outro" },
-  { id: "3", slots: 3, label: "Três: um grande e dois menores" },
-  { id: "4", slots: 4, label: "Quatro, um em cada canto" },
+  { id: "1", slots: 1, get label() { return tx("Um projeto, tela inteira"); } },
+  { id: "2c", slots: 2, get label() { return tx("Dois lado a lado"); } },
+  { id: "2r", slots: 2, get label() { return tx("Dois, um em cima do outro"); } },
+  { id: "3", slots: 3, get label() { return tx("Três: um grande e dois menores"); } },
+  { id: "4", slots: 4, get label() { return tx("Quatro, um em cada canto"); } },
 ];
 const [layoutRaw, setLayoutRaw] = createSignal<Layout>(load("veocode.board.layout", "2c"));
 const slots = () => layouts.find((l) => l.id === layoutRaw())?.slots ?? 2;
@@ -184,11 +185,11 @@ export function projectState(pid: string): ProjectState {
   const recent = Date.now() - f.activeAt < 45_000;
   const running = f.items.slice(-3).some((x) => x.status === "running" && Date.now() - x.ts < 10 * 60_000);
   const at = f.activeAt;
-  if (c.perms.length) return { tone: "ask", label: c.perms.length === 1 ? "Pedindo sua permissão" : `${c.perms.length} pedidos de permissão`, agents: procs.length, at };
-  if (c.busy) return { tone: "work", label: c.draft ? "Escrevendo a resposta" : "Trabalhando", agents: procs.length, at };
-  if (c.error) return { tone: "error", label: "Parou com erro", agents: procs.length, at };
-  if (running || busyProc || recent) return { tone: "work", label: busyProc ? "Rodando comandos" : "Trabalhando", agents: procs.length, at };
-  return { tone: "idle", label: procs.length ? "Aberto, esperando" : "Parado", agents: procs.length, at };
+  if (c.perms.length) return { tone: "ask", label: c.perms.length === 1 ? tx("Pedindo sua permissão") : tx("{length} pedidos de permissão", { length: c.perms.length }), agents: procs.length, at };
+  if (c.busy) return { tone: "work", label: c.draft ? tx("Escrevendo a resposta") : tx("Trabalhando"), agents: procs.length, at };
+  if (c.error) return { tone: "error", label: tx("Parou com erro"), agents: procs.length, at };
+  if (running || busyProc || recent) return { tone: "work", label: busyProc ? tx("Rodando comandos") : tx("Trabalhando"), agents: procs.length, at };
+  return { tone: "idle", label: procs.length ? tx("Aberto, esperando") : tx("Parado"), agents: procs.length, at };
 }
 
 /** Prioridade na lista: quem precisa de você primeiro, depois quem está trabalhando. */

@@ -12,9 +12,9 @@ static SEQ: Mutex<u64> = Mutex::new(0);
 
 fn helper() -> Result<std::path::PathBuf, String> {
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-    let p = exe.parent().ok_or("app sem pasta")?.join("veocode-voice");
+    let p = exe.parent().ok_or(crate::i18n::tr("app sem pasta", "app without a folder"))?.join("veocode-voice");
     let ok = std::fs::metadata(&p).map(|m| m.len() > 0).unwrap_or(false);
-    ok.then_some(p).ok_or_else(|| "O ditado não veio nesta versão do app".into())
+    ok.then_some(p).ok_or_else(|| crate::i18n::tr("O ditado não veio nesta versão do app", "Dictation isn't included in this version of the app").into())
 }
 
 /// Começa a ouvir. Devolve o número deste ditado (vem junto em cada evento).
@@ -27,9 +27,9 @@ pub fn start(app: AppHandle, locale: &str) -> Result<u64, String> {
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
-        .map_err(|e| format!("Não deu para abrir o ditado: {e}"))?;
-    let stdin = child.stdin.take().ok_or("sem stdin")?;
-    let stdout = child.stdout.take().ok_or("sem stdout")?;
+        .map_err(|e| crate::trf!("Não deu para abrir o ditado: {e}", "Couldn't open dictation: {e}"))?;
+    let stdin = child.stdin.take().ok_or(crate::i18n::tr("sem stdin", "no stdin"))?;
+    let stdout = child.stdout.take().ok_or(crate::i18n::tr("sem stdout", "no stdout"))?;
     let id = {
         let mut s = SEQ.lock().unwrap();
         *s += 1;

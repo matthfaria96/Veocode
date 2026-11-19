@@ -46,7 +46,7 @@ pub struct MachineReport {
 const T: Duration = Duration::from_secs(10);
 
 fn gb(bytes: f64) -> String {
-    format!("{:.1} GB", bytes / 1024f64.powi(3)).replace('.', ",")
+    crate::i18n::dec(&format!("{:.1} GB", bytes / 1024f64.powi(3)))
 }
 
 /// `a=b,c=d` → valor de uma chave.
@@ -210,15 +210,15 @@ pub fn report() -> MachineReport {
 /// Liga/desliga. Só Docker e Lima (os outros não têm CLI confiável para isso).
 pub fn toggle(engine: &str, id: &str, start: bool) -> Result<(), String> {
     if id.is_empty() || id.starts_with('-') || id.contains(char::is_whitespace) {
-        return Err("identificador inválido".into());
+        return Err(crate::i18n::tr("identificador inválido", "invalid identifier").into());
     }
     let action = if start { "start" } else { "stop" };
     let ok = match engine {
         "Docker" => run("docker", &[action, id], Duration::from_secs(60)).is_some(),
         "Lima" => run("limactl", &[action, id], Duration::from_secs(180)).is_some(),
-        _ => return Err(format!("{engine} não pode ser controlado pelo Veocode ainda")),
+        _ => return Err(crate::trf!("{engine} não pode ser controlado pelo Veocode ainda", "Veocode can't control {engine} yet")),
     };
-    if ok { Ok(()) } else { Err(format!("{engine} não conseguiu {}", if start { "iniciar" } else { "parar" })) }
+    if ok { Ok(()) } else { Err(crate::trf!("{engine} não conseguiu {}", "{engine} couldn't {}", if start { crate::i18n::tr("iniciar", "start") } else { crate::i18n::tr("parar", "stop") })) }
 }
 
 #[cfg(test)]

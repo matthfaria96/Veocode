@@ -3,6 +3,7 @@
 
 import { accountById } from "../accounts";
 import { currentProject, finishEvent, openFile, pushEvent, resetWorkspace, setWs, ws, type FileMark } from "../store";
+import { tx } from "../i18n";
 
 const CANCELLED = Symbol("cancelled");
 
@@ -75,24 +76,24 @@ export function startAgentSim(root: HTMLElement) {
     setWs("cursors", [{ id: "main", label: agentLabel(), color: agentColor(), x: 40, y: 40, visible: false, clicking: false, main: true }]);
     await wait(500);
 
-    pushEvent({ kind: "user", title: "Cria a tela Raio-X mostrando o tamanho dos caches", agent: "Você", status: "ok" });
+    pushEvent({ kind: "user", title: tx("Cria a tela Raio-X mostrando o tamanho dos caches"), agent: "Você", status: "ok" });
     await wait(700);
 
-    let e = pushEvent({ kind: "think", title: "Planejando", detail: "Ler App.tsx e a view System, criar um medidor", agent: agentLabel() });
+    let e = pushEvent({ kind: "think", title: tx("Planejando"), detail: tx("Ler App.tsx e a view System, criar um medidor"), agent: agentLabel() });
     await move("main", "chat", false);
     await wait(900);
     finishEvent(e);
 
     // 1. lê App.tsx
-    e = pushEvent({ kind: "read", title: "Lendo src/App.tsx", agent: agentLabel() });
+    e = pushEvent({ kind: "read", title: tx("Lendo src/App.tsx"), agent: agentLabel() });
     await move("main", "file:src/App.tsx");
     openFile("src/App.tsx");
     mark("src/App.tsx", "read");
     await wait(800);
-    finishEvent(e, "18 linhas");
+    finishEvent(e, tx("{n} linhas", { n: 18 }));
 
     // 2. enxame de subagentes vasculhando o projeto
-    e = pushEvent({ kind: "swarm", title: "3 subagentes procurando “cache”", detail: "varrendo src/ e src-tauri/", agent: agentLabel() });
+    e = pushEvent({ kind: "swarm", title: tx("3 subagentes procurando “cache”"), detail: tx("varrendo src/ e src-tauri/"), agent: agentLabel() });
     const subs = [
       { id: "s1", path: "src-tauri/src/scanner.rs" },
       { id: "s2", path: "src/views/Workspace.tsx" },
@@ -114,7 +115,7 @@ export function startAgentSim(root: HTMLElement) {
         mark(i === 0 ? "src-tauri/src/lib.rs" : i === 1 ? "src/views/Accounts.tsx" : "package.json", "search");
       }),
     );
-    finishEvent(e, "4 ocorrências em 2 arquivos");
+    finishEvent(e, tx("4 ocorrências em 2 arquivos"));
     // subagentes voltam para o cursor principal e somem
     const back = ws.cursors.find((c) => c.id === "main")!;
     setWs("cursors", (c) => !c.main, { x: back.x, y: back.y });
@@ -124,15 +125,15 @@ export function startAgentSim(root: HTMLElement) {
     setWs("cursors", (list) => list.filter((c) => c.main));
 
     // 3. lê System.tsx
-    e = pushEvent({ kind: "read", title: "Lendo src/views/System.tsx", agent: agentLabel() });
+    e = pushEvent({ kind: "read", title: tx("Lendo src/views/System.tsx"), agent: agentLabel() });
     await move("main", "file:src/views/System.tsx");
     openFile("src/views/System.tsx");
     mark("src/views/System.tsx", "read");
     await wait(900);
-    finishEvent(e, "15 linhas");
+    finishEvent(e, tx("{n} linhas", { n: 15 }));
 
     // 4. edita System.tsx
-    e = pushEvent({ kind: "edit", title: "Editando src/views/System.tsx", agent: agentLabel() });
+    e = pushEvent({ kind: "edit", title: tx("Editando src/views/System.tsx"), agent: agentLabel() });
     mark("src/views/System.tsx", "edit");
     await move("main", "line:5");
     setWs("inserted", "src/views/System.tsx", { from: 5, remove: 3, lines: [] });
@@ -144,7 +145,7 @@ export function startAgentSim(root: HTMLElement) {
     finishEvent(e, `+${editLines.length} −3`);
 
     // 5. cria Gauge.tsx
-    e = pushEvent({ kind: "create", title: "Criando src/components/Gauge.tsx", agent: agentLabel() });
+    e = pushEvent({ kind: "create", title: tx("Criando src/components/Gauge.tsx"), agent: agentLabel() });
     setWs("extraFiles", (f) => [...f, "src/components/Gauge.tsx"]);
     mark("src/components/Gauge.tsx", "new");
     await wait(300);
@@ -156,10 +157,10 @@ export function startAgentSim(root: HTMLElement) {
       await move("main", `line:${i + 1}`, false);
       await wait(90);
     }
-    finishEvent(e, `${gaugeLines.length} linhas`);
+    finishEvent(e, tx("{n} linhas", { n: gaugeLines.length }));
 
     // 6. roda o build
-    e = pushEvent({ kind: "run", title: "Rodando npm run build", agent: agentLabel() });
+    e = pushEvent({ kind: "run", title: tx("Rodando npm run build"), agent: agentLabel() });
     await move("main", "terminal");
     const term = (text: string, tone?: "cmd" | "ok" | "dim") => setWs("terminal", (t) => [...t, { text, tone }]);
     term("$ npm run build", "cmd");
@@ -171,14 +172,14 @@ export function startAgentSim(root: HTMLElement) {
     term("dist/assets/index.js   61.2 kB │ gzip: 19.8 kB", "dim");
     await wait(300);
     term("✓ built in 1.84s", "ok");
-    finishEvent(e, "ok em 1,8 s");
+    finishEvent(e, tx("ok em 1,8 s"));
 
     // 7. ferramenta MCP
-    e = pushEvent({ kind: "tool", title: "MCP filesystem · medir ~/.npm/_cacache", detail: "somente leitura", agent: agentLabel() });
+    e = pushEvent({ kind: "tool", title: "MCP filesystem · medir ~/.npm/_cacache", detail: tx("somente leitura"), agent: agentLabel() });
     await wait(1100);
     finishEvent(e, "3,2 GB");
 
-    pushEvent({ kind: "done", title: "Pronto: Raio-X criado", detail: "2 arquivos alterados · build ok", agent: agentLabel(), status: "ok" });
+    pushEvent({ kind: "done", title: tx("Pronto: Raio-X criado"), detail: tx("2 arquivos alterados · build ok"), agent: agentLabel(), status: "ok" });
     await move("main", "chat", false);
     setWs("running", false);
     await wait(9000);

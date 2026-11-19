@@ -17,6 +17,7 @@ import { absPathOf, projectId, projects, pushEvent, setWs, showToast, ws, type A
 import { handleLivre, LIVRE, newLivre } from "./livre";
 import { confirmAction } from "./dialogs";
 import { feedChat, feedUser } from "./feeds";
+import { tx } from "./i18n";
 
 export interface PermissionAsk {
   requestId: string;
@@ -193,7 +194,7 @@ function handle(pid: string, e: ChatEvent) {
         setWs("running", anyBusy(baseOf(pid)));
         // o Claude registra o "Terminou" no histórico; para as APIs, registramos aqui
         if (!isClaudeChat(pid) || !e.ok) {
-          pushEvent({ kind: "done", title: e.ok ? "Terminou" : "Parou", detail: e.detail ?? undefined, agent: acc.label, color: acc.color, status: e.ok ? "ok" : "error", tab: pid });
+          pushEvent({ kind: "done", title: e.ok ? tx("Terminou") : tx("Parou"), detail: e.detail ?? undefined, agent: acc.label, color: acc.color, status: e.ok ? "ok" : "error", tab: pid });
         }
       }
       return;
@@ -223,7 +224,7 @@ export async function sendChat(pid: string, rewind?: string) {
   ensure(pid);
   const c = chats[pid];
   const files = attsOf(pid);
-  const text = c.input.trim() || (files.length ? "Veja os anexos." : "");
+  const text = c.input.trim() || (files.length ? tx("Veja os anexos.") : "");
   if (!text || c.busy) return;
   // pode vir do Painel, de um projeto que não é o aberto na tela Projetos
   const here = projectId() === baseOf(pid);
@@ -269,7 +270,7 @@ export async function resendEdited(pid: string, ev: ActivityEvent, text: string)
   if (chatOf(pid).busy) {
     await stopChat(pid);
     for (let i = 0; i < 60 && chatOf(pid).busy; i++) await new Promise((r) => setTimeout(r, 100));
-    if (chatOf(pid).busy) return showToast("Não deu para parar a resposta. Tente de novo.");
+    if (chatOf(pid).busy) return showToast(tx("Não deu para parar a resposta. Tente de novo."));
   }
   const idx = ws.events.findIndex((x) => x.id === ev.id);
   if (idx >= 0) setWs("events", (list) => list.filter((x, i) => i < idx || !ofChat(pid, x)));
@@ -336,9 +337,9 @@ export async function deleteConvos(pid: string, list: Convo[], current: string |
   const one = list.length === 1;
   const claude = list.some((c) => c.kind === "claude");
   const ok = await confirmAction(
-    one ? `Apagar “${list[0].title.slice(0, 60)}”?` : `Apagar ${list.length} conversas?`,
-    `${one ? "A conversa vai" : "As conversas vão"} para a Lixeira do computador: dá para recuperar lá enquanto você não esvaziar.${claude ? " Sessões do Claude apagadas também somem do “claude --resume” no Terminal e do editor." : ""}`,
-    one ? "Apagar conversa" : `Apagar ${list.length} conversas`,
+    one ? tx("Apagar “{v}”?", { v: list[0].title.slice(0, 60) }) : tx("Apagar {length} conversas?", { length: list.length }),
+    tx("{v} para a Lixeira do computador: dá para recuperar lá enquanto você não esvaziar.{v2}", { v: one ? tx("A conversa vai") : tx("As conversas vão"), v2: claude ? tx(" Sessões do Claude apagadas também somem do “claude --resume” no Terminal e do editor.") : "" }),
+    one ? tx("Apagar conversa") : tx("Apagar {length} conversas", { length: list.length }),
     true,
   );
   if (!ok) return 0;
@@ -356,7 +357,7 @@ export async function deleteConvos(pid: string, list: Convo[], current: string |
     if (pid === LIVRE) await newLivre();
     else await newChat(pid);
   }
-  showToast(failed ? `${done} apagada(s). Uma não deu: ${failed}` : one ? "Pronto, a conversa foi para a Lixeira." : `Pronto, ${done} conversas foram para a Lixeira.`);
+  showToast(failed ? tx("{done} apagada(s). Uma não deu: {failed}", { done, failed }) : one ? tx("Pronto, a conversa foi para a Lixeira.") : tx("Pronto, {done} conversas foram para a Lixeira.", { done }));
   return done;
 }
 
@@ -364,7 +365,7 @@ export async function deleteConvos(pid: string, list: Convo[], current: string |
 export async function openConversation(pid: string, c: Convo, quiet = false): Promise<boolean> {
   ensure(pid);
   if (chats[pid].busy) {
-    if (!quiet) showToast("Espere a IA terminar (ou pare a resposta) antes de trocar de conversa");
+    if (!quiet) showToast(tx("Espere a IA terminar (ou pare a resposta) antes de trocar de conversa"));
     return false;
   }
   try {

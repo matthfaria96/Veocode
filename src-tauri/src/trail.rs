@@ -490,22 +490,22 @@ fn classify(name: &str, is_dir: bool) -> Option<(&'static str, &'static str)> {
     let n = name.to_lowercase();
     if is_dir {
         return match n.as_str() {
-            "__pycache__" | ".pytest_cache" | ".mypy_cache" | ".ruff_cache" | "tmp" | "temp" | ".tmp" => Some(("temporario", "pasta temporária: é refeita sozinha quando precisa")),
-            "backup" | "backups" | "bkp" | "old" | "_old" | "bak" => Some(("copia", "pasta de cópias antigas")),
-            "logs" | "debug" => Some(("depuracao", "pasta de registros de depuração")),
-            _ if n.starts_with("backup") || n.ends_with("_backup") || n.ends_with("-backup") || n.ends_with(".bak") => Some(("copia", "pasta de cópias antigas")),
+            "__pycache__" | ".pytest_cache" | ".mypy_cache" | ".ruff_cache" | "tmp" | "temp" | ".tmp" => Some(("temporario", crate::i18n::tr("pasta temporária: é refeita sozinha quando precisa", "temporary folder: it's rebuilt on its own when needed"))),
+            "backup" | "backups" | "bkp" | "old" | "_old" | "bak" => Some(("copia", crate::i18n::tr("pasta de cópias antigas", "folder of old copies"))),
+            "logs" | "debug" => Some(("depuracao", crate::i18n::tr("pasta de registros de depuração", "folder of debug logs"))),
+            _ if n.starts_with("backup") || n.ends_with("_backup") || n.ends_with("-backup") || n.ends_with(".bak") => Some(("copia", crate::i18n::tr("pasta de cópias antigas", "folder of old copies"))),
             _ => None,
         };
     }
     let ext = n.rsplit_once('.').map(|(_, e)| e).unwrap_or("");
     if matches!(ext, "log" | "trace") || n.starts_with("npm-debug") || n.starts_with("yarn-error") || n.starts_with("debug") && matches!(ext, "txt" | "log" | "json") || (n.starts_with("crash") && matches!(ext, "dmp" | "crash" | "log" | "ips")) || matches!(ext, "dmp" | "ips") || n == "core" {
-        return Some(("depuracao", "registro de depuração"));
+        return Some(("depuracao", crate::i18n::tr("registro de depuração", "debug log")));
     }
     if matches!(ext, "bak" | "backup" | "old" | "orig" | "rej") || n.ends_with('~') || n.contains(" copy") || n.contains(" cópia") || n.contains(" (1)") || n.contains("_backup") || n.contains(".backup") {
-        return Some(("copia", "cópia de segurança ou versão antiga"));
+        return Some(("copia", crate::i18n::tr("cópia de segurança ou versão antiga", "backup copy or old version")));
     }
     if matches!(ext, "tmp" | "temp" | "swp" | "swo" | "pyc") || n.starts_with(".~lock") {
-        return Some(("temporario", "arquivo temporário"));
+        return Some(("temporario", crate::i18n::tr("arquivo temporário", "temporary file")));
     }
     None
 }
@@ -561,7 +561,7 @@ fn leftovers(root: &Path, ai_written: &HashSet<String>) -> Vec<Leftover> {
             }
             let p = root.join(rel);
             let Ok(m) = fs::metadata(&p) else { continue };
-            out.push(Leftover { path: rel.clone(), kind: "ia", why: "a IA criou e ainda não está no git".into(), bytes: m.len(), is_dir: false, modified: m.modified().map(ms).unwrap_or(0) });
+            out.push(Leftover { path: rel.clone(), kind: "ia", why: crate::i18n::tr("a IA criou e ainda não está no git", "the AI created it and it isn't in git yet").into(), bytes: m.len(), is_dir: false, modified: m.modified().map(ms).unwrap_or(0) });
         }
     }
     out.sort_by(|a, b| b.bytes.cmp(&a.bytes));
@@ -587,12 +587,12 @@ pub fn report(root: &Path, claude_dirs: &[PathBuf], home: &Path, saved: &mut Sav
         }
         let how = match (written.len(), by_cmd) {
             (0, _) => match cmd {
-                Some(c) => format!("a IA criou ou copiou para cá com um comando: {c}"),
-                None => "a IA criou ou copiou para cá com um comando".into(),
+                Some(c) => crate::trf!("a IA criou ou copiou para cá com um comando: {c}", "the AI created or copied it here with a command: {c}"),
+                None => crate::i18n::tr("a IA criou ou copiou para cá com um comando", "the AI created or copied it here with a command").into(),
             },
-            (1, false) => "a IA escreveu 1 arquivo aqui".into(),
-            (n, false) => format!("a IA escreveu {n} arquivos aqui"),
-            (n, true) => format!("a IA criou esta pasta e escreveu {n} arquivo{} nela", if n == 1 { "" } else { "s" }),
+            (1, false) => crate::i18n::tr("a IA escreveu 1 arquivo aqui", "the AI wrote 1 file here").into(),
+            (n, false) => crate::trf!("a IA escreveu {n} arquivos aqui", "the AI wrote {n} files here"),
+            (n, true) => crate::trf!("a IA criou esta pasta e escreveu {n} arquivo{} nela", "the AI created this folder and wrote {n} file{} in it", if n == 1 { "" } else { "s" }),
         };
         let e = links.entry(key.clone()).or_insert(Link { path: key, how: how.clone(), last: *last, manual: false });
         if !e.manual {

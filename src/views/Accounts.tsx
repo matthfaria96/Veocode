@@ -12,25 +12,26 @@ import {
 } from "../accounts";
 import { CountUp, PageHeader, ProviderMark, Stagger } from "../components/ui";
 import ConfirmDialog from "../components/ConfirmDialog";
+import { lang, locale, tx, txn } from "../i18n";
 
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 /** A semana em uma frase: "Esta semana: 1,2 mi tokens. Dia mais forte: ter. Hoje está acima do normal." */
 function weekSays(days: number[]): string {
   const total = days.reduce((a, b) => a + b, 0);
-  if (!total) return "Não usada nos últimos 7 dias.";
+  if (!total) return tx("Não usada nos últimos 7 dias.");
   const max = Math.max(...days);
   const peak = days.indexOf(max);
   const before = days.slice(0, 6).filter((d) => d > 0);
   const avg = before.length ? before.reduce((a, b) => a + b, 0) / before.length : 0;
   const today = days[6] ?? 0;
-  const trend = !avg ? "" : today > avg * 1.5 ? " Hoje está bem acima do normal." : today < avg * 0.5 && today > 0 ? " Hoje está mais calmo que o normal." : "";
-  return `Esta semana: ${fmtTokens(total)} tokens. Dia mais forte: ${peak === 6 ? "hoje" : weekday(6 - peak)}.${trend}`;
+  const trend = !avg ? "" : today > avg * 1.5 ? tx(" Hoje está bem acima do normal.") : today < avg * 0.5 && today > 0 ? tx(" Hoje está mais calmo que o normal.") : "";
+  return tx("Esta semana: {v} tokens. Dia mais forte: {v2}.{trend}", { v: fmtTokens(total), v2: peak === 6 ? tx("hoje") : weekday(6 - peak), trend });
 }
 
 const weekday = (offset: number) => {
   const d = new Date();
   d.setDate(d.getDate() - offset);
-  return d.toLocaleDateString("pt-BR", { weekday: "short" }).replace(".", "");
+  return d.toLocaleDateString(locale(), { weekday: "short" }).replace(".", "");
 };
 
 export default function Accounts() {
@@ -41,25 +42,25 @@ export default function Accounts() {
   return (
     <div class="page">
       <PageHeader
-        title="Contas e IAs"
-        subtitle={isTauri ? "As IAs que os seus projetos usam, quanto falta de cada plano e o cofre de chaves." : "Modo navegador: contas de exemplo. Abra pelo app para ver as suas."}
+        title={tx("Contas e IAs")}
+        subtitle={isTauri ? tx("As IAs que os seus projetos usam, quanto falta de cada plano e o cofre de chaves.") : tx("Modo navegador: contas de exemplo. Abra pelo app para ver as suas.")}
         actions={
           <>
             <button class="ghost-btn" onClick={() => refreshStatuses()}>
-              <RefreshCw size={14} classList={{ spinning: Object.values(accts.checking).some(Boolean) }} /> Atualizar
+              <RefreshCw size={14} classList={{ spinning: Object.values(accts.checking).some(Boolean) }} /> {tx("Atualizar")}
             </button>
             <button class="primary-btn" onClick={() => setAdding(true)}>
-              <Plus size={14} /> Adicionar conta
+              <Plus size={14} /> {tx("Adicionar conta")}
             </button>
           </>
         }
       />
 
       <Show when={accts.loaded && accts.list.length === 0}>
-        <div class="empty-state">Nenhuma conta ainda. Adicione uma conta do Claude, uma chave da DeepSeek ou o Ollama.</div>
+        <div class="empty-state">{tx("Nenhuma conta ainda. Adicione uma conta do Claude, uma chave da DeepSeek ou o Ollama.")}</div>
       </Show>
 
-      <h2 class="section-title acc-section">Suas contas de IA</h2>
+      <h2 class="section-title acc-section">{tx("Suas contas de IA")}</h2>
       <div class="acc-grid">
         <Stagger each={accts.list} step={70}>
           {(a) => <AccountCard a={a} onRemove={setRemoving} onKey={setKeyFor} />}
@@ -71,10 +72,10 @@ export default function Accounts() {
       <section class="acc-integrations">
         <span class="vault-badge alt"><Plug size={18} /></span>
         <div>
-          <strong>Integrações</strong>
-          <p>Conexões do Claude com outros programas (Figma, GitHub, navegador…), receitas e atalhos ficam em <b>Computador → Extras do Claude</b>, com ligar, desligar e remover.</p>
+          <strong>{tx("Integrações")}</strong>
+          <p>{tx("Conexões do Claude com outros programas (Figma, GitHub, navegador…), receitas e atalhos ficam em")} <b>{tx("Computador → Extras do Claude")}</b>{tx(", com ligar, desligar e remover.")}</p>
         </div>
-        <button class="ghost-btn" onClick={() => setView("inventory")}>Abrir Extras <ArrowRight size={13} /></button>
+        <button class="ghost-btn" onClick={() => setView("inventory")}>{tx("Abrir Extras")} <ArrowRight size={13} /></button>
       </section>
 
       <Show when={adding()}>
@@ -106,7 +107,7 @@ function RemoveDialog(props: { a: Account; onClose: () => void }) {
       for (const p of projects.filter((p) => p.demo && p.accountId === a().id)) void setProjectAccount(p.id, to() || others()[0]?.id || "");
       if (settings.freeAccount === a().id) await updateSettings({ freeAccount: to() || "" });
       await removeAccount(a().id);
-      showToast(`${a().label} saiu do Veocode`);
+      showToast(tx("{label} saiu do Veocode", { label: a().label }));
       props.onClose();
     } catch (e) {
       showToast(errMsg(e));
@@ -114,7 +115,7 @@ function RemoveDialog(props: { a: Account; onClose: () => void }) {
     }
   };
   return (
-    <ConfirmDialog title={`Remover “${a().label}”?`} confirmLabel={busy() ? "Removendo…" : "Remover conta"} danger disabled={busy() || blocked()} onCancel={props.onClose} onConfirm={() => void go()}>
+    <ConfirmDialog title={tx("Remover “{label}”?", { label: a().label })} confirmLabel={busy() ? tx("Removendo…") : tx("Remover conta")} danger disabled={busy() || blocked()} onCancel={props.onClose} onConfirm={() => void go()}>
       <div class="rm-acc">
         <div class="rm-acc-who">
           <ProviderMark id={a().id} size={30} />
@@ -126,10 +127,10 @@ function RemoveDialog(props: { a: Account; onClose: () => void }) {
         <Show when={users().length}>
           <Show
             when={!blocked()}
-            fallback={<p class="rm-acc-warn">{users().map((p) => p.name).join(", ")} {users().length === 1 ? "usa" : "usam"} esta conta e não há outra para pôr no lugar. Adicione outra conta antes de remover esta.</p>}
+            fallback={<p class="rm-acc-warn">{txn(users().length, "{names} usa esta conta e não há outra para pôr no lugar. Adicione outra conta antes de remover esta.", "{names} usam esta conta e não há outra para pôr no lugar. Adicione outra conta antes de remover esta.", { names: users().map((p) => p.name).join(", ") })}</p>}
           >
             <label class="rm-acc-move">
-              <span>{users().length === 1 ? `${users()[0].name} usa esta conta. Passar para:` : `${users().length} projetos usam esta conta. Passar todos para:`}</span>
+              <span>{users().length === 1 ? tx("{name} usa esta conta. Passar para:", { name: users()[0].name }) : tx("{length} projetos usam esta conta. Passar todos para:", { length: users().length })}</span>
               <select value={to()} onChange={(e) => setTo(e.currentTarget.value)}>
                 <For each={others()}>{(o) => <option value={o.id}>{o.label}</option>}</For>
               </select>
@@ -139,11 +140,11 @@ function RemoveDialog(props: { a: Account; onClose: () => void }) {
         <p class="foot-note top">
           {a().provider === "claude"
             ? a().configDir
-              ? "Só sai do Veocode. A pasta da conta fica no disco, com o login e as conversas: dá para adicionar de novo depois."
-              : "Só sai do Veocode. O Claude Code no terminal continua logado nesta conta, igual antes."
+              ? tx("Só sai do Veocode. A pasta da conta fica no disco, com o login e as conversas: dá para adicionar de novo depois.")
+              : tx("Só sai do Veocode. O Claude Code no terminal continua logado nesta conta, igual antes.")
             : a().provider === "ollama"
-              ? "O Ollama e os modelos continuam instalados."
-              : "A chave de API é apagada do chaveiro do sistema."}
+              ? tx("O Ollama e os modelos continuam instalados.")
+              : tx("A chave de API é apagada do chaveiro do sistema.")}
         </p>
       </div>
     </ConfirmDialog>
@@ -161,7 +162,7 @@ function LoginWait(props: { id: string }) {
     try {
       await sendLoginCode(props.id, code());
       setCode("");
-      showToast("Código enviado. Terminando o login…");
+      showToast(tx("Código enviado. Terminando o login…"));
     } catch (er) {
       showToast(errMsg(er));
     }
@@ -171,22 +172,22 @@ function LoginWait(props: { id: string }) {
       <div class="login-wait-head">
         <span class="login-pulse"><Globe size={15} /></span>
         <div>
-          <strong>Termine o login no navegador</strong>
-          <small>A página da Anthropic abriu. Entre com a conta do Claude que quer usar aqui; o Veocode atualiza sozinho quando acabar.</small>
+          <strong>{tx("Termine o login no navegador")}</strong>
+          <small>{tx("A página da Anthropic abriu. Entre com a conta do Claude que quer usar aqui; o Veocode atualiza sozinho quando acabar.")}</small>
         </div>
       </div>
       <div class="login-wait-actions">
         <Show when={l()?.url}>
-          <button class="ghost-btn small" onClick={() => api.openUrl(l()!.url!).catch((e) => showToast(errMsg(e)))}><ExternalLink size={12} /> Abrir a página de novo</button>
+          <button class="ghost-btn small" onClick={() => api.openUrl(l()!.url!).catch((e) => showToast(errMsg(e)))}><ExternalLink size={12} /> {tx("Abrir a página de novo")}</button>
         </Show>
-        <button class="link-btn" onClick={() => setShowCode((v) => !v)}>A página mostrou um código?</button>
+        <button class="link-btn" onClick={() => setShowCode((v) => !v)}>{tx("A página mostrou um código?")}</button>
         <span class="grow" />
-        <button class="ghost-btn small" onClick={() => cancelLogin(props.id)}><X size={12} /> Cancelar</button>
+        <button class="ghost-btn small" onClick={() => cancelLogin(props.id)}><X size={12} /> {tx("Cancelar")}</button>
       </div>
       <Show when={showCode()}>
         <form class="login-code" onSubmit={send} autocomplete="off">
-          <input value={code()} placeholder="Cole o código aqui" spellcheck={false} autofocus onInput={(e) => setCode(e.currentTarget.value)} />
-          <button class="primary-btn small" disabled={!code().trim()}>Enviar</button>
+          <input value={code()} placeholder={tx("Cole o código aqui")} spellcheck={false} autofocus onInput={(e) => setCode(e.currentTarget.value)} />
+          <button class="primary-btn small" disabled={!code().trim()}>{tx("Enviar")}</button>
         </form>
       </Show>
     </div>
@@ -237,7 +238,7 @@ function AccountCard(props: { a: Account; onRemove: (a: Account) => void; onKey:
             fallback={
               <strong>
                 <span class="acc-label">{a().label}</span>
-                <button class="icon-btn tiny" title="Renomear" onClick={() => (setName(a().label), setEditing(true))}><Pencil size={11} /></button>
+                <button class="icon-btn tiny" title={tx("Renomear")} onClick={() => (setName(a().label), setEditing(true))}><Pencil size={11} /></button>
               </strong>
             }
           >
@@ -246,12 +247,12 @@ function AccountCard(props: { a: Account; onRemove: (a: Account) => void; onKey:
           <small class="acc-sub">
             <span>{providers[a().provider].name}</span>
             <Show when={s()?.plan}><span class="acc-plan">{s()!.plan}</span></Show>
-            <Show when={claude() && s()?.who}><span class="acc-email" title="Quem fez login nesta conta">{s()!.who}</span></Show>
+            <Show when={claude() && s()?.who}><span class="acc-email" title={tx("Quem fez login nesta conta")}>{s()!.who}</span></Show>
           </small>
         </div>
         <span class={`acc-state st-${s()?.state ?? "checking"}`} classList={{ live: s()?.active }}>
-          <Show when={s()} fallback={<><span class="spinner inline" /> verificando</>}>
-            <i class="acc-dot" /> {s()!.active ? "trabalhando" : stateText[s()!.state]}
+          <Show when={s()} fallback={<><span class="spinner inline" /> {tx("verificando")}</>}>
+            <i class="acc-dot" /> {s()!.active ? tx("trabalhando") : stateText[s()!.state]}
           </Show>
         </span>
       </div>
@@ -262,8 +263,8 @@ function AccountCard(props: { a: Account; onRemove: (a: Account) => void; onKey:
 
       <Show when={!loggingIn() && noLogin()}>
         <div class="acc-cta">
-          <p>Ninguém entrou nesta conta ainda. Entre com a sua conta do Claude (Pro ou Max) pelo navegador.</p>
-          <button class="primary-btn" onClick={() => startBrowserLogin(a())}><Globe size={14} /> Entrar pelo navegador</button>
+          <p>{tx("Ninguém entrou nesta conta ainda. Entre com a sua conta do Claude (Pro ou Max) pelo navegador.")}</p>
+          <button class="primary-btn" onClick={() => startBrowserLogin(a())}><Globe size={14} /> {tx("Entrar pelo navegador")}</button>
         </div>
       </Show>
 
@@ -279,16 +280,16 @@ function AccountCard(props: { a: Account; onRemove: (a: Account) => void; onKey:
       <Show when={claude() && u() && u()!.lastActiveSecs !== null}>
         <div class="acc-usage">
           <div class="acc-usage-nums">
-            <div><small>Hoje</small><b><CountUp value={u()!.today} format={fmtTokens} /></b></div>
-            <div><small>7 dias</small><b><CountUp value={week()} format={fmtTokens} /></b></div>
-            <div><small>Última vez</small><b class="soft">{fmtAgo(u()!.lastActiveSecs)}</b></div>
+            <div><small>{tx("Hoje")}</small><b><CountUp value={u()!.today} format={fmtTokens} /></b></div>
+            <div><small>{tx("7 dias")}</small><b><CountUp value={week()} format={fmtTokens} /></b></div>
+            <div><small>{tx("Última vez")}</small><b class="soft">{fmtAgo(u()!.lastActiveSecs)}</b></div>
           </div>
           <div class="usage-bars" title={weekSays(u()!.days)}>
             <For each={u()!.days}>
               {(d, i) => (
                 <div class="ubar-col" title={`${weekday(6 - i())}: ${fmtTokens(d)} tokens`}>
                   <span class="ubar" classList={{ today: i() === 6 }} style={{ height: `${Math.max(4, (d / maxDay()) * 100)}%`, "transition-delay": `${i() * 40}ms` }} />
-                  <small>{i() === 6 ? "hoje" : weekday(6 - i())[0]}</small>
+                  <small>{i() === 6 && lang() !== "en" ? "hoje" : weekday(6 - i())[0]}</small>
                 </div>
               )}
             </For>
@@ -300,64 +301,64 @@ function AccountCard(props: { a: Account; onRemove: (a: Account) => void; onKey:
       <Show when={!claude()}>
         <dl class="acc-facts">
           <Show when={a().provider === "deepseek" || a().provider === "openai"}>
-            <dt>Chave</dt>
-            <dd>{a().keyHint ?? "nenhuma"}</dd>
+            <dt>{tx("Chave")}</dt>
+            <dd>{a().keyHint ?? tx("nenhuma")}</dd>
           </Show>
           <Show when={s()?.balance}>
-            <dt>Saldo</dt>
+            <dt>{tx("Saldo")}</dt>
             <dd class="balance">{s()!.balance}</dd>
           </Show>
-          <dt>Servidor</dt>
+          <dt>{tx("Servidor")}</dt>
           <dd>{s()?.who ?? a().baseUrl ?? "—"}</dd>
-          <dt>Modelos</dt>
-          <dd>{s() ? (s()!.models.length ? `${s()!.models.length} disponíveis` : "—") : "…"}</dd>
+          <dt>{tx("Modelos")}</dt>
+          <dd>{s() ? (s()!.models.length ? tx("{length} disponíveis", { length: s()!.models.length }) : "—") : "…"}</dd>
         </dl>
       </Show>
 
       <Show when={(s()?.models.length ?? 0) > 0}>
         <label class="model-pick">
-          <span>Modelo padrão</span>
+          <span>{tx("Modelo padrão")}</span>
           <select value={a().model ?? ""} onChange={(e) => updateAccount(a().id, { model: e.currentTarget.value }).catch((er) => showToast(errMsg(er)))}>
-            <option value="">{claude() ? "o do Claude Code" : "automático"}</option>
+            <option value="">{claude() ? tx("o do Claude Code") : tx("automático")}</option>
             <For each={s()!.models}>{(m) => <option value={m}>{claude() ? prettyModel(m) : m}</option>}</For>
           </select>
         </label>
       </Show>
 
       <div class="acc-used">
-        <small>Usada em</small>
-        <For each={used()} fallback={<span class="muted">nenhum projeto ainda</span>}>{(p) => <span class="mini-chip">{p.name}</span>}</For>
-        <Show when={settings.freeAccount === a().id}><span class="mini-chip">Chat livre</span></Show>
+        <small>{tx("Usada em")}</small>
+        <For each={used()} fallback={<span class="muted">{tx("nenhum projeto ainda")}</span>}>{(p) => <span class="mini-chip">{p.name}</span>}</For>
+        <Show when={settings.freeAccount === a().id}><span class="mini-chip">{tx("Chat livre")}</span></Show>
       </div>
 
       <div class="acc-foot">
         <div class="acc-actions">
           <Show when={claude() && !noLogin() && !loggingIn()}>
-            <button class="ghost-btn small" title="Entra de novo pelo navegador (troca quem está logado nesta conta)" onClick={() => startBrowserLogin(a())}>
-              <Globe size={12} /> Entrar de novo
+            <button class="ghost-btn small" title={tx("Entra de novo pelo navegador (troca quem está logado nesta conta)")} onClick={() => startBrowserLogin(a())}>
+              <Globe size={12} /> {tx("Entrar de novo")}
             </button>
           </Show>
           <Show when={a().provider === "deepseek" || a().provider === "openai"}>
             <button class={a().keyHint ? "ghost-btn small" : "primary-btn small"} onClick={() => props.onKey(a())}>
-              <KeyRound size={12} /> {a().keyHint ? "Trocar chave" : "Colar chave"}
+              <KeyRound size={12} /> {a().keyHint ? tx("Trocar chave") : tx("Colar chave")}
             </button>
           </Show>
           <Show when={claude()}>
-            <button class="icon-btn small" title="Abrir o Claude Code no terminal com esta conta" onClick={() => loginAccount(a().id).catch((e) => showToast(errMsg(e)))}>
+            <button class="icon-btn small" title={tx("Abrir o Claude Code no terminal com esta conta")} onClick={() => loginAccount(a().id).catch((e) => showToast(errMsg(e)))}>
               <SquareTerminal size={13} />
             </button>
             <Show when={a().dir}>
-              <button class="icon-btn small" title={`Mostrar a pasta da conta: ${prettyPath(a().dir!)}`} onClick={() => api.reveal(a().dir!).catch((e) => showToast(errMsg(e)))}>
+              <button class="icon-btn small" title={tx("Mostrar a pasta da conta: {v}", { v: prettyPath(a().dir!) })} onClick={() => api.reveal(a().dir!).catch((e) => showToast(errMsg(e)))}>
                 <FolderOpen size={13} />
               </button>
             </Show>
           </Show>
-          <button class="icon-btn small" title="Verificar de novo" onClick={() => checkAccount(a().id)}>
+          <button class="icon-btn small" title={tx("Verificar de novo")} onClick={() => checkAccount(a().id)}>
             <RefreshCw size={13} classList={{ spinning: accts.checking[a().id] }} />
           </button>
         </div>
         <button class="acc-remove" onClick={() => props.onRemove(a())}>
-          <Trash2 size={12} /> Remover
+          <Trash2 size={12} /> {tx("Remover")}
         </button>
       </div>
     </div>
@@ -367,10 +368,10 @@ function AccountCard(props: { a: Account; onRemove: (a: Account) => void; onKey:
 // ---------------------------------------------------------------- adicionar
 
 const kinds: { id: ProviderId; title: string; text: string }[] = [
-  { id: "claude", title: "Claude", text: "Sua conta Pro ou Max. Entra pelo navegador, com histórico e limites próprios." },
-  { id: "deepseek", title: "DeepSeek", text: "Pela API, com chave. Mostra o saldo." },
-  { id: "openai", title: "Compatível com OpenAI", text: "Qualquer API no formato da OpenAI (OpenRouter, Groq, LM Studio…)." },
-  { id: "ollama", title: "Ollama", text: "Modelos rodando na sua máquina, sem internet." },
+  { id: "claude", title: "Claude", get text() { return tx("Sua conta Pro ou Max. Entra pelo navegador, com histórico e limites próprios."); } },
+  { id: "deepseek", title: "DeepSeek", get text() { return tx("Pela API, com chave. Mostra o saldo."); } },
+  { id: "openai", get title() { return tx("Compatível com OpenAI"); }, get text() { return tx("Qualquer API no formato da OpenAI (OpenRouter, Groq, LM Studio…)."); } },
+  { id: "ollama", title: "Ollama", get text() { return tx("Modelos rodando na sua máquina, sem internet."); } },
 ];
 
 function AddAccount(props: { onClose: () => void }) {
@@ -383,7 +384,7 @@ function AddAccount(props: { onClose: () => void }) {
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal("");
 
-  const defaultLabel = () => ({ claude: "Claude · nova", deepseek: "DeepSeek · API", openai: "API", ollama: "Local · Ollama" })[kind()];
+  const defaultLabel = () => ({ claude: tx("Claude · nova"), deepseek: "DeepSeek · API", openai: "API", ollama: "Local · Ollama" })[kind()];
 
   const pick = async () => {
     try {
@@ -417,7 +418,7 @@ function AddAccount(props: { onClose: () => void }) {
   return (
     <div class="palette-backdrop" onClick={props.onClose}>
       <form class="dialog wide" onClick={(e) => e.stopPropagation()} onSubmit={submit} onKeyDown={(e) => e.key === "Escape" && props.onClose()} autocomplete="off">
-        <h3>Adicionar conta</h3>
+        <h3>{tx("Adicionar conta")}</h3>
         <div class="kind-grid">
           <For each={kinds}>
             {(k) => (
@@ -432,11 +433,11 @@ function AddAccount(props: { onClose: () => void }) {
 
         <div class="form-grid">
           <label>
-            <span>Nome</span>
+            <span>{tx("Nome")}</span>
             <input value={label()} placeholder={defaultLabel()} onInput={(e) => setLabel(e.currentTarget.value)} />
           </label>
           <label>
-            <span>Cor</span>
+            <span>{tx("Cor")}</span>
             <div class="swatches">
               <For each={palette}>
                 {(c) => <button type="button" class="swatch" classList={{ sel: color() === c }} style={{ "--c": c }} onClick={() => setColor(c)} title={c} />}
@@ -446,43 +447,43 @@ function AddAccount(props: { onClose: () => void }) {
 
           <Show when={kind() === "claude"}>
             <label class="span2">
-              <span>Pasta da conta</span>
+              <span>{tx("Pasta da conta")}</span>
               <div class="row-input">
-                <code>{folder() ? prettyPath(folder()!) : "nova pasta criada pelo Veocode"}</code>
-                <button type="button" class="ghost-btn small" onClick={pick}>Usar uma existente…</button>
-                <Show when={folder()}><button type="button" class="ghost-btn small" onClick={() => setFolder(null)}>Criar nova</button></Show>
+                <code>{folder() ? prettyPath(folder()!) : tx("nova pasta criada pelo Veocode")}</code>
+                <button type="button" class="ghost-btn small" onClick={pick}>{tx("Usar uma existente…")}</button>
+                <Show when={folder()}><button type="button" class="ghost-btn small" onClick={() => setFolder(null)}>{tx("Criar nova")}</button></Show>
               </div>
-              <small class="hint">Ao adicionar, a página de login da Anthropic abre no navegador. O login fica no chaveiro do Mac: o Veocode não vê senha nem token.</small>
+              <small class="hint">{tx("Ao adicionar, a página de login da Anthropic abre no navegador. O login fica no chaveiro do Mac: o Veocode não vê senha nem token.")}</small>
             </label>
           </Show>
 
           <Show when={kind() === "openai"}>
             <label class="span2">
-              <span>Endereço da API</span>
+              <span>{tx("Endereço da API")}</span>
               <input value={baseUrl()} placeholder="https://openrouter.ai/api/v1" onInput={(e) => setBaseUrl(e.currentTarget.value)} />
             </label>
           </Show>
           <Show when={kind() === "ollama"}>
             <label class="span2">
-              <span>Endereço</span>
+              <span>{tx("Endereço")}</span>
               <input value={baseUrl()} placeholder="http://127.0.0.1:11434" onInput={(e) => setBaseUrl(e.currentTarget.value)} />
             </label>
           </Show>
 
           <Show when={kind() === "deepseek" || kind() === "openai"}>
             <label class="span2">
-              <span>Chave de API</span>
-              <input type="password" value={key()} placeholder="sk-…" autocomplete="off" spellcheck={false} onInput={(e) => setKey(e.currentTarget.value)} />
-              <small class="hint">Vai direto para o chaveiro do sistema. Pode deixar em branco e colar depois.</small>
+              <span>{tx("Chave de API")}</span>
+              <input type="password" value={key()} placeholder={tx("sk-…")} autocomplete="off" spellcheck={false} onInput={(e) => setKey(e.currentTarget.value)} />
+              <small class="hint">{tx("Vai direto para o chaveiro do sistema. Pode deixar em branco e colar depois.")}</small>
             </label>
           </Show>
         </div>
 
         <Show when={error()}><p class="form-error">{error()}</p></Show>
         <div class="dialog-actions">
-          <button type="button" class="ghost-btn" onClick={props.onClose}>Cancelar</button>
+          <button type="button" class="ghost-btn" onClick={props.onClose}>{tx("Cancelar")}</button>
           <button type="submit" class="primary-btn" disabled={busy()}>
-            <Show when={busy()} fallback={kind() === "claude" && !folder() ? <Globe size={14} /> : <Plus size={14} />}><span class="spinner inline" /></Show> {kind() === "claude" && !folder() ? "Adicionar e entrar" : "Adicionar"}
+            <Show when={busy()} fallback={kind() === "claude" && !folder() ? <Globe size={14} /> : <Plus size={14} />}><span class="spinner inline" /></Show> {kind() === "claude" && !folder() ? tx("Adicionar e entrar") : tx("Adicionar")}
           </button>
         </div>
       </form>
@@ -500,7 +501,7 @@ function KeyDialog(props: { a: Account; onClose: () => void }) {
     try {
       await setAccountKey(props.a.id, key());
       setKey("");
-      showToast("Chave salva no chaveiro");
+      showToast(tx("Chave salva no chaveiro"));
       props.onClose();
     } catch (er) {
       setError(errMsg(er));
@@ -510,15 +511,15 @@ function KeyDialog(props: { a: Account; onClose: () => void }) {
   return (
     <div class="palette-backdrop" onClick={props.onClose}>
       <form class="dialog" onClick={(e) => e.stopPropagation()} onSubmit={submit} onKeyDown={(e) => e.key === "Escape" && props.onClose()} autocomplete="off">
-        <h3>Chave de API · {props.a.label}</h3>
+        <h3>{tx("Chave de API · {label}", { label: props.a.label })}</h3>
         <label class="form-grid one">
-          <input type="password" value={key()} placeholder="sk-…" autofocus autocomplete="off" spellcheck={false} onInput={(e) => setKey(e.currentTarget.value)} />
-          <small class="hint">{props.a.keyHint ? `Substitui a chave atual (${props.a.keyHint}). ` : ""}Fica no chaveiro do sistema; o Veocode só mostra o final dela.</small>
+          <input type="password" value={key()} placeholder={tx("sk-…")} autofocus autocomplete="off" spellcheck={false} onInput={(e) => setKey(e.currentTarget.value)} />
+          <small class="hint">{tx("{v}Fica no chaveiro do sistema; o Veocode só mostra o final dela.", { v: props.a.keyHint ? tx("Substitui a chave atual ({keyHint}). ", { keyHint: props.a.keyHint }) : "" })}</small>
         </label>
         <Show when={error()}><p class="form-error">{error()}</p></Show>
         <div class="dialog-actions">
-          <button type="button" class="ghost-btn" onClick={props.onClose}>Cancelar</button>
-          <button type="submit" class="primary-btn" disabled={busy() || !key().trim()}>Salvar e testar</button>
+          <button type="button" class="ghost-btn" onClick={props.onClose}>{tx("Cancelar")}</button>
+          <button type="submit" class="primary-btn" disabled={busy() || !key().trim()}>{tx("Salvar e testar")}</button>
         </div>
       </form>
     </div>

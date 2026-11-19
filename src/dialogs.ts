@@ -2,6 +2,7 @@
 // app pode fazer e esperar a resposta: `await ask(...)`. A janela fica em components/Dialogs.tsx.
 
 import { createSignal } from "solid-js";
+import { tx } from "./i18n";
 
 export interface AskOption {
   id: string;
@@ -28,7 +29,7 @@ export function ask(req: Omit<AskRequest, "resolve">): Promise<{ id: string; tex
 
 /** Sim/não para uma ação com consequência. */
 export async function confirmAction(title: string, body: string, label: string, danger = false): Promise<boolean> {
-  const r = await ask({ title, body, options: [{ id: "cancel", label: "Cancelar", tone: "ghost" }, { id: "ok", label, tone: danger ? "danger" : "primary" }] });
+  const r = await ask({ title, body, options: [{ id: "cancel", label: tx("Cancelar"), tone: "ghost" }, { id: "ok", label, tone: danger ? "danger" : "primary" }] });
   return r?.id === "ok";
 }
 
@@ -39,7 +40,7 @@ export async function askName(title: string, label: string, value = "", body?: s
     title,
     body,
     input: { value, select: [0, dot > 0 ? dot : value.length] },
-    options: [{ id: "cancel", label: "Cancelar", tone: "ghost" }, { id: "ok", label, tone: "primary" }],
+    options: [{ id: "cancel", label: tx("Cancelar"), tone: "ghost" }, { id: "ok", label, tone: "primary" }],
   });
   return r?.id === "ok" && r.text.trim() ? r.text.trim() : null;
 }

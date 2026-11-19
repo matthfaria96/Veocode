@@ -8,11 +8,12 @@ import { addPaths } from "../attachments";
 import { clearMedia, imageUrl, mediaOf, openViewer, sentThumbs, setViewer, viewer, type Media } from "../media";
 import { openRealFile } from "../realProject";
 import { absPathOf, projectId, setProjectId, setView, showToast, view } from "../store";
+import { tx } from "../i18n";
 
 const nameOf = (p: string) => p.split("/").pop() ?? p;
 const ago = (at: number) => {
   const s = Math.max(0, Math.round((Date.now() - at) / 1000));
-  return s < 60 ? "agora" : s < 3600 ? `há ${Math.round(s / 60)} min` : `há ${Math.round(s / 3600)} h`;
+  return s < 60 ? tx("agora") : s < 3600 ? tx("há {v} min", { v: Math.round(s / 60) }) : tx("há {v} h", { v: Math.round(s / 3600) });
 };
 const err = (e: unknown) => showToast(String(e instanceof Error ? e.message : e));
 
@@ -23,8 +24,8 @@ export function MediaStrip(props: { pid: string; compact?: boolean }) {
     <Show when={list().length}>
       <div class="media-strip" classList={{ compact: props.compact }}>
         <div class="media-strip-head">
-          <span><ImageIcon size={12} /> {list().length === 1 ? "Imagem nova" : `${list().length} imagens novas`}</span>
-          <button class="media-strip-x" title="Limpar a faixa (as imagens continuam na pasta)" onClick={() => clearMedia(props.pid)}><X size={11} /></button>
+          <span><ImageIcon size={12} /> {list().length === 1 ? tx("Imagem nova") : tx("{n} imagens novas", { n: list().length })}</span>
+          <button class="media-strip-x" title={tx("Limpar a faixa (as imagens continuam na pasta)")} onClick={() => clearMedia(props.pid)}><X size={11} /></button>
         </div>
         <div class="media-strip-row">
           <For each={list()}>
@@ -49,12 +50,12 @@ export function SentThumbs(props: { text: string }) {
   return (
     <Show when={sentThumbs(props.text).length}>
       <div class="sent-thumbs">
-        <For each={sentThumbs(props.text)}>{(u) => <button onClick={() => setBig(u)} title="Ver maior"><img src={u} alt="anexo" /></button>}</For>
+        <For each={sentThumbs(props.text)}>{(u) => <button onClick={() => setBig(u)} title={tx("Ver maior")}><img src={u} alt={tx("anexo")} /></button>}</For>
       </div>
       <Show when={big()}>
         <Portal>
           <div class="viewer" onClick={() => setBig(null)}>
-            <img class="viewer-img" src={big()!} alt="anexo" />
+            <img class="viewer-img" src={big()!} alt={tx("anexo")} />
           </div>
         </Portal>
       </Show>
@@ -115,19 +116,19 @@ export function MediaViewer() {
             <div class="viewer-top">
               <div class="viewer-name">
                 <strong>{nameOf(c().m.path)}</strong>
-                <small>{c().m.path}{dims() ? ` · ${dims()}` : ""}{c().n > 1 ? ` · ${c().i + 1} de ${c().n}` : ""}</small>
+                <small>{c().m.path}{dims() ? ` · ${dims()}` : ""}{c().n > 1 ? tx(" · {v} de {n}", { v: c().i + 1, n: c().n }) : ""}</small>
               </div>
               <div class="viewer-tools">
-                <button class="ghost-btn small" onClick={inEditor} title="Abrir na aba do editor"><FileCode2 size={13} /> No editor</button>
-                <button class="ghost-btn small" onClick={() => { const a = abs(); if (a) void addPaths(c().pid, [a]).then(() => showToast("Anexada à conversa do projeto")); }} title="Usar como base na próxima mensagem"><Paperclip size={13} /> Anexar</button>
-                <button class="ghost-btn small" onClick={() => api.openEntry(c().pid, c().m.path).catch(err)}><ExternalLink size={13} /> Abrir</button>
-                <button class="ghost-btn small" onClick={() => { const a = abs(); if (a) Promise.resolve(api.reveal(a)).catch(err); }}><FolderOpen size={13} /> Finder</button>
-                <button class="viewer-close" onClick={close} title="Fechar (Esc)"><X size={16} /></button>
+                <button class="ghost-btn small" onClick={inEditor} title={tx("Abrir na aba do editor")}><FileCode2 size={13} /> {tx("No editor")}</button>
+                <button class="ghost-btn small" onClick={() => { const a = abs(); if (a) void addPaths(c().pid, [a]).then(() => showToast(tx("Anexada à conversa do projeto"))); }} title={tx("Usar como base na próxima mensagem")}><Paperclip size={13} /> {tx("Anexar")}</button>
+                <button class="ghost-btn small" onClick={() => api.openEntry(c().pid, c().m.path).catch(err)}><ExternalLink size={13} /> {tx("Abrir")}</button>
+                <button class="ghost-btn small" onClick={() => { const a = abs(); if (a) Promise.resolve(api.reveal(a)).catch(err); }}><FolderOpen size={13} /> {tx("Finder")}</button>
+                <button class="viewer-close" onClick={close} title={tx("Fechar (Esc)")}><X size={16} /></button>
               </div>
             </div>
             <Show when={c().n > 1}>
-              <button class="viewer-nav prev" onClick={() => step(-1)} title="Anterior (←)"><ChevronLeft size={22} /></button>
-              <button class="viewer-nav next" onClick={() => step(1)} title="Próxima (→)"><ChevronRight size={22} /></button>
+              <button class="viewer-nav prev" onClick={() => step(-1)} title={tx("Anterior (←)")}><ChevronLeft size={22} /></button>
+              <button class="viewer-nav next" onClick={() => step(1)} title={tx("Próxima (→)")}><ChevronRight size={22} /></button>
             </Show>
             <Show when={!url.error} fallback={<div class="viewer-msg">{String(url.error?.message ?? url.error)}</div>}>
               <Show when={url()} fallback={<span class="spinner" />}>
@@ -150,9 +151,9 @@ export function ImageView(props: { pid: string; path: string; size: number }) {
     <div class="img-view">
       <div class="img-view-bar">
         <span>{dims() ? `${dims()} · ` : ""}{formatSize(props.size)}</span>
-        <button class="link-btn" onClick={() => setFit(!fit())}>{fit() ? "Tamanho real" : "Caber na tela"}</button>
-        <button class="link-btn" onClick={() => openViewer(props.pid, props.path)}>Tela cheia</button>
-        <button class="link-btn" onClick={() => api.openEntry(props.pid, props.path).catch(err)}><ExternalLink size={12} /> Abrir com o programa padrão</button>
+        <button class="link-btn" onClick={() => setFit(!fit())}>{fit() ? tx("Tamanho real") : tx("Caber na tela")}</button>
+        <button class="link-btn" onClick={() => openViewer(props.pid, props.path)}>{tx("Tela cheia")}</button>
+        <button class="link-btn" onClick={() => api.openEntry(props.pid, props.path).catch(err)}><ExternalLink size={12} /> {tx("Abrir com o programa padrão")}</button>
       </div>
       <div class="img-view-stage" classList={{ fit: fit() }}>
         <Show when={!url.error} fallback={<div class="viewer-msg">{String(url.error?.message ?? url.error)}</div>}>

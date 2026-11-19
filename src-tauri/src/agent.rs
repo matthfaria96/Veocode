@@ -496,7 +496,7 @@ fn parse_line(v: &Value, c: &Ctx, tools: &mut HashMap<String, String>) -> Vec<Ag
                         }
                         "Grep" | "Glob" => {
                             let n = r.get("numFiles").and_then(Value::as_u64).or_else(|| r.get("filenames").and_then(Value::as_array).map(|a| a.len() as u64));
-                            e.detail = n.map(|n| if n == 1 { "1 arquivo".into() } else { format!("{n} arquivos") });
+                            e.detail = n.map(|n| if n == 1 { crate::i18n::tr("1 arquivo", "1 file").into() } else { crate::trf!("{n} arquivos", "{n} files") });
                         }
                         "Bash" => {
                             let mut all = String::new();
@@ -515,7 +515,7 @@ fn parse_line(v: &Value, c: &Ctx, tools: &mut HashMap<String, String>) -> Vec<Ag
                             } else if lines.is_empty() {
                                 "ok".into()
                             } else {
-                                format!("{} linha(s) de saída", lines.len())
+                                crate::trf!("{} linha(s) de saída", "{} line(s) of output", lines.len())
                             });
                         }
                         _ => {
@@ -554,7 +554,7 @@ fn parse_line(v: &Value, c: &Ctx, tools: &mut HashMap<String, String>) -> Vec<Ag
                 let shown = |f: &str| rel.clone().unwrap_or_else(|| pretty(f));
                 let mut e = AgentEvent { id, status: "running".into(), path: rel.clone(), ..base.clone() };
                 match name.as_str() {
-                    "Read" => (e.kind, e.title) = ("read".into(), format!("Lendo {}", shown(file.unwrap_or("?")))),
+                    "Read" => (e.kind, e.title) = ("read".into(), crate::trf!("Lendo {}", "Reading {}", shown(file.unwrap_or("?")))),
                     "Edit" | "MultiEdit" | "NotebookEdit" => (e.kind, e.title) = ("edit".into(), format!("Editando {}", shown(file.unwrap_or("?")))),
                     "Write" => (e.kind, e.title) = ("edit".into(), format!("Escrevendo {}", shown(file.unwrap_or("?")))),
                     "Grep" => {
@@ -586,7 +586,7 @@ fn parse_line(v: &Value, c: &Ctx, tools: &mut HashMap<String, String>) -> Vec<Ag
                         e.title = format!("Subagente: {}", cut(s(&input, "description").unwrap_or("tarefa"), 70));
                         e.detail = s(&input, "subagent_type").map(String::from);
                     }
-                    "TodoWrite" | "mcp__ccd_turn__update_plan" => (e.kind, e.title) = ("plan".into(), "Atualizou a lista de tarefas".into()),
+                    "TodoWrite" | "mcp__ccd_turn__update_plan" => (e.kind, e.title) = ("plan".into(), crate::i18n::tr("Atualizou a lista de tarefas", "Updated the task list").into()),
                     "Skill" => (e.kind, e.title) = ("tool".into(), format!("Skill {}", s(&input, "skill").unwrap_or("?"))),
                     n if n.starts_with("mcp__") => {
                         let mut parts = n.trim_start_matches("mcp__").splitn(2, "__");

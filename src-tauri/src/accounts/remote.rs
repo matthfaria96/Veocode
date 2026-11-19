@@ -24,7 +24,7 @@ pub fn validate_key(key: &str) -> Result<&str, String> {
         return Err("cole a chave".into());
     }
     if k.len() > 400 || k.chars().any(|c| c.is_whitespace() || c.is_control()) {
-        return Err("isso não parece uma chave de API".into());
+        return Err(crate::i18n::tr("isso não parece uma chave de API", "that doesn't look like an API key").into());
     }
     Ok(k)
 }
@@ -32,7 +32,7 @@ pub fn validate_key(key: &str) -> Result<&str, String> {
 /// Guarda no chaveiro e devolve o final da chave para mostrar.
 pub fn set_key(id: &str, key: &str) -> Result<String, String> {
     let k = validate_key(key)?;
-    entry(id)?.set_password(k).map_err(|e| format!("não consegui salvar no chaveiro: {e}"))?;
+    entry(id)?.set_password(k).map_err(|e| crate::trf!("não consegui salvar no chaveiro: {e}", "couldn't save to the keychain: {e}"))?;
     Ok(hint(k))
 }
 
@@ -54,14 +54,14 @@ pub fn check_base_url(url: &str) -> Result<(), String> {
         let host = r.split(['/', '?']).next().unwrap_or("");
         let host = host.rsplit_once(':').map(|(h, _)| h).unwrap_or(host);
         if !matches!(host, "localhost" | "127.0.0.1" | "[::1]") {
-            return Err("use https:// (http só para servidores na sua máquina)".into());
+            return Err(crate::i18n::tr("use https:// (http só para servidores na sua máquina)", "use https:// (http only for servers on your machine)").into());
         }
         r
     } else {
-        return Err("o endereço precisa começar com https://".into());
+        return Err(crate::i18n::tr("o endereço precisa começar com https://", "the address must start with https://").into());
     };
     if rest.is_empty() || rest.starts_with('/') || rest.contains(char::is_whitespace) || rest.contains('@') {
-        return Err("endereço inválido".into());
+        return Err(crate::i18n::tr("endereço inválido", "invalid address").into());
     }
     Ok(())
 }
@@ -104,21 +104,21 @@ fn money(currency: &str, amount: &str) -> String {
         other => other,
     };
     let n: f64 = amount.parse().unwrap_or(0.0);
-    format!("{sym} {}", format!("{n:.2}").replace('.', ","))
+    format!("{sym} {}", crate::i18n::dec(&format!("{n:.2}")))
 }
 
 pub fn api_status(a: &Account) -> AccountStatus {
     let mut s = AccountStatus::new(&a.id, State::SemChave);
     let base = a.base_url.clone().unwrap_or_default();
     s.who = Some(host_of(&base));
-    s.plan = Some(if a.provider == Provider::Deepseek { "Pré-pago".into() } else { "API".into() });
+    s.plan = Some(if a.provider == Provider::Deepseek { crate::i18n::tr("Pré-pago", "Prepaid").into() } else { "API".into() });
     if check_base_url(&base).is_err() {
         s.state = State::Erro;
-        s.detail = Some("Endereço da API inválido.".into());
+        s.detail = Some(crate::i18n::tr("Endereço da API inválido.", "Invalid API address.").into());
         return s;
     }
     let Some(key) = get_key(&a.id) else {
-        s.detail = Some("Cole a chave de API para usar esta conta.".into());
+        s.detail = Some(crate::i18n::tr("Cole a chave de API para usar esta conta.", "Paste the API key to use this account.").into());
         return s;
     };
     let auth = format!("Bearer {key}");
@@ -133,15 +133,15 @@ pub fn api_status(a: &Account) -> AccountStatus {
         Err(ureq::Error::Status(code, _)) => {
             s.state = State::Erro;
             s.detail = Some(match code {
-                401 | 403 => "A chave foi recusada. Confira se copiou inteira ou gere outra.".into(),
-                429 => "Limite de requisições atingido. Tente de novo em instantes.".into(),
-                c => format!("A API respondeu com erro {c}."),
+                401 | 403 => crate::i18n::tr("A chave foi recusada. Confira se copiou inteira ou gere outra.", "The key was rejected. Check that you copied all of it or create another one.").into(),
+                429 => crate::i18n::tr("Limite de requisições atingido. Tente de novo em instantes.", "Rate limit reached. Try again in a moment.").into(),
+                c => crate::trf!("A API respondeu com erro {c}.", "The API answered with error {c}."),
             });
             return s;
         }
         Err(e) => {
             s.state = State::Offline;
-            s.detail = Some(format!("Sem resposta de {}: {}", host_of(&base), short_err(&e)));
+            s.detail = Some(crate::trf!("Sem resposta de {}: {}", "No answer from {}: {}", host_of(&base), short_err(&e)));
             return s;
         }
     }
@@ -150,7 +150,7 @@ pub fn api_status(a: &Account) -> AccountStatus {
             s.balance = b.balance_infos.first().map(|i| money(&i.currency, &i.total_balance));
             if !b.is_available {
                 s.state = State::Erro;
-                s.detail = Some("Sem saldo: recarregue na plataforma da DeepSeek.".into());
+                s.detail = Some(crate::i18n::tr("Sem saldo: recarregue na plataforma da DeepSeek.", "No balance: top up on the DeepSeek platform.").into());
             }
         }
     }
@@ -187,7 +187,7 @@ pub fn ollama_status(a: &Account) -> AccountStatus {
     s.who = Some(host_of(&base));
     if check_base_url(&base).is_err() {
         s.state = State::Erro;
-        s.detail = Some("Endereço inválido.".into());
+        s.detail = Some(crate::i18n::tr("Endereço inválido.", "Invalid address.").into());
         return s;
     }
     let ag = ureq::AgentBuilder::new().timeout_connect(Duration::from_millis(800)).timeout(Duration::from_secs(3)).build();
@@ -195,7 +195,7 @@ pub fn ollama_status(a: &Account) -> AccountStatus {
         Ok(r) => r.into_json::<Version>().map(|v| v.version).unwrap_or_default(),
         Err(_) => {
             let installed = crate::xray::util::which("ollama").is_some();
-            s.detail = Some(if installed { "O Ollama está instalado mas não está aberto.".into() } else { "O Ollama não está instalado nesta máquina.".into() });
+            s.detail = Some(if installed { crate::i18n::tr("O Ollama está instalado mas não está aberto.", "Ollama is installed but not open.").into() } else { crate::i18n::tr("O Ollama não está instalado nesta máquina.", "Ollama isn't installed on this machine.").into() });
             return s;
         }
     };
@@ -208,12 +208,12 @@ pub fn ollama_status(a: &Account) -> AccountStatus {
     s.detail = Some(format!(
         "Ollama {version} · {} {} · {:.1} GB{}",
         tags.len(),
-        if tags.len() == 1 { "modelo" } else { "modelos" },
+        if tags.len() == 1 { crate::i18n::tr("modelo", "model") } else { crate::i18n::tr("modelos", "models") },
         total as f64 / 1e9,
         if running.is_empty() { String::new() } else { format!(" · carregado: {}", running.iter().map(|m| m.name.as_str()).collect::<Vec<_>>().join(", ")) }
     ));
     if tags.is_empty() {
-        s.detail = Some(format!("Ollama {version} aberto, mas sem modelos. Rode: ollama pull qwen3-coder"));
+        s.detail = Some(crate::trf!("Ollama {version} aberto, mas sem modelos. Rode: ollama pull qwen3-coder", "Ollama {version} is open, but has no models. Run: ollama pull qwen3-coder"));
     }
     s
 }

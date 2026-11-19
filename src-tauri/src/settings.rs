@@ -31,10 +31,21 @@ pub enum Theme {
     Sistema,
 }
 
+/// Idioma da interface. `Sistema` segue o idioma do computador.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum Language {
+    #[default]
+    Sistema,
+    Pt,
+    En,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
     pub theme: Theme,
+    pub language: Language,
     pub icons: Icons,
     pub motion: Motion,
     /// conta do Chat livre (vazio = a conta padrão)
@@ -50,6 +61,7 @@ pub fn load(dir: &Path) -> Settings {
     let field = |k: &str| v.get(k).cloned().unwrap_or(serde_json::Value::Null);
     Settings {
         theme: serde_json::from_value(field("theme")).unwrap_or_default(),
+        language: serde_json::from_value(field("language")).unwrap_or_default(),
         icons: serde_json::from_value(field("icons")).unwrap_or_default(),
         motion: serde_json::from_value(field("motion")).unwrap_or_default(),
         free_account: serde_json::from_value(field("freeAccount")).unwrap_or_default(),
@@ -77,13 +89,13 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
         assert_eq!(load(&dir), Settings::default());
 
-        let s = Settings { theme: Theme::Claro, icons: Icons::Minimalista, motion: Motion::Reduzida, free_account: "acc-1".into(), free_pc: true };
+        let s = Settings { theme: Theme::Claro, language: Language::En, icons: Icons::Minimalista, motion: Motion::Reduzida, free_account: "acc-1".into(), free_pc: true };
         save(&dir, &s).unwrap();
         assert_eq!(load(&dir), s);
 
         // valor desconhecido num campo não apaga o outro
-        fs::write(dir.join("settings.json"), r#"{"icons":"neon","motion":"reduzida","freePc":"sim","freeAccount":"a2"}"#).unwrap();
-        assert_eq!(load(&dir), Settings { theme: Theme::Escuro, icons: Icons::Detalhado, motion: Motion::Reduzida, free_account: "a2".into(), free_pc: false });
+        fs::write(dir.join("settings.json"), r#"{"icons":"neon","motion":"reduzida","freePc":"sim","freeAccount":"a2","language":"klingon"}"#).unwrap();
+        assert_eq!(load(&dir), Settings { theme: Theme::Escuro, language: Language::Sistema, icons: Icons::Detalhado, motion: Motion::Reduzida, free_account: "a2".into(), free_pc: false });
 
         fs::write(dir.join("settings.json"), "{ quebrado").unwrap();
         assert_eq!(load(&dir), Settings::default());

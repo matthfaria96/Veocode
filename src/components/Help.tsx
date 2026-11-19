@@ -4,6 +4,7 @@ import { Dynamic } from "solid-js/web";
 import { setHelpOpen, setView, view } from "../store";
 import { topicForView, topics, type TopicId } from "../help/topics";
 import { scenes } from "../help/Scenes";
+import { tx } from "../i18n";
 
 const icons: Record<TopicId, (p: LucideProps) => JSX.Element> = {
   inicio: Rocket,
@@ -49,11 +50,11 @@ export default function Help() {
 
   return (
     <div class="palette-backdrop help-backdrop" onClick={() => setHelpOpen(false)}>
-      <div class="help" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Ajuda">
+      <div class="help" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={tx("Ajuda")}>
         <nav class="help-nav">
           <div class="help-nav-head">
-            <strong>Ajuda</strong>
-            <small>Como o Veocode funciona</small>
+            <strong>{tx("Ajuda")}</strong>
+            <small>{tx("Como o Veocode funciona")}</small>
           </div>
           <For each={topics}>
             {(t, i) => (
@@ -61,19 +62,19 @@ export default function Help() {
                 <Show when={i() === 1 || i() === topics.length - 1}><div class="help-nav-sep" /></Show>
                 <button classList={{ active: id() === t.id }} onClick={() => pick(t.id)}>
                   <Dynamic component={icons[t.id]} size={15} />
-                  <span>{t.title}</span>
+                  <span>{tx(t.title)}</span>
                 </button>
               </>
             )}
           </For>
           <div class="help-keys">
-            <span><kbd>↑</kbd><kbd>↓</kbd> tópicos</span>
-            <span><kbd>esc</kbd> fechar</span>
+            <span><kbd>↑</kbd><kbd>↓</kbd> {tx("tópicos")}</span>
+            <span><kbd>{tx("esc")}</kbd> {tx("fechar")}</span>
           </div>
         </nav>
 
         <div class="help-body" ref={body}>
-          <button class="icon-btn help-close" title="Fechar (esc)" onClick={() => setHelpOpen(false)}><X size={16} /></button>
+          <button class="icon-btn help-close" title={tx("Fechar (esc)")} onClick={() => setHelpOpen(false)}><X size={16} /></button>
           <Show when={topic()} keyed>
             {(t) => (
               <article class="help-article">
@@ -83,26 +84,26 @@ export default function Help() {
                 <div class="help-title">
                   <span class="help-title-icon"><Dynamic component={icons[t.id]} size={18} /></span>
                   <div>
-                    <h2>{t.title}</h2>
-                    <Show when={t.where}><small>{t.where}</small></Show>
+                    <h2>{tx(t.title)}</h2>
+                    <Show when={t.where}><small>{tx(t.where!)}</small></Show>
                   </div>
                 </div>
-                <p class="help-lead">{t.lead}</p>
+                <p class="help-lead">{tx(t.lead)}</p>
 
                 <For each={t.sections}>
                   {(s, si) => (
                     <section class="help-section" style={{ "animation-delay": `${120 + si() * 70}ms` }}>
-                      <h3>{s.title}</h3>
+                      <h3>{tx(s.title)}</h3>
                       <Show
                         when={s.title === "Em quatro passos"}
                         fallback={
                           <ul>
-                            <For each={s.items}>{(it) => <li>{it}</li>}</For>
+                            <For each={s.items}>{(it) => <li>{tx(it)}</li>}</For>
                           </ul>
                         }
                       >
                         <ol class="help-steps">
-                          <For each={s.items}>{(it, n) => <li><span>{n() + 1}</span><p>{it}</p></li>}</For>
+                          <For each={s.items}>{(it, n) => <li><span>{n() + 1}</span><p>{tx(it)}</p></li>}</For>
                         </ol>
                       </Show>
                     </section>
@@ -114,8 +115,8 @@ export default function Help() {
                     <For each={t.terms}>
                       {([term, def], n) => (
                         <div style={{ "animation-delay": `${n() * 35}ms` }}>
-                          <dt>{term}</dt>
-                          <dd>{def}</dd>
+                          <dt>{tx(term)}</dt>
+                          <dd>{tx(def)}</dd>
                         </div>
                       )}
                     </For>
@@ -123,11 +124,11 @@ export default function Help() {
                 </Show>
 
                 <footer class="help-foot">
-                  <button class="ghost-btn" onClick={() => (go(-1), (body.scrollTop = 0))}><ArrowLeft size={14} /> {topics[(index() - 1 + topics.length) % topics.length].title}</button>
+                  <button class="ghost-btn" onClick={() => (go(-1), (body.scrollTop = 0))}><ArrowLeft size={14} /> {tx(topics[(index() - 1 + topics.length) % topics.length].title)}</button>
                   <Show when={t.view}>
-                    <button class="primary-btn" onClick={openScreen}>Abrir esta tela <ArrowUpRight size={14} /></button>
+                    <button class="primary-btn" onClick={openScreen}>{tx("Abrir esta tela")} <ArrowUpRight size={14} /></button>
                   </Show>
-                  <button class="ghost-btn" onClick={() => (go(1), (body.scrollTop = 0))}>{topics[(index() + 1) % topics.length].title} <ArrowRight size={14} /></button>
+                  <button class="ghost-btn" onClick={() => (go(1), (body.scrollTop = 0))}>{tx(topics[(index() + 1) % topics.length].title)} <ArrowRight size={14} /></button>
                 </footer>
               </article>
             )}

@@ -1,14 +1,15 @@
 import { Bot, LayoutDashboard, MessagesSquare, CircleHelp, FolderOpen, Monitor, Settings } from "lucide-solid";
 import { For, type JSX } from "solid-js";
 import { helpOpen, setHelpOpen, setView, view, type View } from "../store";
+import { tx } from "../i18n";
 
 // "also": telas que acendem o mesmo ícone (abas da mesma área)
 const items: { id: View; label: string; icon: () => JSX.Element; also?: View[] }[] = [
-  { id: "board", label: "Início: visão geral dos projetos", icon: () => <LayoutDashboard size={19} /> },
-  { id: "workspace", label: "Projetos", icon: () => <FolderOpen size={19} /> },
-  { id: "livre", label: "Chat livre", icon: () => <MessagesSquare size={19} /> },
-  { id: "accounts", label: "Contas e IAs", icon: () => <Bot size={19} /> },
-  { id: "inventory", label: "Computador: extras do Claude, espaço e memória", icon: () => <Monitor size={19} />, also: ["system"] },
+  { id: "board", get label() { return tx("Início: visão geral dos projetos"); }, icon: () => <LayoutDashboard size={19} /> },
+  { id: "workspace", get label() { return tx("Projetos"); }, icon: () => <FolderOpen size={19} /> },
+  { id: "livre", get label() { return tx("Chat livre"); }, icon: () => <MessagesSquare size={19} /> },
+  { id: "accounts", get label() { return tx("Contas e IAs"); }, icon: () => <Bot size={19} /> },
+  { id: "inventory", get label() { return tx("Computador: extras do Claude, espaço e memória"); }, icon: () => <Monitor size={19} />, also: ["system"] },
 ];
 
 export default function Rail() {
@@ -30,11 +31,11 @@ export default function Rail() {
       <div class="rail-foot">
         <button class="rail-btn rail-help" classList={{ active: helpOpen() }} onClick={() => setHelpOpen(!helpOpen())}>
           <CircleHelp size={19} />
-          <span class="rail-tip">Ajuda (F1)</span>
+          <span class="rail-tip">{tx("Ajuda (F1)")}</span>
         </button>
         <button class="rail-btn" classList={{ active: view() === "settings" }} onClick={() => setView("settings")}>
           <Settings size={19} />
-          <span class="rail-tip">Ajustes</span>
+          <span class="rail-tip">{tx("Ajustes")}</span>
         </button>
       </div>
     </nav>

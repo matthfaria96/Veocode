@@ -1,4 +1,5 @@
 import { onCleanup, onMount, type JSX } from "solid-js";
+import { tx } from "../i18n";
 
 /** Janela de confirmação para ações com consequência (mover para a Lixeira, encerrar processo…). */
 export default function ConfirmDialog(props: {
@@ -24,7 +25,7 @@ export default function ConfirmDialog(props: {
         <h3>{props.title}</h3>
         <div class="dialog-body">{props.children}</div>
         <div class="dialog-actions">
-          <button class="ghost-btn" ref={cancel} onClick={props.onCancel}>Cancelar</button>
+          <button class="ghost-btn" ref={cancel} onClick={props.onCancel}>{tx("Cancelar")}</button>
           <button class={props.danger ? "danger-btn" : "primary-btn"} disabled={props.disabled} onClick={props.onConfirm}>
             {props.confirmLabel}
           </button>

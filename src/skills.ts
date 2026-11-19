@@ -5,6 +5,7 @@ import { createStore, reconcile } from "solid-js/store";
 import { isTauri } from "./api";
 import { skills as mockSkills } from "./data/mock";
 import { showToast } from "./store";
+import { tx } from "./i18n";
 
 export type Kind = "skill" | "command" | "agent" | "mcp";
 export type Layer = "conta" | "plugin" | "projeto";
@@ -92,7 +93,7 @@ const mock = (): { items: Item[]; plugins: PluginInfo[] } => ({
     invokeTokens: s.kind === "mcp" ? 0 : 1800,
     manage: s.kind === "mcp" ? "cli" : "trash",
   })),
-  plugins: [{ id: "p", name: "figma", description: "Servidor MCP e skills do Figma.", version: "2.2.0", enabled: true, account: "claude-pessoal", project: null, path: "", skills: 16, mcp: 1, pluginId: "figma@exemplo", scope: "user", bytes: 4_200_000, alwaysTokens: 2400 }],
+  plugins: [{ id: "p", name: "figma", description: tx("Servidor MCP e skills do Figma."), version: "2.2.0", enabled: true, account: "claude-pessoal", project: null, path: "", skills: 16, mcp: 1, pluginId: "figma@exemplo", scope: "user", bytes: 4_200_000, alwaysTokens: 2400 }],
 });
 
 export async function loadSkills() {
@@ -104,12 +105,12 @@ export async function loadSkills() {
     setSk({ plugins: r.plugins, loaded: true });
   } catch (e) {
     setSk("error", e instanceof Error ? e.message : String(e));
-    showToast("Não deu para ler os extras do Claude");
+    showToast(tx("Não deu para ler os extras do Claude"));
   }
   setSk("loading", false);
 }
 
 export const readSkillFile = (path: string): Promise<string> =>
-  isTauri ? invoke<string>("skill_read", { path }) : Promise.resolve("---\nname: exemplo\n---\n\nNo navegador o conteúdo é só de exemplo.");
+  isTauri ? invoke<string>("skill_read", { path }) : Promise.resolve(tx("---\nname: exemplo\n---\n\nNo navegador o conteúdo é só de exemplo."));
 
-export const kindLabel: Record<Kind, string> = { skill: "Receita", command: "Atalho /", agent: "Ajudante", mcp: "Conexão" };
+export const kindLabel: Record<Kind, string> = { get skill() { return tx("Receita"); }, command: "Atalho /", agent: "Ajudante", get mcp() { return tx("Conexão"); } };

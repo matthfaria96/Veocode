@@ -8,6 +8,7 @@ import { createStore, produce } from "solid-js/store";
 import { isTauri } from "../api";
 import { showToast } from "../store";
 import { loadMemory, memory as cache, setMemoryText } from "../memoryStore";
+import { tx, txn } from "../i18n";
 
 type Item = { title: string; body: string };
 type Doc = { notes: string; items: Item[] };
@@ -21,7 +22,7 @@ function parse(text: string): Doc {
   });
   return { notes, items };
 }
-const serialize = (d: Doc) => [d.notes.trim(), ...d.items.map((i) => `## ${i.title.trim() || "Sem título"}\n${i.body.trim()}`)].filter(Boolean).join("\n\n");
+const serialize = (d: Doc) => [d.notes.trim(), ...d.items.map((i) => `## ${i.title.trim() || tx("Sem título")}\n${i.body.trim()}`)].filter(Boolean).join("\n\n");
 const tokens = (s: string) => Math.round(s.length / 4);
 
 export function MemoryPanel(props: { pid: string; onClose: () => void }) {
@@ -44,7 +45,7 @@ export function MemoryPanel(props: { pid: string; onClose: () => void }) {
   }));
 
   const write = async (next: Doc, msg: string) => {
-    if (!isTauri) return showToast("A memória funciona no app");
+    if (!isTauri) return showToast(tx("A memória funciona no app"));
     setSaving(true);
     try {
       const saved = await invoke<string>("memory_set", { projectId: props.pid, text: serialize(next) });
@@ -64,25 +65,25 @@ export function MemoryPanel(props: { pid: string; onClose: () => void }) {
   const saveNotes = async () => {
     const v = notes() ?? doc.notes;
     setDoc("notes", v);
-    if (await write({ notes: v, items: doc.items }, "Salvo: vale nas próximas conversas")) setNotes(null);
+    if (await write({ notes: v, items: doc.items }, tx("Salvo: vale nas próximas conversas"))) setNotes(null);
   };
   const startEdit = (it: Item) => (setEditing(it), setDraft({ title: it.title, body: it.body }), setConfirm(null));
   const saveEdit = async (it: Item) => {
     const d = draft();
     setDoc("items", (x) => x === it, produce((x: Item) => ((x.title = d.title.trim() || x.title), (x.body = d.body))));
-    if (await write(doc, "Resumo atualizado")) setEditing(null);
+    if (await write(doc, tx("Resumo atualizado"))) setEditing(null);
   };
   const remove = async (it: Item) => {
     setConfirm(null);
     const items = doc.items.filter((x) => x !== it);
     setDoc("items", items);
-    await write({ notes: doc.notes, items }, "Resumo apagado da memória");
+    await write({ notes: doc.notes, items }, tx("Resumo apagado da memória"));
   };
   const wipe = async () => {
     setConfirm(null);
     setDoc({ notes: "", items: [] });
     setNotes(null);
-    await write({ notes: "", items: [] }, "Memória apagada");
+    await write({ notes: "", items: [] }, tx("Memória apagada"));
   };
   const toggle = (it: Item) => {
     const s = new Set(open());
@@ -99,41 +100,41 @@ export function MemoryPanel(props: { pid: string; onClose: () => void }) {
       <div class="mem-head">
         <span class="mem-icon"><Brain size={16} /></span>
         <div>
-          <strong>Memória do projeto</strong>
-          <small>O Claude lê isto no começo de cada conversa nova, em vez de reler conversas antigas inteiras.</small>
+          <strong>{tx("Memória do projeto")}</strong>
+          <small>{tx("O Claude lê isto no começo de cada conversa nova, em vez de reler conversas antigas inteiras.")}</small>
         </div>
-        <span class="mem-size" title="Quanto a memória pesa em cada conversa nova">~{total()} tokens</span>
-        <button class="icon-btn small" title="Voltar para a conversa" onClick={props.onClose}><X size={14} /></button>
+        <span class="mem-size" title={tx("Quanto a memória pesa em cada conversa nova")}>{tx("~{total} tokens", { total: total() })}</span>
+        <button class="icon-btn small" title={tx("Voltar para a conversa")} onClick={props.onClose}><X size={14} /></button>
       </div>
 
       <Show when={cache[props.pid] !== undefined || !isTauri} fallback={<div class="loading-rows"><div /><div /></div>}>
         <section class="mem-card notes">
           <header>
             <Pin size={13} />
-            <strong>Sempre lembrar</strong>
-            <small>como rodar, decisões, o que evitar</small>
+            <strong>{tx("Sempre lembrar")}</strong>
+            <small>{tx("como rodar, decisões, o que evitar")}</small>
           </header>
           <textarea
             class="mem-notes"
             value={notes() ?? doc.notes}
             rows={Math.min(10, Math.max(3, (notes() ?? doc.notes).split("\n").length + 1))}
-            placeholder="Ex.: Use npm run tauri build para testar. Respostas em português. Nunca mexer na pasta legado/."
+            placeholder={tx("Ex.: Use npm run tauri build para testar. Respostas em português. Nunca mexer na pasta legado/.")}
             spellcheck={false}
             onInput={(e) => setNotes(e.currentTarget.value)}
           />
           <Show when={notes() !== null && notes() !== doc.notes}>
             <div class="mem-row-actions pop-in">
-              <button class="ghost-btn small" onClick={() => setNotes(null)}>Desfazer</button>
-              <button class="primary-btn small" disabled={saving()} onClick={() => void saveNotes()}><Check size={13} /> Salvar</button>
+              <button class="ghost-btn small" onClick={() => setNotes(null)}>{tx("Desfazer")}</button>
+              <button class="primary-btn small" disabled={saving()} onClick={() => void saveNotes()}><Check size={13} /> {tx("Salvar")}</button>
             </div>
           </Show>
         </section>
 
         <div class="mem-section">
-          <span>Conversas concluídas</span>
-          <small>{doc.items.length ? `${doc.items.length} ${doc.items.length === 1 ? "resumo" : "resumos"} · mais novo em cima` : ""}</small>
+          <span>{tx("Conversas concluídas")}</span>
+          <small>{doc.items.length ? txn(doc.items.length, "{n} resumo · mais novo em cima", "{n} resumos · mais novo em cima") : ""}</small>
         </div>
-        <Show when={doc.items.length} fallback={<p class="mem-empty">Nenhuma ainda. Quando uma conversa terminar, clique no ✓ da aba dela: o resumo (pedidos, arquivos mexidos e a resposta final) entra aqui, feito no próprio app, sem gastar tokens.</p>}>
+        <Show when={doc.items.length} fallback={<p class="mem-empty">{tx("Nenhuma ainda. Quando uma conversa terminar, clique no ✓ da aba dela: o resumo (pedidos, arquivos mexidos e a resposta final) entra aqui, feito no próprio app, sem gastar tokens.")}</p>}>
           <div class="mem-list">
             <For each={newest()}>
               {(it) => (
@@ -150,12 +151,12 @@ export function MemoryPanel(props: { pid: string; onClose: () => void }) {
                               when={confirm() === it}
                               fallback={
                                 <>
-                                  <button class="icon-btn small" title="Editar este resumo" onClick={() => startEdit(it)}><Pencil size={12} /></button>
-                                  <button class="icon-btn small" title="Apagar este resumo" onClick={() => setConfirm(it)}><Trash2 size={12} /></button>
+                                  <button class="icon-btn small" title={tx("Editar este resumo")} onClick={() => startEdit(it)}><Pencil size={12} /></button>
+                                  <button class="icon-btn small" title={tx("Apagar este resumo")} onClick={() => setConfirm(it)}><Trash2 size={12} /></button>
                                 </>
                               }
                             >
-                              <span class="mem-confirm pop-in">Apagar?<button class="link-btn danger-text" onClick={() => void remove(it)}>Sim</button><button class="link-btn" onClick={() => setConfirm(null)}>Não</button></span>
+                              <span class="mem-confirm pop-in">{tx("Apagar?")}<button class="link-btn danger-text" onClick={() => void remove(it)}>{tx("Sim")}</button><button class="link-btn" onClick={() => setConfirm(null)}>{tx("Não")}</button></span>
                             </Show>
                           </span>
                           <ChevronDown size={13} class="mem-chev" />
@@ -167,8 +168,8 @@ export function MemoryPanel(props: { pid: string; onClose: () => void }) {
                     <input class="mem-title-in" value={draft().title} onInput={(e) => setDraft({ ...draft(), title: e.currentTarget.value })} />
                     <textarea class="mem-notes" rows={6} value={draft().body} spellcheck={false} onInput={(e) => setDraft({ ...draft(), body: e.currentTarget.value })} ref={(el) => requestAnimationFrame(() => el.focus())} />
                     <div class="mem-row-actions">
-                      <button class="ghost-btn small" onClick={() => setEditing(null)}>Cancelar</button>
-                      <button class="primary-btn small" disabled={saving()} onClick={() => void saveEdit(it)}><Check size={13} /> Salvar</button>
+                      <button class="ghost-btn small" onClick={() => setEditing(null)}>{tx("Cancelar")}</button>
+                      <button class="primary-btn small" disabled={saving()} onClick={() => void saveEdit(it)}><Check size={13} /> {tx("Salvar")}</button>
                     </div>
                   </Show>
                 </article>
@@ -178,10 +179,10 @@ export function MemoryPanel(props: { pid: string; onClose: () => void }) {
         </Show>
 
         <div class="mem-actions">
-          <span class="mem-note">Fica guardada no Veocode, fora da pasta do projeto. Passou de ~2 mil tokens, os resumos mais antigos saem sozinhos.</span>
+          <span class="mem-note">{tx("Fica guardada no Veocode, fora da pasta do projeto. Passou de ~2 mil tokens, os resumos mais antigos saem sozinhos.")}</span>
           <Show when={doc.notes || doc.items.length}>
-            <Show when={confirm() === "all"} fallback={<button class="ghost-btn small danger-text" onClick={() => setConfirm("all")}>Apagar tudo</button>}>
-              <span class="mem-confirm pop-in">Apagar a memória inteira?<button class="link-btn danger-text" onClick={() => void wipe()}>Sim</button><button class="link-btn" onClick={() => setConfirm(null)}>Não</button></span>
+            <Show when={confirm() === "all"} fallback={<button class="ghost-btn small danger-text" onClick={() => setConfirm("all")}>{tx("Apagar tudo")}</button>}>
+              <span class="mem-confirm pop-in">{tx("Apagar a memória inteira?")}<button class="link-btn danger-text" onClick={() => void wipe()}>{tx("Sim")}</button><button class="link-btn" onClick={() => setConfirm(null)}>{tx("Não")}</button></span>
             </Show>
           </Show>
         </div>

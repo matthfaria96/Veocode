@@ -26,14 +26,14 @@ pub fn specs() -> Value {
     let f = |name: &str, desc: &str, props: Value, req: &[&str]| {
         json!({"type":"function","function":{"name":name,"description":desc,"parameters":{"type":"object","properties":props,"required":req}}})
     };
-    let path = json!({"type":"string","description":"caminho relativo à raiz do projeto, com /"});
+    let path = json!({"type":"string","description":crate::i18n::tr("caminho relativo à raiz do projeto, com /", "path relative to the project root, with /")});
     json!([
-        f("list_files", "Lista uma pasta do projeto (pastas terminam com /).", json!({"path": {"type":"string","description":"pasta relativa à raiz; vazio = raiz"}}), &[]),
-        f("read_file", "Lê um arquivo de texto do projeto. Linhas numeradas a partir de 1.", json!({"path": path, "start_line": {"type":"integer"}, "max_lines": {"type":"integer"}}), &["path"]),
-        f("search", "Busca um texto (sem diferenciar maiúsculas) nos arquivos do projeto, respeitando o .gitignore.", json!({"query": {"type":"string"}, "path": {"type":"string","description":"pasta onde buscar; vazio = projeto todo"}}), &["query"]),
-        f("write_file", "Cria ou substitui um arquivo inteiro.", json!({"path": path, "content": {"type":"string"}}), &["path", "content"]),
-        f("edit_file", "Troca um trecho exato de um arquivo. old_text precisa aparecer uma única vez.", json!({"path": path, "old_text": {"type":"string"}, "new_text": {"type":"string"}}), &["path", "old_text", "new_text"]),
-        f("run_command", "Roda um comando de terminal na pasta do projeto (até 2 minutos).", json!({"command": {"type":"string"}}), &["command"]),
+        f("list_files", crate::i18n::tr("Lista uma pasta do projeto (pastas terminam com /).", "Lists a project folder (folders end with /)."), json!({"path": {"type":"string","description":crate::i18n::tr("pasta relativa à raiz; vazio = raiz", "folder relative to the root; empty = root")}}), &[]),
+        f("read_file", crate::i18n::tr("Lê um arquivo de texto do projeto. Linhas numeradas a partir de 1.", "Reads a text file from the project. Lines numbered from 1."), json!({"path": path, "start_line": {"type":"integer"}, "max_lines": {"type":"integer"}}), &["path"]),
+        f("search", crate::i18n::tr("Busca um texto (sem diferenciar maiúsculas) nos arquivos do projeto, respeitando o .gitignore.", "Searches for text (case-insensitive) in the project's files, respecting .gitignore."), json!({"query": {"type":"string"}, "path": {"type":"string","description":crate::i18n::tr("pasta onde buscar; vazio = projeto todo", "folder to search in; empty = whole project")}}), &["query"]),
+        f("write_file", crate::i18n::tr("Cria ou substitui um arquivo inteiro.", "Creates or replaces a whole file."), json!({"path": path, "content": {"type":"string"}}), &["path", "content"]),
+        f("edit_file", crate::i18n::tr("Troca um trecho exato de um arquivo. old_text precisa aparecer uma única vez.", "Replaces an exact snippet of a file. old_text must appear exactly once."), json!({"path": path, "old_text": {"type":"string"}, "new_text": {"type":"string"}}), &["path", "old_text", "new_text"]),
+        f("run_command", crate::i18n::tr("Roda um comando de terminal na pasta do projeto (até 2 minutos).", "Runs a terminal command in the project folder (up to 2 minutes)."), json!({"command": {"type":"string"}}), &["command"]),
     ])
 }
 
@@ -63,7 +63,7 @@ pub fn look(c: &Call) -> Look {
     let name = |p: &str| p.rsplit('/').next().unwrap_or(p).to_string();
     match c.name.as_str() {
         "list_files" => Look { kind: "search", title: format!("Listando {}", if p.is_empty() { "a raiz".into() } else { p.clone() }), detail: None, path: None },
-        "read_file" => Look { kind: "read", title: format!("Lendo {}", name(&p)), detail: None, path: Some(p) },
+        "read_file" => Look { kind: "read", title: crate::trf!("Lendo {}", "Reading {}", name(&p)), detail: None, path: Some(p) },
         "search" => Look { kind: "search", title: format!("Buscando “{}”", cut(&c.s("query"), 40)), detail: None, path: None },
         "write_file" => Look { kind: "edit", title: format!("Escrevendo {}", name(&p)), detail: None, path: Some(p) },
         "edit_file" => Look { kind: "edit", title: format!("Editando {}", name(&p)), detail: None, path: Some(p) },
@@ -110,13 +110,13 @@ fn command_rule(cmd: &str, r: &dyn Fn(&str) -> Rule) -> (Rule, &'static str) {
         let seg = seg.strip_prefix("sudo ").map(|_| "sudo").unwrap_or(seg);
         let starts = |pats: &[&str]| pats.iter().any(|p| seg == *p || seg.starts_with(&format!("{p} ")));
         if starts(&["sudo", "brew install", "brew upgrade", "npm install -g", "npm i -g", "npm install --global", "pnpm add -g", "yarn global add", "pip install", "pip3 install", "pipx install", "cargo install", "gem install", "go install"]) {
-            cats.push(("install", "instalar no sistema"));
+            cats.push(("install", crate::i18n::tr("instalar no sistema", "install on the system")));
         }
         if starts(&["git push"]) {
             cats.push(("push", "git push"));
         }
         if starts(&["docker", "podman", "limactl", "colima", "utmctl", "multipass"]) {
-            cats.push(("vm", "VMs e containers"));
+            cats.push(("vm", crate::i18n::tr("VMs e containers", "VMs and containers")));
         }
         if starts(&["curl", "wget"]) && r("net") == Rule::Bloqueado {
             cats.push(("net", "internet"));
@@ -135,7 +135,7 @@ fn command_rule(cmd: &str, r: &dyn Fn(&str) -> Rule) -> (Rule, &'static str) {
         return (Rule::Permitido, cats[0].1);
     }
     if shell == Rule::Pergunta && read_only(cmd) {
-        return (Rule::Permitido, "comando de leitura");
+        return (Rule::Permitido, crate::i18n::tr("comando de leitura", "read command"));
     }
     (shell, "comandos")
 }
@@ -212,7 +212,7 @@ pub struct Outcome {
 impl Outcome {
     fn err(msg: impl Into<String>) -> Self {
         let m = msg.into();
-        Outcome { ok: false, text: format!("Erro: {m}"), detail: Some(m), created: false, output: vec![] }
+        Outcome { ok: false, text: crate::trf!("Erro: {m}", "Error: {m}"), detail: Some(m), created: false, output: vec![] }
     }
     fn ok(text: String, detail: Option<String>) -> Self {
         Outcome { ok: true, text, detail, created: false, output: vec![] }
@@ -251,7 +251,7 @@ fn inside(root: &Path, rel: &str) -> Result<PathBuf, String> {
     let rel = clean(rel);
     let p = Path::new(&rel);
     if p.is_absolute() || p.components().any(|c| matches!(c, Component::ParentDir | Component::Prefix(_) | Component::RootDir)) {
-        return Err(format!("“{rel}” fica fora do projeto: use caminhos relativos à raiz"));
+        return Err(crate::trf!("“{rel}” fica fora do projeto: use caminhos relativos à raiz", "“{rel}” is outside the project: use paths relative to the root"));
     }
     let root = root.canonicalize().map_err(|e| e.to_string())?;
     let full = root.join(p);
@@ -259,7 +259,7 @@ fn inside(root: &Path, rel: &str) -> Result<PathBuf, String> {
     let existing = full.ancestors().find(|a| a.exists()).unwrap_or(&root);
     let real = existing.canonicalize().map_err(|e| e.to_string())?;
     if !real.starts_with(&root) {
-        return Err(format!("“{rel}” aponta para fora do projeto"));
+        return Err(crate::trf!("“{rel}” aponta para fora do projeto", "“{rel}” points outside the project"));
     }
     Ok(full)
 }
@@ -268,30 +268,30 @@ fn list(root: &Path, rel: &str) -> Result<Outcome, String> {
     let l = crate::files::list_dir(root, &clean(rel))?;
     let mut out: Vec<String> = l.entries.iter().map(|e| format!("{}{}", e.name, if e.is_dir { "/" } else { "" })).collect();
     if l.truncated > 0 {
-        out.push(format!("… e mais {}", l.truncated));
+        out.push(crate::trf!("… e mais {}", "… and {} more", l.truncated));
     }
     let n = l.entries.len();
-    Ok(Outcome::ok(if out.is_empty() { "(pasta vazia)".into() } else { out.join("\n") }, Some(format!("{n} itens"))))
+    Ok(Outcome::ok(if out.is_empty() { crate::i18n::tr("(pasta vazia)", "(empty folder)").into() } else { out.join("\n") }, Some(format!("{n} itens"))))
 }
 
 fn read(root: &Path, rel: &str, start: Option<u64>, max: Option<u64>) -> Result<Outcome, String> {
     let full = inside(root, rel)?;
-    let meta = fs::metadata(&full).map_err(|_| format!("{} não existe", clean(rel)))?;
+    let meta = fs::metadata(&full).map_err(|_| crate::trf!("{} não existe", "{} doesn't exist", clean(rel)))?;
     if meta.is_dir() {
-        return Err(format!("{} é uma pasta: use list_files", clean(rel)));
+        return Err(crate::trf!("{} é uma pasta: use list_files", "{} is a folder: use list_files", clean(rel)));
     }
     if meta.len() > 2 * 1024 * 1024 {
-        return Err("arquivo grande demais (mais de 2 MB)".into());
+        return Err(crate::i18n::tr("arquivo grande demais (mais de 2 MB)", "file too large (over 2 MB)").into());
     }
     let bytes = fs::read(&full).map_err(|e| e.to_string())?;
-    let text = String::from_utf8(bytes).map_err(|_| "arquivo binário".to_string())?;
+    let text = String::from_utf8(bytes).map_err(|_| crate::i18n::tr("arquivo binário", "binary file").to_string())?;
     let lines: Vec<&str> = text.lines().collect();
     let from = start.unwrap_or(1).max(1) as usize - 1;
     let take = (max.unwrap_or(MAX_READ_LINES as u64) as usize).clamp(1, MAX_READ_LINES);
     let shown: Vec<String> = lines.iter().enumerate().skip(from).take(take).map(|(i, l)| format!("{:>5}| {l}", i + 1)).collect();
     let mut out = shown.join("\n");
     if from + shown.len() < lines.len() {
-        out.push_str(&format!("\n… ({} linhas no total; use start_line para continuar)", lines.len()));
+        out.push_str(&crate::trf!("\n… ({} linhas no total; use start_line para continuar)", "\n… ({} lines in total; use start_line to continue)", lines.len()));
     }
     Ok(Outcome::ok(out, Some(format!("{} linhas", lines.len()))))
 }
@@ -341,10 +341,10 @@ fn search(root: &Path, query: &str, rel: &str) -> Result<Outcome, String> {
         }
         files += found as usize;
     }
-    let detail = format!("{} resultado(s) em {files} arquivo(s){}", hits.len(), if partial { " (busca parcial)" } else { "" });
+    let detail = crate::trf!("{} resultado(s) em {files} arquivo(s){}", "{} result(s) in {files} file(s){}", hits.len(), if partial { " (busca parcial)" } else { "" });
     let mut text = if hits.is_empty() { "Nada encontrado.".to_string() } else { hits.join("\n") };
     if partial {
-        text.push_str("\n(Busca parou no limite de arquivos ou de tempo: procure numa pasta mais específica.)");
+        text.push_str(crate::i18n::tr("\n(Busca parou no limite de arquivos ou de tempo: procure numa pasta mais específica.)", "\n(The search stopped at the file or time limit: search a more specific folder.)"));
     }
     Ok(Outcome::ok(text, Some(detail)))
 }
@@ -353,7 +353,7 @@ fn write(root: &Path, rel: &str, content: Option<&str>) -> Result<Outcome, Strin
     let content = content.ok_or("faltou content")?;
     let full = inside(root, rel)?;
     if full.is_dir() {
-        return Err("é uma pasta".into());
+        return Err(crate::i18n::tr("é uma pasta", "it's a folder").into());
     }
     let created = !full.exists();
     if let Some(dir) = full.parent() {
@@ -361,7 +361,7 @@ fn write(root: &Path, rel: &str, content: Option<&str>) -> Result<Outcome, Strin
     }
     fs::write(&full, content).map_err(|e| e.to_string())?;
     let n = content.lines().count();
-    let mut o = Outcome::ok(format!("{} {} ({n} linhas).", if created { "Criado" } else { "Substituído" }, clean(rel)), Some(format!("{n} linhas")));
+    let mut o = Outcome::ok(crate::trf!("{} {} ({n} linhas).", "{} {} ({n} lines).", if created { crate::i18n::tr("Criado", "Created") } else { crate::i18n::tr("Substituído", "Replaced") }, clean(rel)), Some(crate::trf!("{n} linhas", "{n} lines")));
     o.created = created;
     Ok(o)
 }
@@ -369,18 +369,18 @@ fn write(root: &Path, rel: &str, content: Option<&str>) -> Result<Outcome, Strin
 fn edit(root: &Path, rel: &str, old: &str, new: Option<&str>) -> Result<Outcome, String> {
     let new = new.ok_or("faltou new_text")?;
     if old.is_empty() {
-        return Err("old_text vazio: para criar o arquivo use write_file".into());
+        return Err(crate::i18n::tr("old_text vazio: para criar o arquivo use write_file", "empty old_text: to create the file use write_file").into());
     }
     let full = inside(root, rel)?;
-    let text = fs::read_to_string(&full).map_err(|_| format!("não deu para ler {}", clean(rel)))?;
+    let text = fs::read_to_string(&full).map_err(|_| crate::trf!("não deu para ler {}", "couldn't read {}", clean(rel)))?;
     match text.matches(old).count() {
-        0 => Err("old_text não aparece no arquivo: leia o arquivo e copie o trecho exato".into()),
+        0 => Err(crate::i18n::tr("old_text não aparece no arquivo: leia o arquivo e copie o trecho exato", "old_text doesn't appear in the file: read the file and copy the exact snippet").into()),
         1 => {
             fs::write(&full, text.replacen(old, new, 1)).map_err(|e| e.to_string())?;
             let (a, b) = (old.lines().count(), new.lines().count());
             Ok(Outcome::ok(format!("Editado {}.", clean(rel)), Some(format!("−{a} +{b} linhas"))))
         }
-        n => Err(format!("old_text aparece {n} vezes: inclua mais contexto para ficar único")),
+        n => Err(crate::trf!("old_text aparece {n} vezes: inclua mais contexto para ficar único", "old_text appears {n} times: include more context to make it unique")),
     }
 }
 
@@ -424,9 +424,9 @@ fn command(root: &Path, cmd: &str, cancel: &AtomicBool) -> Result<Outcome, Strin
             break Some(st);
         }
         if cancel.load(Ordering::SeqCst) {
-            stopped = Some("parado");
+            stopped = Some(crate::i18n::tr("parado", "stopped"));
         } else if start.elapsed() > COMMAND_TIMEOUT {
-            stopped = Some("passou de 2 minutos");
+            stopped = Some(crate::i18n::tr("passou de 2 minutos", "went over 2 minutes"));
         }
         if stopped.is_some() {
             let _ = child.kill();
@@ -442,7 +442,7 @@ fn command(root: &Path, cmd: &str, cancel: &AtomicBool) -> Result<Outcome, Strin
     let output = lines[lines.len().saturating_sub(12)..].to_vec();
     let (ok, code) = match (status, stopped) {
         (_, Some(why)) => (false, format!("interrompido: {why}")),
-        (Some(st), _) => (st.success(), st.code().map(|c| format!("saiu com código {c}")).unwrap_or_else(|| "encerrado".into())),
+        (Some(st), _) => (st.success(), st.code().map(|c| crate::trf!("saiu com código {c}", "exited with code {c}")).unwrap_or_else(|| "encerrado".into())),
         _ => (false, "encerrado".into()),
     };
     // para o modelo: o fim da saída é o que mais importa
@@ -451,7 +451,7 @@ fn command(root: &Path, cmd: &str, cancel: &AtomicBool) -> Result<Outcome, Strin
         while !text.is_char_boundary(s) {
             s += 1;
         }
-        format!("… (início cortado)\n{}", &text[s..])
+        crate::trf!("… (início cortado)\n{}", "… (start cut off)\n{}", &text[s..])
     } else {
         text
     };

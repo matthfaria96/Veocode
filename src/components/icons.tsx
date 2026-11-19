@@ -6,6 +6,7 @@
 import { FileCode2, FileText, Folder, FolderOpen, Image } from "lucide-solid";
 import { createUniqueId, Show } from "solid-js";
 import { detailed, type IconStyle } from "../settings";
+import { tx } from "../i18n";
 
 /** Estilo pedido explicitamente (prévia dos Ajustes) ou o escolhido pela pessoa. */
 const isDetailed = (style?: IconStyle) => (style ? style === "detalhado" : detailed());
@@ -95,7 +96,7 @@ function DetailedFolder(props: { size: number; open?: boolean; tone: Tone; emble
         </linearGradient>
       </defs>
       {/* fundo com a aba */}
-      <path d="M3 8.2A2.4 2.4 0 0 1 5.4 5.8h6.3c.6 0 1.1.2 1.5.6l1.9 2h13.4A2.4 2.4 0 0 1 30.9 10.8V24.6A2.4 2.4 0 0 1 28.5 27H5.4A2.4 2.4 0 0 1 3 24.6Z" fill={`url(#b${id})`} />
+      <path d={"M3 8.2A2.4 2.4 0 0 1 5.4 5.8h6.3c.6 0 1.1.2 1.5.6l1.9 2h13.4A2.4 2.4 0 0 1 30.9 10.8V24.6A2.4 2.4 0 0 1 28.5 27H5.4A2.4 2.4 0 0 1 3 24.6Z"} fill={`url(#b${id})`} />
       <Show
         when={props.open}
         fallback={
@@ -145,7 +146,7 @@ function DetailedFile(props: { name: string; size: number }) {
         </linearGradient>
       </defs>
       <path d="M8.2 2.5h11.3l7.3 7.3v17.3a2.4 2.4 0 0 1-2.4 2.4H8.2a2.4 2.4 0 0 1-2.4-2.4V4.9a2.4 2.4 0 0 1 2.4-2.4Z" fill={`url(#p${id})`} />
-      <path d="M19.5 2.5v5a2.3 2.3 0 0 0 2.3 2.3h5Z" fill="#b7c1cf" />
+      <path d={"M19.5 2.5v5a2.3 2.3 0 0 0 2.3 2.3h5Z"} fill="#b7c1cf" />
       <path d="M9 7.5h7M9 10.5h8.5" stroke="#c8d0db" stroke-width="1" stroke-linecap="round" />
       <Show when={k().label}>
         <rect x="3" y="16" width={Math.max(15, k().label.length * 4.2 + 6)} height="9.6" rx="2.2" fill={k().color} />
@@ -174,13 +175,13 @@ export function FileIcon(props: { name: string; size?: number; style?: IconStyle
 function emblemFor(stack: string, name: string): string {
   const s = stack.toLowerCase();
   const table: [RegExp, string][] = [
-    [/rust|tauri|cargo/, "Rs"],
+    [/rust|tauri|cargo/, tx("Rs")],
     [/typescript|\bts\b/, "TS"],
-    [/swift|xcode|ios/, "Sw"],
-    [/python|django|flask/, "Py"],
-    [/\bgo\b|golang/, "Go"],
-    [/godot|gdscript/, "Gd"],
-    [/java|kotlin|android/, "Kt"],
+    [/swift|xcode|ios/, tx("Sw")],
+    [/python|django|flask/, tx("Py")],
+    [/\bgo\b|golang/, tx("Go")],
+    [/godot|gdscript/, tx("Gd")],
+    [/java|kotlin|android/, tx("Kt")],
     [/node|javascript|react|solid|vue|svelte|next|vite/, "JS"],
     [/\bc\+\+|cpp|cmake/, "C+"],
   ];

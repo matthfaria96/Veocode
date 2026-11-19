@@ -7,6 +7,7 @@ import { isTauri } from "./api";
 import { every } from "./every";
 import { projects, showToast } from "./store";
 import { settings } from "./settings";
+import { locale, tx } from "./i18n";
 
 export type Win = { pct: number; resetsAt: string | null };
 export type Limits = { fiveHour: Win | null; week: Win | null; models: [string, Win][]; at: number; error: string | null; note?: string | null; source?: string };
@@ -80,21 +81,21 @@ export function peak(id: string): { pct: number; win: "5h" | "semana"; resetsAt:
 export type Tone = "ok" | "warn" | "hot" | "full";
 export const toneOf = (pct: number): Tone => (pct >= 100 ? "full" : pct >= 90 ? "hot" : pct >= 75 ? "warn" : "ok");
 
-const WD = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
-const hm = (d: Date) => d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+const hm = (d: Date) => d.toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit" });
 /** "em 40 min", "em 3 h", "amanhã às 22:00", "sex, 20/11 às 22:00" */
 export function whenText(iso: string | null): string {
   if (!iso) return "";
   const d = new Date(iso);
   const ms = d.getTime() - Date.now();
-  if (ms <= 0) return "agora";
-  if (ms < 3600_000) return `em ${Math.max(1, Math.round(ms / 60_000))} min`;
-  if (ms < 6 * 3600_000) return `em ${Math.round(ms / 3600_000)} h`;
+  if (ms <= 0) return tx("agora");
+  if (ms < 3600_000) return tx("em {v} min", { v: Math.max(1, Math.round(ms / 60_000)) });
+  if (ms < 6 * 3600_000) return tx("em {v} h", { v: Math.round(ms / 3600_000) });
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
-  if (d.toDateString() === new Date().toDateString()) return `hoje às ${hm(d)}`;
-  if (d.toDateString() === tomorrow.toDateString()) return `amanhã às ${hm(d)}`;
-  return `${WD[d.getDay()]}, ${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")} às ${hm(d)}`;
+  if (d.toDateString() === new Date().toDateString()) return tx("hoje às {v}", { v: hm(d) });
+  if (d.toDateString() === tomorrow.toDateString()) return tx("amanhã às {v}", { v: hm(d) });
+  const day = d.toLocaleDateString(locale(), { weekday: "short", day: "2-digit", month: "2-digit" }).replace(/\./g, "");
+  return tx("{day} às {time}", { day, time: hm(d) });
 }
 
 // ---------------------------------------------------------------- avisos
@@ -122,7 +123,7 @@ const inUse = (id: string) => projects.some((p) => !p.demo && p.accountId === id
 function alertFor(id: string, l: Limits) {
   if (!inUse(id) || l.error) return;
   const name = accountById(id).label;
-  for (const [win, w, label] of [["5h", l.fiveHour, "das 5 horas"], ["semana", l.week, "semanal"]] as const) {
+  for (const [win, w, label] of [["5h", l.fiveHour, tx("das 5 horas")], ["semana", l.week, tx("semanal")]] as const) {
     if (!w) continue;
     // um aviso por faixa e por ciclo (o ciclo muda quando muda a hora de zerar)
     const cycle = w.resetsAt?.slice(0, 13) ?? "";
@@ -136,8 +137,8 @@ function alertFor(id: string, l: Limits) {
     const when = whenText(w.resetsAt);
     showToast(
       step === 100
-        ? `${name} bateu o limite ${label}${when ? ` · volta ${when}` : ""}. Troque de conta no chat para continuar.`
-        : `${name} já usou ${Math.round(w.pct)}% do limite ${label}${when ? ` · zera ${when}` : ""}`,
+        ? tx("{name} bateu o limite {label}{v}. Troque de conta no chat para continuar.", { name, label, v: when ? ` · volta ${when}` : "" })
+        : tx("{name} já usou {v}% do limite {label}{v2}", { name, v: Math.round(w.pct), label, v2: when ? ` · ${tx("zera {v}", { v: when })}` : "" }),
     );
   }
 }
@@ -151,10 +152,10 @@ export function startLimitWatch(): () => void {
 /** "agora", "há 3 min", "há 2 h" */
 export function agoText(secs: number): string {
   const s = Math.max(0, Date.now() / 1000 - secs);
-  if (s < 50) return "agora";
-  if (s < 3600) return `há ${Math.round(s / 60)} min`;
-  if (s < 86400) return `há ${Math.round(s / 3600)} h`;
-  return `há ${Math.round(s / 86400)} dia(s)`;
+  if (s < 50) return tx("agora");
+  if (s < 3600) return tx("há {v} min", { v: Math.round(s / 60) });
+  if (s < 86400) return tx("há {v} h", { v: Math.round(s / 3600) });
+  return tx("há {v} dia(s)", { v: Math.round(s / 86400) });
 }
 
 // ---------------------------------------------------------------- aviso de limite no chat

@@ -8,6 +8,7 @@ import { claudeModels, efforts, niceModel, prefsLabel, prefsOf, setPref } from "
 import { dismissable } from "../dismiss";
 import { LimitChip } from "./Limits";
 import { ProviderMark } from "./ui";
+import { tx } from "../i18n";
 
 /** Conta, logo e modelo escolhido. `prefKey` é onde ficam o modelo e o raciocínio (projeto ou Chat livre). */
 export function AgentChipButton(props: { prefKey: string; accountId: string; open: boolean; disabled?: boolean; title: string; onClick: () => void }) {
@@ -29,7 +30,7 @@ export function AgentMenu(props: { prefKey: string; accountId: string; title: st
   return (
     <div class="menu pop-in agent-menu" ref={(el) => dismissable(el, props.onClose)}>
       <small class="menu-title">{props.title}</small>
-      <For each={accts.list} fallback={<small class="inv-menu-empty">Nenhuma conta ainda: adicione em Contas e IAs</small>}>
+      <For each={accts.list} fallback={<small class="inv-menu-empty">{tx("Nenhuma conta ainda: adicione em Contas e IAs")}</small>}>
         {(a) => (
           <button
             class="menu-item"
@@ -50,28 +51,28 @@ export function AgentMenu(props: { prefKey: string; accountId: string; title: st
       </For>
       <Show when={account().provider === "claude"}>
         <div class="menu-sep" />
-        <small class="menu-title">Modelo</small>
+        <small class="menu-title">{tx("Modelo")}</small>
         <div class="agent-chips">
           <For each={claudeModels}>
             {(m) => (
-              <button class="agent-chip" classList={{ on: (prefs().model ?? null) === m.id }} title={m.id ? `${m.label}: ${m.hint}` : `Usa o modelo da conta (${accountSub(account())})`} onClick={() => setPref(props.prefKey, { model: m.id })}>
+              <button class="agent-chip" classList={{ on: (prefs().model ?? null) === m.id }} title={m.id ? `${m.label}: ${m.hint}` : tx("Usa o modelo da conta ({v})", { v: accountSub(account()) })} onClick={() => setPref(props.prefKey, { model: m.id })}>
                 {m.label}
               </button>
             )}
           </For>
         </div>
-        <small class="menu-title">Força do raciocínio</small>
+        <small class="menu-title">{tx("Força do raciocínio")}</small>
         <div class="agent-chips effort">
           <For each={efforts}>
             {(e, i) => (
-              <button class="agent-chip" classList={{ on: (prefs().effort ?? null) === e.id }} data-lvl={i()} title={e.id ? `Pensa ${e.label.toLowerCase()}: ${i() <= 2 ? "responde mais rápido e gasta menos" : "pensa mais antes de responder e gasta mais"}` : "Usa o padrão do Claude Code"} onClick={() => setPref(props.prefKey, { effort: e.id })}>
+              <button class="agent-chip" classList={{ on: (prefs().effort ?? null) === e.id }} data-lvl={i()} title={e.id ? tx("Pensa {toLowerCase}: {v}", { toLowerCase: e.label.toLowerCase(), v: i() <= 2 ? tx("responde mais rápido e gasta menos") : tx("pensa mais antes de responder e gasta mais") }) : tx("Usa o padrão do Claude Code")} onClick={() => setPref(props.prefKey, { effort: e.id })}>
                 <Show when={e.id}><i class="effort-bars"><b /><b /><b /><b /><b /></i></Show>
                 {e.label}
               </button>
             )}
           </For>
         </div>
-        <p class="agent-menu-note">Vale a partir da próxima mensagem; a conversa continua de onde parou.</p>
+        <p class="agent-menu-note">{tx("Vale a partir da próxima mensagem; a conversa continua de onde parou.")}</p>
       </Show>
     </div>
   );

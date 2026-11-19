@@ -1,3 +1,4 @@
+import { dec, tx } from "../i18n";
 // Dados fictícios — nada aqui é real ainda. Servem só para desenhar a experiência.
 // Quando formos ligar as funcionalidades, cada bloco vira um comando Rust (tauri::command).
 
@@ -26,7 +27,7 @@ export interface Account {
 export const accounts: Account[] = [
   {
     id: "claude-pessoal",
-    label: "Claude · Pessoal",
+    get label() { return tx("Claude · Pessoal"); },
     provider: "claude",
     plan: "Pro",
     auth: "Login OAuth",
@@ -39,7 +40,7 @@ export const accounts: Account[] = [
   },
   {
     id: "claude-trabalho",
-    label: "Claude · Trabalho",
+    get label() { return tx("Claude · Trabalho"); },
     provider: "claude",
     plan: "Team",
     auth: "Login OAuth",
@@ -54,8 +55,8 @@ export const accounts: Account[] = [
     id: "deepseek",
     label: "DeepSeek · API",
     provider: "deepseek",
-    plan: "Pré-pago",
-    auth: "Chave de API",
+    get plan() { return tx("Pré-pago"); },
+    get auth() { return tx("Chave de API"); },
     color: "#4f8cff",
     model: "deepseek-chat",
     usage: 0.41,
@@ -67,12 +68,12 @@ export const accounts: Account[] = [
     id: "ollama",
     label: "Local · Ollama",
     provider: "ollama",
-    plan: "Na sua máquina",
+    get plan() { return tx("Na sua máquina"); },
     auth: "localhost:11434",
     color: "#34d399",
     model: "qwen3-coder:30b",
     usage: 0.12,
-    resetIn: "sem limite",
+    get resetIn() { return tx("sem limite"); },
     tokensToday: "310 k",
     status: "ociosa",
   },
@@ -89,10 +90,10 @@ export interface AccessLevel {
 }
 
 export const accessLevels: AccessLevel[] = [
-  { id: 0, name: "Somente leitura", short: "Leitura", description: "Lê arquivos e responde. Não altera nada.", color: "#60a5fa" },
-  { id: 1, name: "Sugerir", short: "Sugerir", description: "Propõe mudanças em diff. Você aprova cada uma.", color: "#a78bfa" },
-  { id: 2, name: "Editar", short: "Editar", description: "Edita arquivos do projeto. Comandos pedem aprovação.", color: "#fbbf24" },
-  { id: 3, name: "Total", short: "Total", description: "Edita, roda terminal e instala pacotes sozinho.", color: "#f87171" },
+  { id: 0, get name() { return tx("Somente leitura"); }, get short() { return tx("Leitura"); }, get description() { return tx("Lê arquivos e responde. Não altera nada."); }, color: "#60a5fa" },
+  { id: 1, get name() { return tx("Sugerir"); }, get short() { return tx("Sugerir"); }, get description() { return tx("Propõe mudanças em diff. Você aprova cada uma."); }, color: "#a78bfa" },
+  { id: 2, get name() { return tx("Editar"); }, get short() { return tx("Editar"); }, get description() { return tx("Edita arquivos do projeto. Comandos pedem aprovação."); }, color: "#fbbf24" },
+  { id: 3, get name() { return tx("Total"); }, get short() { return tx("Total"); }, get description() { return tx("Edita, roda terminal e instala pacotes sozinho."); }, color: "#f87171" },
 ];
 
 // ---------- Projetos ----------
@@ -116,8 +117,8 @@ export interface Project {
 /** Fica sempre na lista para mostrar a animação do agente trabalhando. */
 export const demoProject: Project = {
   id: "demo",
-  name: "demo · simulação",
-  path: "projeto fictício",
+  get name() { return tx("demo · simulação"); },
+  get path() { return tx("projeto fictício"); },
   stack: "Rust · Tauri · Solid",
   accountId: "claude-pessoal",
   access: 2,
@@ -233,7 +234,7 @@ Workspace visual para agentes de IA.
 };
 
 export const defaultFileContent = (path: string) =>
-  `// ${path}\n// (conteúdo fictício — o leitor de arquivos real entra na fase 2)\n`;
+  tx("// {path}\n// (conteúdo fictício — o leitor de arquivos real entra na fase 2)\n", { path });
 
 // ---------- Raio-X do sistema ----------
 
@@ -250,14 +251,14 @@ const GB = 1024 ** 3;
 const MB = 1024 ** 2;
 
 export const caches: CacheItem[] = [
-  { id: "claude", label: "Sessões e histórico do Claude", path: "~/.claude", bytes: 1.8 * GB, owner: "claude-pessoal", kind: "ia" },
-  { id: "deepseek", label: "Sessões DeepSeek", path: "~/.veocode/deepseek", bytes: 120 * MB, owner: "deepseek", kind: "ia" },
-  { id: "ollama", label: "Modelos locais (Ollama)", path: "~/.ollama/models", bytes: 18.6 * GB, owner: "ollama", kind: "ia" },
-  { id: "npm", label: "Cache do npm", path: "~/.npm/_cacache", bytes: 3.2 * GB, owner: "sistema", kind: "pacotes" },
-  { id: "cargo", label: "Registro do Cargo", path: "~/.cargo/registry", bytes: 2.1 * GB, owner: "sistema", kind: "pacotes" },
-  { id: "pip", label: "Cache do pip", path: "~/Library/Caches/pip", bytes: 640 * MB, owner: "sistema", kind: "pacotes" },
-  { id: "target", label: "Pastas target/ e node_modules/", path: "4 projetos", bytes: 6.4 * GB, owner: "sistema", kind: "build" },
-  { id: "docker", label: "Build cache do Docker", path: "docker system df", bytes: 4.9 * GB, owner: "sistema", kind: "containers" },
+  { id: "claude", get label() { return tx("Sessões e histórico do Claude"); }, path: "~/.claude", bytes: 1.8 * GB, owner: "claude-pessoal", kind: "ia" },
+  { id: "deepseek", get label() { return tx("Sessões DeepSeek"); }, path: "~/.veocode/deepseek", bytes: 120 * MB, owner: "deepseek", kind: "ia" },
+  { id: "ollama", get label() { return tx("Modelos locais (Ollama)"); }, path: "~/.ollama/models", bytes: 18.6 * GB, owner: "ollama", kind: "ia" },
+  { id: "npm", get label() { return tx("Cache do npm"); }, path: "~/.npm/_cacache", bytes: 3.2 * GB, owner: "sistema", kind: "pacotes" },
+  { id: "cargo", get label() { return tx("Registro do Cargo"); }, path: "~/.cargo/registry", bytes: 2.1 * GB, owner: "sistema", kind: "pacotes" },
+  { id: "pip", get label() { return tx("Cache do pip"); }, path: "~/Library/Caches/pip", bytes: 640 * MB, owner: "sistema", kind: "pacotes" },
+  { id: "target", get label() { return tx("Pastas target/ e node_modules/"); }, path: "4 projetos", bytes: 6.4 * GB, owner: "sistema", kind: "build" },
+  { id: "docker", get label() { return tx("Build cache do Docker"); }, path: "docker system df", bytes: 4.9 * GB, owner: "sistema", kind: "containers" },
 ];
 
 export interface InstalledItem {
@@ -331,19 +332,19 @@ export interface SkillItem {
 }
 
 export const skills: SkillItem[] = [
-  { id: "s1", name: "code-review", description: "Revisa o diff atual procurando bugs.", scope: "global", usedBy: ["claude-pessoal", "claude-trabalho"], enabled: true, kind: "skill" },
-  { id: "s2", name: "frontend-design", description: "Guia visual para telas e componentes.", scope: "conta", scopeRef: "claude-pessoal", usedBy: ["claude-pessoal"], enabled: true, kind: "skill" },
-  { id: "s3", name: "sql-helper", description: "Escreve e explica queries SQL.", scope: "projeto", scopeRef: "loja-api", usedBy: ["claude-trabalho"], enabled: true, kind: "skill" },
-  { id: "s4", name: "pandas-notebooks", description: "Padrões para análise em notebooks.", scope: "projeto", scopeRef: "analise-dados", usedBy: ["deepseek"], enabled: true, kind: "skill" },
-  { id: "s5", name: "deploy-vercel", description: "Publica o site e confere o build.", scope: "projeto", scopeRef: "portfolio", usedBy: [], enabled: false, kind: "skill" },
-  { id: "m1", name: "filesystem", description: "Lê e escreve arquivos dentro da pasta do projeto.", scope: "global", usedBy: ["claude-pessoal", "claude-trabalho", "deepseek", "ollama"], enabled: true, kind: "mcp" },
-  { id: "m2", name: "github", description: "Issues, PRs e reviews.", scope: "conta", scopeRef: "claude-trabalho", usedBy: ["claude-trabalho"], enabled: true, kind: "mcp" },
-  { id: "m3", name: "postgres", description: "Consulta o banco local do projeto.", scope: "projeto", scopeRef: "loja-api", usedBy: ["claude-trabalho"], enabled: true, kind: "mcp" },
-  { id: "m4", name: "browser", description: "Abre páginas e tira screenshots.", scope: "global", usedBy: ["claude-pessoal"], enabled: false, kind: "mcp" },
+  { id: "s1", name: "code-review", get description() { return tx("Revisa o diff atual procurando bugs."); }, scope: "global", usedBy: ["claude-pessoal", "claude-trabalho"], enabled: true, kind: "skill" },
+  { id: "s2", name: "frontend-design", get description() { return tx("Guia visual para telas e componentes."); }, scope: "conta", scopeRef: "claude-pessoal", usedBy: ["claude-pessoal"], enabled: true, kind: "skill" },
+  { id: "s3", name: "sql-helper", get description() { return tx("Escreve e explica queries SQL."); }, scope: "projeto", scopeRef: "loja-api", usedBy: ["claude-trabalho"], enabled: true, kind: "skill" },
+  { id: "s4", name: "pandas-notebooks", get description() { return tx("Padrões para análise em notebooks."); }, scope: "projeto", scopeRef: "analise-dados", usedBy: ["deepseek"], enabled: true, kind: "skill" },
+  { id: "s5", name: "deploy-vercel", get description() { return tx("Publica o site e confere o build."); }, scope: "projeto", scopeRef: "portfolio", usedBy: [], enabled: false, kind: "skill" },
+  { id: "m1", name: "filesystem", get description() { return tx("Lê e escreve arquivos dentro da pasta do projeto."); }, scope: "global", usedBy: ["claude-pessoal", "claude-trabalho", "deepseek", "ollama"], enabled: true, kind: "mcp" },
+  { id: "m2", name: "github", get description() { return tx("Issues, PRs e reviews."); }, scope: "conta", scopeRef: "claude-trabalho", usedBy: ["claude-trabalho"], enabled: true, kind: "mcp" },
+  { id: "m3", name: "postgres", get description() { return tx("Consulta o banco local do projeto."); }, scope: "projeto", scopeRef: "loja-api", usedBy: ["claude-trabalho"], enabled: true, kind: "mcp" },
+  { id: "m4", name: "browser", get description() { return tx("Abre páginas e tira screenshots."); }, scope: "global", usedBy: ["claude-pessoal"], enabled: false, kind: "mcp" },
 ];
 
 export const formatBytes = (b: number) => {
-  if (b >= GB) return `${(b / GB).toFixed(1).replace(".", ",")} GB`;
+  if (b >= GB) return `${dec(b / GB)} GB`;
   if (b >= MB) return `${Math.round(b / MB)} MB`;
   return `${Math.round(b / 1024)} KB`;
 };

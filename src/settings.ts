@@ -5,13 +5,17 @@ import { invoke } from "@tauri-apps/api/core";
 import { createStore } from "solid-js/store";
 import { isTauri } from "./api";
 import { showToast } from "./store";
+import { setLanguagePref, tx } from "./i18n";
 
 export type IconStyle = "minimalista" | "detalhado";
 export type Motion = "completa" | "reduzida";
 export type Theme = "escuro" | "claro" | "sistema";
+/** "sistema" segue o idioma do Mac (português se for português, inglês para o resto). */
+export type Language = "sistema" | "pt" | "en";
 
 export interface Settings {
   theme: Theme;
+  language: Language;
   icons: IconStyle;
   motion: Motion;
   /** conta do Chat livre ("" = a padrão) */
@@ -20,13 +24,14 @@ export interface Settings {
   freePc: boolean;
 }
 
-const defaults: Settings = { theme: "escuro", icons: "detalhado", motion: "completa", freeAccount: "", freePc: false };
+const defaults: Settings = { theme: "escuro", language: "sistema", icons: "detalhado", motion: "completa", freeAccount: "", freePc: false };
 const KEY = "veocode.settings";
 
 export const [settings, setSettings] = createStore<Settings>({ ...defaults });
 
 /** Animações reduzidas: uma classe na raiz desliga as animações longas e os laços. */
 const applyLooks = () => {
+  setLanguagePref(settings.language);
   const root = document.documentElement;
   root.classList.toggle("reduce-motion", settings.motion === "reduzida");
   const light = settings.theme === "claro" || (settings.theme === "sistema" && !!window.matchMedia?.("(prefers-color-scheme: light)").matches);
@@ -63,7 +68,7 @@ export async function updateSettings(change: Partial<Settings>) {
   } catch (e) {
     setSettings(before);
     applyMotion();
-    showToast(`Não deu para guardar o ajuste: ${e instanceof Error ? e.message : String(e)}`);
+    showToast(tx("Não deu para guardar o ajuste: {v}", { v: e instanceof Error ? e.message : String(e) }));
   }
 }
 

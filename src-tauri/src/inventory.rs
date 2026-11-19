@@ -114,25 +114,25 @@ pub fn mcp_running(probes: &[Probe], groups: &[AgentGroup]) -> HashMap<String, V
 /// `skills/`, `commands/` ou `agents/` (nunca de dentro de plugins ou sincronizadas).
 pub fn trash_item(path: &str, allowed: &HashSet<String>) -> Result<PathBuf, String> {
     if !allowed.contains(path) {
-        return Err("Esse item não está mais na lista. Atualize o inventário e tente de novo.".into());
+        return Err(crate::i18n::tr("Esse item não está mais na lista. Atualize o inventário e tente de novo.", "That item is no longer in the list. Refresh the inventory and try again.").into());
     }
     let file = Path::new(path);
     if file.components().any(|c| matches!(c.as_os_str().to_str(), Some("plugins" | "synced" | ".trash"))) {
-        return Err("Esse item vem de um plugin ou do claude.ai: não dá para tirar sozinho.".into());
+        return Err(crate::i18n::tr("Esse item vem de um plugin ou do claude.ai: não dá para tirar sozinho.", "That item comes from a plugin or from claude.ai: it can't be removed on its own.").into());
     }
     // skill: a pasta inteira (SKILL.md + o que vier junto); comando/agente: o arquivo
     let target = if file.file_name().is_some_and(|n| n == "SKILL.md") { file.parent().ok_or("caminho estranho")?.to_path_buf() } else { file.to_path_buf() };
     let ok_parent = target.ancestors().skip(1).any(|a| a.file_name().is_some_and(|n| n == "skills" || n == "commands" || n == "agents"));
     if !ok_parent || !target.exists() {
-        return Err("Esse caminho não parece uma skill, comando ou agente.".into());
+        return Err(crate::i18n::tr("Esse caminho não parece uma skill, comando ou agente.", "That path doesn't look like a skill, command or agent.").into());
     }
-    to_trash(std::slice::from_ref(&target)).map_err(|e| format!("não deu para mover para a Lixeira: {e}"))?;
+    to_trash(std::slice::from_ref(&target)).map_err(|e| crate::trf!("não deu para mover para a Lixeira: {e}", "couldn't move it to the Trash: {e}"))?;
     Ok(target)
 }
 
 /// Roda o próprio Claude Code (`claude plugin …` / `claude mcp …`) com a conta certa.
 fn claude(config_dir: Option<&Path>, cwd: Option<&Path>, args: &[&str]) -> Result<String, String> {
-    let bin = crate::xray::util::which("claude").ok_or("Não achei o comando `claude`.")?;
+    let bin = crate::xray::util::which("claude").ok_or(crate::i18n::tr("Não achei o comando `claude`.", "Couldn't find the `claude` command."))?;
     let mut cmd = Command::new(bin);
     cmd.args(args).env_remove("CLAUDECODE").stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
     if let Some(d) = config_dir {
@@ -154,7 +154,7 @@ fn claude(config_dir: Option<&Path>, cwd: Option<&Path>, args: &[&str]) -> Resul
         }
         if started.elapsed() > Duration::from_secs(60) {
             let _ = child.kill();
-            return Err("o Claude Code demorou demais para responder".into());
+            return Err(crate::i18n::tr("o Claude Code demorou demais para responder", "Claude Code took too long to answer").into());
         }
         std::thread::sleep(Duration::from_millis(100));
     }
@@ -169,11 +169,11 @@ fn claude(config_dir: Option<&Path>, cwd: Option<&Path>, args: &[&str]) -> Resul
 
 fn safe_name(s: &str) -> Result<(), String> {
     let ok = !s.is_empty() && s.len() <= 200 && !s.starts_with('-') && s.chars().all(|c| c.is_ascii_alphanumeric() || "-_.@:/".contains(c));
-    if ok { Ok(()) } else { Err("nome inválido".into()) }
+    if ok { Ok(()) } else { Err(crate::i18n::tr("nome inválido", "invalid name").into()) }
 }
 
 fn scope_ok(scope: &str) -> Result<(), String> {
-    if ["user", "project", "local"].contains(&scope) { Ok(()) } else { Err("escopo inválido".into()) }
+    if ["user", "project", "local"].contains(&scope) { Ok(()) } else { Err(crate::i18n::tr("escopo inválido", "invalid scope").into()) }
 }
 
 /// Liga, desliga ou remove um plugin. `project`: pasta do projeto (escopos project/local).
@@ -181,11 +181,11 @@ pub fn plugin_action(config_dir: Option<&Path>, plugin_id: &str, scope: &str, pr
     safe_name(plugin_id)?;
     scope_ok(scope)?;
     if scope != "user" && project.is_none_or(|p| !p.is_dir()) {
-        return Err("A pasta do projeto desse plugin não existe mais.".into());
+        return Err(crate::i18n::tr("A pasta do projeto desse plugin não existe mais.", "That plugin's project folder no longer exists.").into());
     }
     match action {
         "enable" | "disable" | "uninstall" => claude(config_dir, project, &["plugin", action, plugin_id, "--scope", scope]),
-        _ => Err("ação inválida".into()),
+        _ => Err(crate::i18n::tr("ação inválida", "invalid action").into()),
     }
 }
 
@@ -194,7 +194,7 @@ pub fn mcp_remove(config_dir: Option<&Path>, name: &str, scope: &str, project: O
     safe_name(name)?;
     scope_ok(scope)?;
     if scope != "user" && project.is_none_or(|p| !p.is_dir()) {
-        return Err("A pasta do projeto desse servidor não existe mais.".into());
+        return Err(crate::i18n::tr("A pasta do projeto desse servidor não existe mais.", "That server's project folder no longer exists.").into());
     }
     claude(config_dir, project, &["mcp", "remove", name, "--scope", scope])
 }

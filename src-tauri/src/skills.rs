@@ -326,7 +326,7 @@ fn scan_claude_dir(base: &Path, skills_dirs: &[PathBuf], ctx: &Ctx, out: &mut Ve
             if synced && !seen_synced.insert(folder.clone()) {
                 continue; // a mesma skill sincronizada aparece em mais de um "balde"
             }
-            let origin = if synced { Some("sincronizada do claude.ai".to_string()) } else { fm.get("name").filter(|n| **n != folder).map(|n| format!("chamada de “{n}”")) };
+            let origin = if synced { Some(crate::i18n::tr("sincronizada do claude.ai", "synced from claude.ai").to_string()) } else { fm.get("name").filter(|n| **n != folder).map(|n| crate::trf!("chamada de “{n}”", "called “{n}”")) };
             let mut it = ctx.item(Kind::Skill, folder, describe(&text, &fm), origin, &md);
             weigh(&mut it, &text, &fm, &md);
             it.group = owners.get(&it.name).cloned();
@@ -411,8 +411,8 @@ fn mcp_item(name: &str, v: &Value, defined_in: &Path, ctx: &Ctx, enabled: bool, 
     let found = command.as_deref().map(command_found);
     let description = match (&command, &url) {
         (Some(c), _) => format!("Roda {}", Path::new(c).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| c.clone())),
-        (None, Some(u)) => format!("Servidor remoto em {}", strip_query(u).split("://").nth(1).unwrap_or("").split('/').next().unwrap_or("")),
-        _ => "Sem comando nem endereço".into(),
+        (None, Some(u)) => crate::trf!("Servidor remoto em {}", "Remote server at {}", strip_query(u).split("://").nth(1).unwrap_or("").split('/').next().unwrap_or("")),
+        _ => crate::i18n::tr("Sem comando nem endereço", "No command or address").into(),
     };
     Item {
         id: format!("mcp:{}:{}", defined_in.to_string_lossy(), name),
@@ -478,7 +478,7 @@ pub fn report(homes: &[ClaudeHome], projects: &[PathBuf]) -> Report {
                     let local = Ctx { layer: Layer::Projeto, accounts: acc, project: Some(path), plugin: None, enabled: true };
                     for (name, v) in mcp_servers(pv) {
                         let mut it = mcp_item(&name, &v, &h.json, &local, true, "local");
-                        it.origin = Some("local (só desta conta)".into());
+                        it.origin = Some(crate::i18n::tr("local (só desta conta)", "local (this account only)").into());
                         it.id = format!("mcp:{}:{}:{}", h.json.to_string_lossy(), path, name);
                         r.items.push(it);
                     }
@@ -565,7 +565,7 @@ pub fn report(homes: &[ClaudeHome], projects: &[PathBuf]) -> Report {
                     rejected |= has("disabledMcpjsonServers");
                 }
                 let mut it = mcp_item(&name, &v, &mcp_file, &ctx, !rejected, "project");
-                it.origin = Some(if approved { "aprovado no projeto".into() } else if rejected { "recusado no projeto".into() } else { "aguardando aprovação".into() });
+                it.origin = Some(if approved { crate::i18n::tr("aprovado no projeto", "approved in the project").into() } else if rejected { crate::i18n::tr("recusado no projeto", "declined in the project").into() } else { crate::i18n::tr("aguardando aprovação", "waiting for approval").into() });
                 r.items.push(it);
             }
         }
@@ -576,17 +576,17 @@ pub fn report(homes: &[ClaudeHome], projects: &[PathBuf]) -> Report {
 /// Lê o arquivo de um item para mostrar na tela. Só aceita caminhos que o relatório devolveu.
 pub fn read_item(path: &str, allowed: &HashSet<String>) -> Result<String, String> {
     if !allowed.contains(path) {
-        return Err("arquivo fora da lista de skills".into());
+        return Err(crate::i18n::tr("arquivo fora da lista de skills", "file outside the skills list").into());
     }
     let p = Path::new(path);
     let len = fs::metadata(p).map_err(|e| e.to_string())?.len();
     if len > 256 * 1024 {
-        return Err("arquivo grande demais para mostrar aqui".into());
+        return Err(crate::i18n::tr("arquivo grande demais para mostrar aqui", "file too large to show here").into());
     }
     let text = fs::read_to_string(p).map_err(|e| e.to_string())?;
     // .claude.json e .mcp.json podem ter chaves: nesses mostra só o que é do MCP, sem valores de env/headers
     if p.extension().is_some_and(|x| x == "json") {
-        return Ok("(arquivo de configuração — os valores podem conter chaves e não são mostrados)".into());
+        return Ok(crate::i18n::tr("(arquivo de configuração — os valores podem conter chaves e não são mostrados)", "(configuration file — the values may contain keys and aren't shown)").into());
     }
     Ok(text)
 }

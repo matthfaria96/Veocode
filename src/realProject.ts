@@ -6,6 +6,7 @@ import { api, type FsChange } from "./api";
 import { openFile, projectId, pushEvent, resetWorkspace, setWs, showToast, ws } from "./store";
 import { touchedByAgent } from "./agentFeed";
 import { dropDraft, isUnsaved, savedByMe, saveNow } from "./editing";
+import { tx } from "./i18n";
 
 const parentOf = (path: string) => (path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "");
 const nameOf = (path: string) => path.split("/").pop() ?? path;
@@ -39,7 +40,7 @@ export async function loadDir(dir: string) {
     if (pid !== projectId()) return;
     // pasta que sumiu (ou ainda não existe): fecha em vez de ficar "carregando…"
     if (dir) setWs("expanded", dir, false);
-    showToast(`Não abriu ${dir || "a pasta"}: ${e}`);
+    showToast(tx("Não abriu {v}: {e}", { v: dir || tx("a pasta"), e }));
   }
 }
 
@@ -92,15 +93,15 @@ export function handleFsChange(e: FsChange) {
     if (!c.exists) {
       if (!known && !ws.marks[c.path]) continue; // arquivo temporário que nasceu e morreu
       setWs("marks", c.path, "deleted");
-      pushEvent({ kind: "delete", title: `Apagado: ${c.path}`, agent: "disco", status: "ok" });
-      if (ws.openTabs.includes(c.path)) setWs("contents", c.path, { kind: "error", message: "Este arquivo foi apagado do disco." });
+      pushEvent({ kind: "delete", title: tx("Apagado: {path}", { path: c.path }), agent: "disco", status: "ok" });
+      if (ws.openTabs.includes(c.path)) setWs("contents", c.path, { kind: "error", message: tx("Este arquivo foi apagado do disco.") });
       continue;
     }
 
     if (c.isDir) {
       if (listing && !known) {
         setWs("marks", c.path, "new");
-        if (!touchedByAgent(c.path)) pushEvent({ kind: "create", title: `Pasta nova: ${c.path}`, agent: "disco", status: "ok" });
+        if (!touchedByAgent(c.path)) pushEvent({ kind: "create", title: tx("Pasta nova: {path}", { path: c.path }), agent: "disco", status: "ok" });
       }
       continue;
     }
@@ -110,10 +111,10 @@ export function handleFsChange(e: FsChange) {
     const isNew = !!listing && !known && prev !== "edit" && prev !== "new";
     setWs("marks", c.path, isNew || prev === "new" ? "new" : "edit");
     // o agente acabou de mexer aqui: a linha dele na Atividade já conta a história
-    if (!touchedByAgent(c.path)) pushEvent({ kind: isNew ? "create" : "edit", title: `${isNew ? "Criado" : "Alterado"}: ${c.path}`, detail: nameOf(c.path), agent: "disco", status: "ok", path: c.path });
+    if (!touchedByAgent(c.path)) pushEvent({ kind: isNew ? "create" : "edit", title: `${isNew ? tx("Criado") : tx("Alterado")}: ${c.path}`, detail: nameOf(c.path), agent: "disco", status: "ok", path: c.path });
     if (ws.openTabs.includes(c.path)) {
       if (isUnsaved(c.path)) {
-        showToast(`${nameOf(c.path)} mudou no disco enquanto você escrevia. Fica valendo o seu texto (salvando agora).`);
+        showToast(tx("{v} mudou no disco enquanto você escrevia. Fica valendo o seu texto (salvando agora).", { v: nameOf(c.path) }));
         void saveNow(c.path);
       } else {
         dropDraft(c.path);

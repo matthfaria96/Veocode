@@ -11,6 +11,7 @@ import { produce } from "solid-js/store";
 import { api } from "./api";
 import { showToast } from "./store";
 import { errMsg, listTerms, openTermSized, setSink, setTerms, terms } from "./terminal";
+import { tx } from "./i18n";
 
 interface Live {
   id: string;
@@ -49,7 +50,7 @@ const theme = {
 
 /** Instância nova; `id` vazio até o Rust abrir o shell. */
 function create(id = ""): Live {
-  const mono = getComputedStyle(document.documentElement).getPropertyValue("--mono").trim() || "Menlo, monospace";
+  const mono = getComputedStyle(document.documentElement).getPropertyValue("--mono").trim() || tx("Menlo, monospace");
   const xt = new Terminal({ theme, fontFamily: mono, fontSize: 12.5, lineHeight: 1.2, cursorBlink: true, scrollback: 5000, macOptionIsMeta: true });
   const fit = new FitAddon();
   xt.loadAddon(fit);
@@ -94,7 +95,7 @@ setSink({
     waiting.set(id, w);
   },
   exit(id) {
-    live.get(id)?.xt.write("\r\n\x1b[90m[o shell terminou: feche esta aba ou abra outra]\x1b[0m\r\n");
+    live.get(id)?.xt.write(tx("\r\n\u001b[90m[o shell terminou: feche esta aba ou abra outra]\u001b[0m\r\n"));
   },
   dispose(id) {
     const l = live.get(id);

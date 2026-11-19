@@ -10,6 +10,7 @@ import { git, setGitTab } from "./git";
 import { projectId, projects, setProjectId, setView, showToast, view } from "./store";
 import { xray } from "./xray";
 import { every } from "./every";
+import { tx } from "./i18n";
 
 export type Urgency = "agora" | "logo" | "lembrete";
 
@@ -35,21 +36,21 @@ export const needs = createMemo<Need[]>(() => {
   for (const p of projects) {
     if (p.demo) continue;
     const st = projectState(p.id);
-    if (st.tone === "ask") out.push({ id: `ask:${p.id}`, urgency: "agora", title: `${p.name}: a IA está esperando você`, detail: `${st.label}. Ela fica parada até você responder.`, action: "Responder", go: openProject(p.id, "chat") });
-    if (st.tone === "error") out.push({ id: `err:${p.id}`, urgency: "logo", title: `${p.name}: a IA parou com erro`, detail: "Veja a última mensagem para entender o que aconteceu.", action: "Ver", go: openProject(p.id, "chat") });
+    if (st.tone === "ask") out.push({ id: `ask:${p.id}`, urgency: "agora", title: tx("{name}: a IA está esperando você", { name: p.name }), detail: tx("{label}. Ela fica parada até você responder.", { label: st.label }), action: tx("Responder"), go: openProject(p.id, "chat") });
+    if (st.tone === "error") out.push({ id: `err:${p.id}`, urgency: "logo", title: tx("{name}: a IA parou com erro", { name: p.name }), detail: tx("Veja a última mensagem para entender o que aconteceu."), action: tx("Ver"), go: openProject(p.id, "chat") });
     const g = git.summaries[p.id];
-    if (g?.conflicts) out.push({ id: `conf:${p.id}`, urgency: "logo", title: `${p.name}: ${g.conflicts} ${g.conflicts === 1 ? "arquivo em conflito" : "arquivos em conflito"}`, detail: "Duas versões do mesmo trecho brigaram numa junção. Precisa escolher qual fica.", action: "Abrir o Git", go: openProject(p.id, "git") });
-    if (g?.ahead && g.upstream) out.push({ id: `push:${p.id}`, urgency: "lembrete", title: `${p.name}: ${g.ahead} ${g.ahead === 1 ? "commit só neste computador" : "commits só neste computador"}`, detail: "Ainda não foram enviados para o remoto. Se o computador tiver problema, eles se perdem.", action: "Abrir o Git", go: openProject(p.id, "git") });
+    if (g?.conflicts) out.push({ id: `conf:${p.id}`, urgency: "logo", title: `${p.name}: ${g.conflicts} ${g.conflicts === 1 ? tx("arquivo em conflito") : tx("arquivos em conflito")}`, detail: tx("Duas versões do mesmo trecho brigaram numa junção. Precisa escolher qual fica."), action: tx("Abrir o Git"), go: openProject(p.id, "git") });
+    if (g?.ahead && g.upstream) out.push({ id: `push:${p.id}`, urgency: "lembrete", title: `${p.name}: ${g.ahead} ${g.ahead === 1 ? tx("commit só neste computador") : tx("commits só neste computador")}`, detail: tx("Ainda não foram enviados para o remoto. Se o computador tiver problema, eles se perdem."), action: tx("Abrir o Git"), go: openProject(p.id, "git") });
   }
   for (const a of accts.list) {
     const s = accts.status[a.id];
     if (!s) continue;
-    const word = s.state === "semLogin" ? "precisa entrar (login)" : s.state === "semChave" ? "está sem a chave" : s.state === "erro" ? "deu erro ao conferir" : null;
-    if (word) out.push({ id: `acc:${a.id}`, urgency: "logo", title: `Conta ${accountById(a.id).label} ${word}`, detail: s.detail ?? "Sem isso, os projetos dessa conta não conseguem conversar.", action: "Abrir Contas", go: () => setView("accounts") });
+    const word = s.state === "semLogin" ? tx("precisa entrar (login)") : s.state === "semChave" ? tx("está sem a chave") : s.state === "erro" ? tx("deu erro ao conferir") : null;
+    if (word) out.push({ id: `acc:${a.id}`, urgency: "logo", title: tx("Conta {label} {word}", { label: accountById(a.id).label, word }), detail: s.detail ?? tx("Sem isso, os projetos dessa conta não conseguem conversar."), action: tx("Abrir Contas"), go: () => setView("accounts") });
   }
   if (xray.cachesLoaded) {
     const total = xray.caches.reduce((s, c) => s + (c.size ?? 0), 0);
-    if (total > 10 * 1024 ** 3) out.push({ id: "disk", urgency: "lembrete", title: `As IAs ocupam ${formatBytes(total)} no disco`, detail: "Históricos e arquivos temporários. Dá para mandar parte para a Lixeira.", action: "Liberar espaço", go: () => setView("system") });
+    if (total > 10 * 1024 ** 3) out.push({ id: "disk", urgency: "lembrete", title: tx("As IAs ocupam {v} no disco", { v: formatBytes(total) }), detail: tx("Históricos e arquivos temporários. Dá para mandar parte para a Lixeira."), action: tx("Liberar espaço"), go: () => setView("system") });
   }
   return out.sort((a, b) => order[a.urgency] - order[b.urgency]);
 });
@@ -73,9 +74,9 @@ export function startNotices(): () => void {
       if (first || before === tone) continue;
       const looking = view() === "workspace" && projectId() === p.id;
       if (looking) continue;
-      if (tone === "ask") showToast(`${p.name}: a IA está esperando você responder`);
-      else if (before === "work" && tone === "idle") showToast(`✓ ${p.name}: a IA terminou`);
-      else if (tone === "error") showToast(`${p.name}: a IA parou com erro`);
+      if (tone === "ask") showToast(tx("{name}: a IA está esperando você responder", { name: p.name }));
+      else if (before === "work" && tone === "idle") showToast(tx("✓ {name}: a IA terminou", { name: p.name }));
+      else if (tone === "error") showToast(tx("{name}: a IA parou com erro", { name: p.name }));
     }
     first = false;
   };

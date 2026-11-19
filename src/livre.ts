@@ -13,6 +13,7 @@ import { isTauri } from "./api";
 import type { Convo, PermissionAsk } from "./chat";
 import { settings, updateSettings } from "./settings";
 import { showToast } from "./store";
+import { tx } from "./i18n";
 
 export const LIVRE = "livre";
 
@@ -122,9 +123,9 @@ export function handleLivre(e: Ev) {
 
 export async function sendLivre(text?: string) {
   const files = text === undefined ? attsOf(LIVRE) : [];
-  const t = (text ?? livre.input).trim() || (files.length ? "Veja os anexos." : "");
+  const t = (text ?? livre.input).trim() || (files.length ? tx("Veja os anexos.") : "");
   if (!t || livre.busy) return;
-  if (!freeAccountId()) return showToast("Adicione uma conta de IA em Contas para conversar");
+  if (!freeAccountId()) return showToast(tx("Adicione uma conta de IA em Contas para conversar"));
   setLivre(produce((c) => {
     c.busy = true;
     c.draft = "";
@@ -149,7 +150,7 @@ export async function sendLivre(text?: string) {
   }
 }
 
-export const stopLivre = () => (isTauri ? invoke("chat_stop", { projectId: LIVRE }).catch((e) => showToast(errMsg(e))) : handleLivre({ kind: "done", ok: false, detail: "interrompido" }));
+export const stopLivre = () => (isTauri ? invoke("chat_stop", { projectId: LIVRE }).catch((e) => showToast(errMsg(e))) : handleLivre({ kind: "done", ok: false, detail: tx("interrompido") }));
 
 export async function answerLivre(requestId: string, allow: boolean) {
   setLivre("perms", (p) => p.requestId === requestId, "answering", true);
@@ -173,7 +174,7 @@ export async function setFreeAccount(id: string) {
   if (livre.items.length) {
     if (isTauri) await invoke("chat_reset", { projectId: LIVRE }).catch(() => {});
     setLivre("conv", null);
-    push({ key: key("n"), t: "note", text: `Agora com ${accountById(id).label}: a próxima mensagem começa uma conversa nova.` });
+    push({ key: key("n"), t: "note", text: tx("Agora com {label}: a próxima mensagem começa uma conversa nova.", { label: accountById(id).label }) });
   }
 }
 
@@ -181,7 +182,7 @@ export async function setFreeAccount(id: string) {
 export async function setFreePc(on: boolean) {
   if (on === settings.freePc || livre.busy) return;
   await updateSettings({ freePc: on });
-  if (livre.items.length) push({ key: key("n"), t: "note", text: on ? "Agora pode olhar o computador (só leitura)." : "Agora só conversa: sem olhar os arquivos." });
+  if (livre.items.length) push({ key: key("n"), t: "note", text: on ? tx("Agora pode olhar o computador (só leitura).") : tx("Agora só conversa: sem olhar os arquivos.") });
 }
 
 export async function listLivre() {
@@ -192,7 +193,7 @@ export async function listLivre() {
 
 /** Retoma uma conversa do Chat livre (troca para a conta dela, se precisar). */
 export async function openLivre(c: Convo) {
-  if (livre.busy) return showToast("Espere a resposta terminar (ou pare) antes de trocar de conversa");
+  if (livre.busy) return showToast(tx("Espere a resposta terminar (ou pare) antes de trocar de conversa"));
   try {
     if (c.account !== freeAccountId()) await updateSettings({ freeAccount: c.account });
     const evs = await invoke<AgentEvent[]>("chat_open", { projectId: LIVRE, kind: c.kind, id: c.id, account: c.account });
@@ -216,14 +217,14 @@ function demoReply(text: string) {
   });
   const at = (ms: number, f: () => void) => setTimeout(() => livre.busy && f(), ms);
   if (settings.freePc) {
-    at(500, () => step(ev("d1", "search", "Procurando ~/Downloads/*.pdf", "running")));
-    at(1300, () => step(ev("d1", "result", "", "ok", "3 arquivos")));
-    at(1500, () => step(ev("d2", "read", "Lendo ~/Downloads/contrato-aluguel.pdf", "running")));
-    at(2300, () => step(ev("d2", "result", "", "ok", "4 páginas")));
+    at(500, () => step(ev("d1", "search", tx("Procurando ~/Downloads/*.pdf"), "running")));
+    at(1300, () => step(ev("d1", "result", "", "ok", tx("3 arquivos"))));
+    at(1500, () => step(ev("d2", "read", tx("Lendo ~/Downloads/contrato-aluguel.pdf"), "running")));
+    at(2300, () => step(ev("d2", "result", "", "ok", tx("4 páginas"))));
   }
   const answer = settings.freePc
-    ? "Achei **3 PDFs** em `Downloads`. O mais recente é `contrato-aluguel.pdf`:\n\n- Prazo de **30 meses**, a partir de março\n- Reajuste anual pelo IPCA\n- Multa de 3 aluguéis se sair antes de 12 meses\n\nQuer que eu procure mais alguma coisa nele?"
-    : `Boa pergunta! Em resumo:\n\n1. **${text.slice(0, 40)}** depende do contexto.\n2. Um exemplo rápido:\n\n\`\`\`js\nconsole.log("olá do Chat livre");\n\`\`\`\n\nQuer que eu detalhe alguma parte?`;
+    ? tx("Achei **3 PDFs** em `Downloads`. O mais recente é `contrato-aluguel.pdf`:\n\n- Prazo de **30 meses**, a partir de março\n- Reajuste anual pelo IPCA\n- Multa de 3 aluguéis se sair antes de 12 meses\n\nQuer que eu procure mais alguma coisa nele?")
+    : tx("Boa pergunta! Em resumo:\n\n1. **{v}** depende do contexto.\n2. Um exemplo rápido:\n\n```js\nconsole.log(\"olá do Chat livre\");\n```\n\nQuer que eu detalhe alguma parte?", { v: text.slice(0, 40) });
   const start = settings.freePc ? 2500 : 600;
   let i = 0;
   const tick = () => {
@@ -233,7 +234,7 @@ function demoReply(text: string) {
     if (i < answer.length) setTimeout(tick, 18);
     else {
       handleLivre({ kind: "say", key: `demo-${Date.now()}`, text: answer });
-      handleLivre({ kind: "done", ok: true, detail: settings.freePc ? "3 s · 2 passos" : "1 s" });
+      handleLivre({ kind: "done", ok: true, detail: settings.freePc ? tx("3 s · 2 passos") : "1 s" });
     }
   };
   at(start, tick);

@@ -31,7 +31,7 @@
 </p>
 
 > [!NOTE]
-> The interface is in **Brazilian Portuguese** for now. Everything runs on your Mac: no account, no server, no telemetry.
+> Available in **English** and **Brazilian Portuguese**. It follows your Mac's language; change it any time in **Settings → Language**. Everything runs on your Mac: no account, no server, no telemetry.
 
 ## Install
 
@@ -163,6 +163,7 @@ npx tauri build --target universal-apple-darwin --bundles app   # universal Veoc
 | `src/views/` | One file per screen (`Workspace`, `Board`, `Accounts`, `System`, `Inventory`, `Livre`, `Settings`) |
 | `src/components/` | Shared UI: chat panel, file tree, editor, Git panel, terminal, dialogs |
 | `src/*.ts` | Client-side stores (one per area: `chat`, `accounts`, `xray`, `board`…) |
+| `src/i18n.ts`, `src/i18n/en.ts` | Translations: the Portuguese text is the key, `en.ts` holds the English. `tx("…")` in the UI, `tr`/`trf!` in Rust |
 | `src/help/` | Help texts (`topics.ts`) and their animated SVG scenes (`Scenes.tsx`) |
 | `src-tauri/src/` | Rust commands: agents, session logs, access rules, accounts, terminals, Git |
 | `src-tauri/src/xray/` | Machine scanners: caches, installs, VMs/containers, processes and ports, local models |
@@ -174,6 +175,8 @@ npx tauri build --target universal-apple-darwin --bundles app   # universal Veoc
 **Does it send my code anywhere?** Only to the AI you choose to chat with, exactly like using that AI directly. Veocode itself has no server and no analytics.
 
 **Does it change my Claude Code setup?** It reads your accounts' folders. The only files it writes are the permission rules for a project when you set an access level, and its own data in `~/Library/Application Support/com.veocode.app` (chats, terminal history, settings).
+
+**Can I switch the language?** Yes: **Settings → Language** (System, Português or English). The AI answers in the language you write in.
 
 **Windows / Linux?** The Rust side compiles for Windows, but only macOS is tested and released.
 

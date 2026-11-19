@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { createSignal } from "solid-js";
 import { createStore } from "solid-js/store";
 import { isTauri, type FsChange } from "./api";
+import { tx } from "./i18n";
 
 const IMG = /\.(png|jpe?g|gif|webp|svg|bmp|ico|avif)$/i;
 export const isImagePath = (p: string) => IMG.test(p);
@@ -25,7 +26,7 @@ export async function imageUrl(pid: string, path: string, at = 0): Promise<strin
   const k = key(pid, path, at);
   const hit = cache.get(k);
   if (hit) return hit;
-  if (!isTauri) throw new Error("A prévia de imagens funciona no app");
+  if (!isTauri) throw new Error(tx("A prévia de imagens funciona no app"));
   const url = await invoke<string>("image_preview", { projectId: pid, path });
   if (cache.size > 60) cache.delete(cache.keys().next().value!);
   cache.set(k, url);

@@ -27,6 +27,7 @@ import ActivityIcon, { kindColor } from "./ActivityIcon";
 import { AgentChipButton, AgentMenu } from "./AgentMenu";
 import MsgTools, { focusComposer } from "./MsgTools";
 import Markdown from "./Markdown";
+import { tx, txn } from "../i18n";
 
 /** Projeto real sem conversa ainda. */
 function RealIdle(props: { onAccess: () => void; onConvos: () => void }) {
@@ -39,22 +40,21 @@ function RealIdle(props: { onAccess: () => void; onConvos: () => void }) {
       <div class="bubble agent pop-in">
         <Show
           when={isClaude()}
-          fallback={<>Peça abaixo e {a().label} trabalha nesta pasta pelas ferramentas do Veocode: lista, lê, busca, edita arquivos e roda comandos, obedecendo o nível de acesso. O que o nível manda perguntar aparece aqui para você permitir ou recusar. Se o modelo não aceitar ferramentas, vira só conversa.</>}
+          fallback={<>{tx("Peça abaixo e {label} trabalha nesta pasta pelas ferramentas do Veocode: lista, lê, busca, edita arquivos e roda comandos, obedecendo o nível de acesso. O que o nível manda perguntar aparece aqui para você permitir ou recusar. Se o modelo não aceitar ferramentas, vira só conversa.", { label: a().label })}</>}
         >
-          Peça abaixo e o Claude Code trabalha nesta pasta, com a conta {a().label} e obedecendo o nível de acesso. O que o nível manda
-          perguntar aparece aqui para você permitir ou recusar. O que ele mudar fica marcado na árvore (<b class="c-edit">M</b>, <b class="c-new">N</b>, <b class="c-del">A</b>).
+          {tx("Peça abaixo e o Claude Code trabalha nesta pasta, com a conta {label} e obedecendo o nível de acesso. O que o nível manda perguntar aparece aqui para você permitir ou recusar. O que ele mudar fica marcado na árvore (", { label: a().label })}<b class="c-edit">M</b>, <b class="c-new">N</b>, <b class="c-del">A</b>).
         </Show>
         <div class="idle-actions">
           <Show when={isClaude()}>
             <button class="ghost-btn" onClick={() => openClaude(p().id)}>
-              <TerminalSquare size={13} /> Abrir no Terminal
+              <TerminalSquare size={13} /> {tx("Abrir no Terminal")}
             </button>
           </Show>
           <button class="ghost-btn" onClick={props.onConvos}>
-            <History size={13} /> Conversas anteriores
+            <History size={13} /> {tx("Conversas anteriores")}
           </button>
           <button class="ghost-btn" onClick={props.onAccess}>
-            <ShieldCheck size={13} /> Nível de acesso
+            <ShieldCheck size={13} /> {tx("Nível de acesso")}
           </button>
         </div>
       </div>
@@ -62,7 +62,7 @@ function RealIdle(props: { onAccess: () => void; onConvos: () => void }) {
         <div class="work-card pop-in">
           <div class="work-head">
             <span class="work-dot live" />
-            Mudanças no disco
+            {tx("Mudanças no disco")}
             <small>{ws.events.filter((e) => e.agent === "disco").length}</small>
           </div>
           <For each={changes()}>
@@ -156,9 +156,9 @@ function RealConversation(props: { events: () => ActivityEvent[]; tail?: boolean
                         }}
                       />
                       <div class="edit-bar">
-                        <small>{chatOf(key()).busy ? "Para a resposta atual e " : ""}O Claude esquece esta versão e o que veio depois</small>
-                        <button class="ghost-btn small" onClick={() => setEditing(null)}>Cancelar</button>
-                        <button class="primary-btn small" disabled={!draft().trim()} onClick={() => void confirmEdit(e())}><SendHorizontal size={12} /> Enviar</button>
+                        <small>{tx("{v}O Claude esquece esta versão e o que veio depois", { v: chatOf(key()).busy ? tx("Para a resposta atual e ") : "" })}</small>
+                        <button class="ghost-btn small" onClick={() => setEditing(null)}>{tx("Cancelar")}</button>
+                        <button class="primary-btn small" disabled={!draft().trim()} onClick={() => void confirmEdit(e())}><SendHorizontal size={12} /> {tx("Enviar")}</button>
                       </div>
                     </div>
                   </Show>
@@ -173,11 +173,11 @@ function RealConversation(props: { events: () => ActivityEvent[]; tail?: boolean
               </Match>
               <Match when={b()?.t === "done" && (b() as { e: ActivityEvent }).e}>
                 {(e) => (
-                  <Show when={e().status === "error"} fallback={<div class="done-line pop-in"><span>✓</span> {e().agent} terminou · {e().time}</div>}>
+                  <Show when={e().status === "error"} fallback={<div class="done-line pop-in"><span>✓</span> {tx("{agent} terminou · {time}", { agent: e().agent, time: e().time })}</div>}>
                     <div class="done-line stopped pop-in">
-                      <span>■</span> Você parou · {e().time}
+                      <span>■</span> {tx("Você parou · {time}", { time: e().time })}
                       <Show when={props.tail && lastUser()?.anchor !== undefined}>
-                        <button class="link-btn" onClick={() => startEdit(lastUser()!)}><Pencil size={11} /> Editar o pedido</button>
+                        <button class="link-btn" onClick={() => startEdit(lastUser()!)}><Pencil size={11} /> {tx("Editar o pedido")}</button>
                       </Show>
                     </div>
                   </Show>
@@ -198,14 +198,14 @@ function RealConversation(props: { events: () => ActivityEvent[]; tail?: boolean
                         <Show when={running()} fallback={<span class="work-sum-text">{stepsSummary(items().map((x) => x.kind))}</span>}>
                           <span class="spinner" />
                           <span class="work-sum-text now">{now()?.title}</span>
-                          <small class="work-sum-count">{items().length} {items().length === 1 ? "passo" : "passos"}</small>
+                          <small class="work-sum-count">{txn(items().length, "{n} passo", "{n} passos")}</small>
                         </Show>
-                        <Show when={failed() > 0}><small class="work-sum-fail">{failed()} falhou</small></Show>
+                        <Show when={failed() > 0}><small class="work-sum-fail">{tx("{failed} falhou", { failed: failed() })}</small></Show>
                         <ChevronDown size={13} class="work-chev" />
                       </button>
                       <Show when={open()}>
                         <div class="work-card slide-in">
-                          <Show when={items().length > 8 && !all()}><button class="work-more" onClick={() => setAll(true)}>+{items().length - 8} antes · mostrar tudo</button></Show>
+                          <Show when={items().length > 8 && !all()}><button class="work-more" onClick={() => setAll(true)}>{tx("+{v} antes · mostrar tudo", { v: items().length - 8 })}</button></Show>
                           <For each={shown()}>
                             {(x) => (
                               <div class="work-row" classList={{ running: x.status === "running", error: x.status === "error" }} title={x.detail ?? x.title}>
@@ -213,7 +213,7 @@ function RealConversation(props: { events: () => ActivityEvent[]; tail?: boolean
                                   <ActivityIcon kind={x.kind} />
                                 </span>
                                 <span class="work-title">{x.title}</span>
-                                <Show when={x.status === "running"} fallback={<small class="work-detail">{x.status === "error" ? "falhou" : x.kind === "run" ? "" : x.detail}</small>}>
+                                <Show when={x.status === "running"} fallback={<small class="work-detail">{x.status === "error" ? tx("falhou") : x.kind === "run" ? "" : x.detail}</small>}>
                                   <span class="spinner" />
                                 </Show>
                               </div>
@@ -242,7 +242,7 @@ function Conversations(props: { onClose: () => void }) {
   const [opening, setOpening] = createSignal<string | null>(null);
   const usable = (c: Convo) => c.account === p().accountId;
   const open = async (c: Convo) => {
-    if (!usable(c)) return showToast(`Esta conversa é da conta ${accountById(c.account).label}. Troque a conta do projeto para continuar nela.`);
+    if (!usable(c)) return showToast(tx("Esta conversa é da conta {label}. Troque a conta do projeto para continuar nela.", { label: accountById(c.account).label }));
     setOpening(`${c.kind}:${c.id}`);
     await openInTab(pid, c);
     setOpening(null);
@@ -251,8 +251,8 @@ function Conversations(props: { onClose: () => void }) {
   return (
     <div class="convos">
       <div class="convos-head">
-        <button class="icon-btn small" title="Voltar para a conversa" onClick={props.onClose}><ArrowLeft size={14} /></button>
-        <strong>Conversas deste projeto</strong>
+        <button class="icon-btn small" title={tx("Voltar para a conversa")} onClick={props.onClose}><ArrowLeft size={14} /></button>
+        <strong>{tx("Conversas deste projeto")}</strong>
         <button
           class="ghost-btn small"
           onClick={() => {
@@ -260,13 +260,13 @@ function Conversations(props: { onClose: () => void }) {
             props.onClose();
           }}
         >
-          <MessageSquarePlus size={12} /> Nova
+          <MessageSquarePlus size={12} /> {tx("Nova")}
         </button>
       </div>
-      <Show when={!data.loading} fallback={<div class="convos-empty"><span class="spinner" /> Lendo os históricos…</div>}>
+      <Show when={!data.loading} fallback={<div class="convos-empty"><span class="spinner" /> {tx("Lendo os históricos…")}</div>}>
         <Show
           when={data()?.items.length}
-          fallback={<div class="convos-empty">Nenhuma conversa ainda nesta pasta. As sessões do Claude (pelo chat, Terminal ou editor) e as conversas com APIs aparecem aqui.</div>}
+          fallback={<div class="convos-empty">{tx("Nenhuma conversa ainda nesta pasta. As sessões do Claude (pelo chat, Terminal ou editor) e as conversas com APIs aparecem aqui.")}</div>}
         >
           <For each={data()!.items}>
             {(c, i) => {
@@ -281,7 +281,7 @@ function Conversations(props: { onClose: () => void }) {
                   locked={!usable(c)}
                   opening={opening() === key}
                   disabled={!!opening()}
-                  title={usable(c) ? (current() ? "Aberta numa aba: clique para ir até ela" : "Continuar esta conversa numa aba") : `Da conta ${accountById(c.account).label}: troque a conta do projeto para continuar`}
+                  title={usable(c) ? (current() ? tx("Aberta numa aba: clique para ir até ela") : tx("Continuar esta conversa numa aba")) : tx("Da conta {label}: troque a conta do projeto para continuar", { label: accountById(c.account).label })}
                   extra={<Show when={c.origin}><span>· {c.origin}</span></Show>}
                   onOpen={() => open(c)}
                   onDelete={async () => (await deleteConvos(pid, [c], data()?.current ?? null)) && refetch()}
@@ -290,9 +290,9 @@ function Conversations(props: { onClose: () => void }) {
             }}
           </For>
           <div class="convos-foot">
-            <button class="convos-refresh" onClick={() => refetch()}>Atualizar a lista</button>
+            <button class="convos-refresh" onClick={() => refetch()}>{tx("Atualizar a lista")}</button>
             <button class="convos-clear" disabled={chatOf(pid).busy} onClick={async () => (await deleteConvos(pid, [...data()!.items], data()?.current ?? null)) && refetch()}>
-              Apagar todas ({data()!.items.length})
+              {tx("Apagar todas ({length})", { length: data()!.items.length })}
             </button>
           </div>
         </Show>
@@ -318,17 +318,17 @@ function ChatTail() {
           <div class="perm-ask pop-in" style={{ "--c": a().color }}>
             <div class="perm-ask-head">
               <ShieldCheck size={14} />
-              <span>O nível pede para confirmar</span>
+              <span>{tx("O nível pede para confirmar")}</span>
               <small>{q.tool}</small>
             </div>
             <strong>{q.title}</strong>
             <Show when={q.detail}><pre>{q.detail}</pre></Show>
             <div class="perm-ask-actions">
               <button class="ghost-btn" disabled={q.answering} onClick={() => answerPermission(activeKey(p().id), q.requestId, false)}>
-                <Ban size={13} /> Recusar
+                <Ban size={13} /> {tx("Recusar")}
               </button>
               <button class="primary-btn small" disabled={q.answering} onClick={() => answerPermission(activeKey(p().id), q.requestId, true)}>
-                <Check size={13} /> Permitir
+                <Check size={13} /> {tx("Permitir")}
               </button>
             </div>
           </div>
@@ -338,7 +338,7 @@ function ChatTail() {
         <div class="bubble chat-error pop-in">
           <AlertTriangle size={14} />
           <span>{chat().error}</span>
-          <button class="icon-btn small" title="Fechar" onClick={() => clearError(activeKey(p().id))}><X size={12} /></button>
+          <button class="icon-btn small" title={tx("Fechar")} onClick={() => clearError(activeKey(p().id))}><X size={12} /></button>
         </div>
       </Show>
     </>
@@ -360,7 +360,7 @@ function Composer(props: { onLevel: () => void; levelOn?: boolean }) {
   let box!: HTMLTextAreaElement;
 
   const send = () => {
-    if (demo()) return showToast("Projeto de demonstração: abra uma pasta sua para conversar de verdade");
+    if (demo()) return showToast(tx("Projeto de demonstração: abra uma pasta sua para conversar de verdade"));
     nameFromPrompt(k(), chat().input);
     sendChat(k());
     requestAnimationFrame(() => fit());
@@ -384,15 +384,15 @@ function Composer(props: { onLevel: () => void; levelOn?: boolean }) {
             <Show
               when={chat().attach}
               fallback={
-                <button class="att-suggest" title="Mandar junto o arquivo aberto no editor" onClick={() => setAttach(k(), true)}>
+                <button class="att-suggest" title={tx("Mandar junto o arquivo aberto no editor")} onClick={() => setAttach(k(), true)}>
                   <Plus size={11} /> {fileName(ws.activeFile)}
                 </button>
               }
             >
               <div class="att text open-file" title={ws.activeFile}>
                 <span class="att-icon"><FileCode2 size={14} /></span>
-                <span class="att-text"><strong>{fileName(ws.activeFile)}</strong><small>aberto no editor</small></span>
-                <button class="att-x" title="Não mandar o arquivo aberto" onClick={() => setAttach(k(), false)}><X size={11} /></button>
+                <span class="att-text"><strong>{fileName(ws.activeFile)}</strong><small>{tx("aberto no editor")}</small></span>
+                <button class="att-x" title={tx("Não mandar o arquivo aberto")} onClick={() => setAttach(k(), false)}><X size={11} /></button>
               </div>
             </Show>
           </Show>
@@ -403,7 +403,7 @@ function Composer(props: { onLevel: () => void; levelOn?: boolean }) {
         rows={2}
         value={chat().input}
         readOnly={listeningTo(k())}
-        placeholder={listeningTo(k()) ? "Pode falar… (Enter para, Esc cancela)" : `Pedir algo a ${a().label}… (Enter envia, ⌥ Espaço para falar)`}
+        placeholder={listeningTo(k()) ? tx("Pode falar… (Enter para, Esc cancela)") : tx("Pedir algo a {label}… (Enter envia, ⌥ Espaço para falar)", { label: a().label })}
         onPaste={(e) => !demo() && void pasteFiles(k(), e)}
         onInput={(e) => {
           setInput(k(), e.currentTarget.value);
@@ -420,11 +420,11 @@ function Composer(props: { onLevel: () => void; levelOn?: boolean }) {
         }}
       />
       <div class="composer-bar">
-        <button class="icon-btn" classList={{ on: attsOf(k()).length > 0 }} disabled={demo()} title="Anexar arquivos ou imagens (ou cole com ⌘V, ou arraste do Finder)" onClick={() => void pickFiles(k())}>
+        <button class="icon-btn" classList={{ on: attsOf(k()).length > 0 }} disabled={demo()} title={tx("Anexar arquivos ou imagens (ou cole com ⌘V, ou arraste do Finder)")} onClick={() => void pickFiles(k())}>
           <Paperclip size={14} />
         </button>
-        <AgentChipButton prefKey={p().id} accountId={a().id} open={menu()} title="Conta, modelo e força do raciocínio deste projeto" onClick={() => setMenu(!menu())} />
-        <button class="composer-chip" classList={{ on: props.levelOn, unapplied: unapplied() }} style={{ "--lc": level().color }} title={unapplied() ? "Nível de acesso: ainda não vale no Claude Code, clique para gravar" : "Nível de acesso: o que a IA pode fazer aqui (clique para mudar)"} onClick={props.onLevel}>
+        <AgentChipButton prefKey={p().id} accountId={a().id} open={menu()} title={tx("Conta, modelo e força do raciocínio deste projeto")} onClick={() => setMenu(!menu())} />
+        <button class="composer-chip" classList={{ on: props.levelOn, unapplied: unapplied() }} style={{ "--lc": level().color }} title={unapplied() ? tx("Nível de acesso: ainda não vale no Claude Code, clique para gravar") : tx("Nível de acesso: o que a IA pode fazer aqui (clique para mudar)")} onClick={props.onLevel}>
           <ShieldCheck size={12} /> {level().short}
         </button>
         <span class="composer-gap" />
@@ -433,18 +433,18 @@ function Composer(props: { onLevel: () => void; levelOn?: boolean }) {
         <Show
           when={chat().busy}
           fallback={
-            <button class="send-btn" disabled={!demo() && !chat().input.trim() && !attsOf(k()).length} title="Enviar (Enter)" onClick={send}>
+            <button class="send-btn" disabled={!demo() && !chat().input.trim() && !attsOf(k()).length} title={tx("Enviar (Enter)")} onClick={send}>
               <SendHorizontal size={14} />
             </button>
           }
         >
-          <button class="send-btn stop" title="Parar (Esc). Depois dá para editar o pedido e mandar de novo" onClick={() => stopChat(k())}>
+          <button class="send-btn stop" title={tx("Parar (Esc). Depois dá para editar o pedido e mandar de novo")} onClick={() => stopChat(k())}>
             <Square size={11} fill="currentColor" />
           </button>
         </Show>
       </div>
       <Show when={menu()}>
-        <AgentMenu prefKey={p().id} accountId={a().id} title="Conta neste projeto" onPick={(id) => requestSwitch(p().id, id)} onClose={() => setMenu(false)} />
+        <AgentMenu prefKey={p().id} accountId={a().id} title={tx("Conta neste projeto")} onPick={(id) => requestSwitch(p().id, id)} onClose={() => setMenu(false)} />
       </Show>
     </div>
     </>
@@ -530,30 +530,30 @@ export default function ChatPanel() {
               <div class="ext-head pop-in">
                 <span class="ext-head-icon"><Eye size={15} /></span>
                 <div>
-                  <strong>Fora do Veocode</strong>
-                  <span>O Claude rodando nesta pasta por fora (Terminal, editor ou o app do Claude) aparece aqui ao vivo. É só para acompanhar: para pedir algo, use as abas de conversa.</span>
+                  <strong>{tx("Fora do Veocode")}</strong>
+                  <span>{tx("O Claude rodando nesta pasta por fora (Terminal, editor ou o app do Claude) aparece aqui ao vivo. É só para acompanhar: para pedir algo, use as abas de conversa.")}</span>
                 </div>
-                <button class="icon-btn small" title="Voltar para a conversa" onClick={() => go("chat")}><X size={13} /></button>
+                <button class="icon-btn small" title={tx("Voltar para a conversa")} onClick={() => go("chat")}><X size={13} /></button>
               </div>
             </Show>
             <Show
               when={project().demo}
               fallback={
-                <Show when={(seenAgent() && shown().length > 0) || (!ext() && (chatOf(key()).busy || chatOf(key()).error))} fallback={<Show when={!ext()} fallback={<div class="chat-empty ext-empty"><strong>Nada rodando por fora agora</strong><span>Abra o Claude nesta pasta pelo Terminal ou pelo editor e ele aparece aqui.</span></div>}><RealIdle onAccess={() => setTab("access")} onConvos={() => setConvos(true)} /></Show>}>
+                <Show when={(seenAgent() && shown().length > 0) || (!ext() && (chatOf(key()).busy || chatOf(key()).error))} fallback={<Show when={!ext()} fallback={<div class="chat-empty ext-empty"><strong>{tx("Nada rodando por fora agora")}</strong><span>{tx("Abra o Claude nesta pasta pelo Terminal ou pelo editor e ele aparece aqui.")}</span></div>}><RealIdle onAccess={() => setTab("access")} onConvos={() => setConvos(true)} /></Show>}>
                   <RealConversation events={shown} tail={!ext()} />
                 </Show>
               }
             >
               <Show when={ws.events.length === 0}>
-                <div class="chat-empty">{ws.paused ? "Simulação parada: aperte Assistir (em cima do editor) para ver um agente de exemplo trabalhando." : "O agente de exemplo vai começar em instantes…"}</div>
+                <div class="chat-empty">{ws.paused ? tx("Simulação parada: aperte Assistir (em cima do editor) para ver um agente de exemplo trabalhando.") : tx("O agente de exemplo vai começar em instantes…")}</div>
               </Show>
               <For each={userMsgs()}>{(m) => <div class="bubble user pop-in">{m.title}</div>}</For>
               <Show when={work().length > 0}>
                 <div class="work-card pop-in">
                   <div class="work-head">
                     <span class="work-dot" classList={{ live: ws.running }} />
-                    {ws.running ? "Trabalhando…" : "Concluído"}
-                    <small>{work().length} passos</small>
+                    {ws.running ? tx("Trabalhando…") : tx("Concluído")}
+                    <small>{tx("{length} passos", { length: work().length })}</small>
                   </div>
                   <For each={work()}>
                     {(e) => (
@@ -573,19 +573,19 @@ export default function ChatPanel() {
               <Show when={done()}>
                 {(d) => (
                   <div class="bubble agent pop-in">
-                    <strong>{d().title}.</strong> {d().detail}. Quer ver os dados reais do disco em Computador → Espaço e memória?
+                    <strong>{d().title}.</strong> {tx("{detail}. Quer ver os dados reais do disco em Computador → Espaço e memória?", { detail: d().detail })}
                   </div>
                 )}
               </Show>
             </Show>
           </div>
-          <Show when={view() === "chat" || view() === "hist"} fallback={<Show when={ext()}><p class="ext-note">Sessões do Claude abertas fora do Veocode nesta pasta (Terminal, editor, app do Claude). Aqui é só para acompanhar: para conversar, use uma aba sua.</p></Show>}>
+          <Show when={view() === "chat" || view() === "hist"} fallback={<Show when={ext()}><p class="ext-note">{tx("Sessões do Claude abertas fora do Veocode nesta pasta (Terminal, editor, app do Claude). Aqui é só para acompanhar: para conversar, use uma aba sua.")}</p></Show>}>
             <Composer onLevel={() => setTab("access")} />
           </Show>
         </Match>
         <Match when={tab() === "access"}>
           <div class="chat-scroll">
-            <button class="back-link" onClick={() => setTab("chat")}><ArrowLeft size={14} /> Voltar para a conversa</button>
+            <button class="back-link" onClick={() => setTab("chat")}><ArrowLeft size={14} /> {tx("Voltar para a conversa")}</button>
             <AccessLevel projectId={project().id} />
           </div>
         </Match>

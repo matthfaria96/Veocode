@@ -7,6 +7,7 @@ import { createStore, reconcile } from "solid-js/store";
 import { isTauri, type AgentGroup } from "./api";
 import { setSk, sk, loadSkills, type Item, type PluginInfo } from "./skills";
 import { showToast } from "./store";
+import { tx } from "./i18n";
 
 export interface McpRun {
   pid: number;
@@ -55,7 +56,7 @@ export async function loadInventory() {
     setInv("loaded", true);
     await refreshRunning();
   } catch (e) {
-    showToast(`Não deu para ler os extras do Claude: ${errMsg(e)}`);
+    showToast(tx("Não deu para ler os extras do Claude: {v}", { v: errMsg(e) }));
   }
   setInv("loading", false);
 }
@@ -84,7 +85,7 @@ async function act(key: string, run: () => Promise<unknown>, ok: string) {
   try {
     if (isTauri) await run();
     else await new Promise((r) => setTimeout(r, 600));
-    showToast(isTauri ? ok : "Navegador: simulação, nada mudou");
+    showToast(isTauri ? ok : tx("Navegador: simulação, nada mudou"));
     await loadInventory();
   } catch (e) {
     showToast(errMsg(e));
@@ -98,12 +99,12 @@ export const pluginAction = (p: PluginInfo, action: "enable" | "disable" | "unin
     `plugin:${p.id}`,
     () => invoke("inventory_plugin", { account: p.account, pluginId: p.pluginId, scope: p.scope, project: p.project, action }),
     action === "uninstall"
-      ? `Plugin ${p.name} removido`
-      : `${p.name} ${action === "enable" ? "ligado" : "desligado"}. Conversas do Claude já abertas só percebem quando recomeçam.`,
+      ? tx("Plugin {name} removido", { name: p.name })
+      : tx("{name} {v}. Conversas do Claude já abertas só percebem quando recomeçam.", { name: p.name, v: action === "enable" ? tx("ligado") : tx("desligado") }),
   );
 
 /** Skill, comando ou agente → Lixeira. */
-export const trashItem = (i: Item) => act(`item:${i.id}`, () => invoke("inventory_trash", { path: i.path }), `${i.name} foi para a Lixeira`);
+export const trashItem = (i: Item) => act(`item:${i.id}`, () => invoke("inventory_trash", { path: i.path }), tx("{name} foi para a Lixeira", { name: i.name }));
 
 /** Servidor MCP removido em cada conta que o tem (pelo `claude mcp remove`). */
 export const removeMcp = (i: Item) =>
@@ -112,5 +113,5 @@ export const removeMcp = (i: Item) =>
     async () => {
       for (const account of i.accounts) await invoke("inventory_mcp_remove", { account, name: i.name, scope: i.mcp!.scope, project: i.project });
     },
-    `Servidor ${i.name} removido`,
+    tx("Servidor {name} removido", { name: i.name }),
   );

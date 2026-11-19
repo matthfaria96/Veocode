@@ -4,6 +4,7 @@ import { api } from "../api";
 import { revealAndOpen } from "../fileActions";
 import { createMemo, createResource, createSignal, For, onMount, type JSX } from "solid-js";
 import { addProjectFromPicker, currentProject, setHelpOpen, setPaletteOpen, setProjectId, setView, projects } from "../store";
+import { tx } from "../i18n";
 
 interface Action {
   label: string;
@@ -18,9 +19,9 @@ export default function CommandPalette() {
   let input!: HTMLInputElement;
 
   const all = (): Action[] => [
-    { label: "Adicionar pasta como projeto", hint: "abre o seletor de pastas", icon: () => <FolderPlus size={15} />, run: () => addProjectFromPicker() },
+    { label: tx("Adicionar pasta como projeto"), hint: tx("abre o seletor de pastas"), icon: () => <FolderPlus size={15} />, run: () => addProjectFromPicker() },
     ...projects.map((p) => ({
-      label: `Abrir projeto ${p.name}`,
+      label: tx("Abrir projeto {name}", { name: p.name }),
       hint: p.path,
       icon: () => <ProjectIcon id={p.id} name={p.name} stack={p.stack} size={15} />,
       run: () => {
@@ -28,14 +29,14 @@ export default function CommandPalette() {
         setView("workspace");
       },
     })),
-    { label: "Liberar espaço: caches e históricos das IAs", hint: "Computador → Espaço e memória", icon: () => <HardDrive size={15} />, run: () => setView("system") },
-    { label: "Ver programas e máquinas virtuais que as IAs usam", hint: "Computador → Espaço e memória", icon: () => <HardDrive size={15} />, run: () => setView("system") },
-    { label: "Trocar conta de um projeto", hint: "Contas e IAs", icon: () => <Bot size={15} />, run: () => setView("accounts") },
-    { label: "Visão geral: todos os projetos e até 4 conversas ao vivo", hint: "Visão geral", icon: () => <LayoutDashboard size={15} />, run: () => setView("board") },
-    { label: "Chat livre: conversar sem projeto", hint: "Chat livre", icon: () => <MessagesSquare size={15} />, run: () => setView("livre") },
-    { label: "Ajustes: ícones e animações", hint: "Ajustes", icon: () => <Settings2 size={15} />, run: () => setView("settings") },
-    { label: "Ajuda: como o Veocode funciona", hint: "F1", icon: () => <CircleHelp size={15} />, run: () => setHelpOpen(true) },
-    { label: "Extras do Claude: receitas, atalhos e conexões (skills e MCP)", hint: "Computador → Extras do Claude", icon: () => <Puzzle size={15} />, run: () => setView("inventory") },
+    { label: tx("Liberar espaço: caches e históricos das IAs"), hint: tx("Computador → Espaço e memória"), icon: () => <HardDrive size={15} />, run: () => setView("system") },
+    { label: tx("Ver programas e máquinas virtuais que as IAs usam"), hint: tx("Computador → Espaço e memória"), icon: () => <HardDrive size={15} />, run: () => setView("system") },
+    { label: tx("Trocar conta de um projeto"), hint: tx("Contas e IAs"), icon: () => <Bot size={15} />, run: () => setView("accounts") },
+    { label: tx("Visão geral: todos os projetos e até 4 conversas ao vivo"), hint: tx("Visão geral"), icon: () => <LayoutDashboard size={15} />, run: () => setView("board") },
+    { label: tx("Chat livre: conversar sem projeto"), hint: tx("Chat livre"), icon: () => <MessagesSquare size={15} />, run: () => setView("livre") },
+    { label: tx("Ajustes: ícones e animações"), hint: tx("Ajustes"), icon: () => <Settings2 size={15} />, run: () => setView("settings") },
+    { label: tx("Ajuda: como o Veocode funciona"), hint: "F1", icon: () => <CircleHelp size={15} />, run: () => setHelpOpen(true) },
+    { label: tx("Extras do Claude: receitas, atalhos e conexões (skills e MCP)"), hint: tx("Computador → Extras do Claude"), icon: () => <Puzzle size={15} />, run: () => setView("inventory") },
   ];
 
   // arquivos do projeto aberto (o que o .gitignore esconde fica de fora)
@@ -77,7 +78,7 @@ export default function CommandPalette() {
           <Search size={16} />
           <input
             ref={input}
-            placeholder="Busque um projeto, um arquivo do projeto aberto ou uma ação…"
+            placeholder={tx("Busque um projeto, um arquivo do projeto aberto ou uma ação…")}
             value={q()}
             onInput={(e) => {
               setQ(e.currentTarget.value);
@@ -91,7 +92,7 @@ export default function CommandPalette() {
           />
         </div>
         <div class="palette-list">
-          <For each={filtered()} fallback={<div class="palette-empty">Nada encontrado</div>}>
+          <For each={filtered()} fallback={<div class="palette-empty">{tx("Nada encontrado")}</div>}>
             {(a, i) => (
               <button class="palette-item" classList={{ sel: sel() === i() }} onMouseEnter={() => setSel(i())} onClick={() => exec(a)}>
                 {a.icon()}

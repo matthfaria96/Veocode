@@ -47,17 +47,17 @@ pub enum FileContent {
 pub fn resolve_in_root(root: &Path, rel: &str) -> Result<PathBuf, String> {
     let rel_path = Path::new(rel);
     if rel_path.is_absolute() {
-        return Err("caminho absoluto não é permitido".into());
+        return Err(crate::i18n::tr("caminho absoluto não é permitido", "absolute paths aren't allowed").into());
     }
     if rel_path.components().any(|c| matches!(c, Component::ParentDir | Component::Prefix(_) | Component::RootDir)) {
-        return Err("caminho fora do projeto".into());
+        return Err(crate::i18n::tr("caminho fora do projeto", "path outside the project").into());
     }
-    let root = root.canonicalize().map_err(|e| format!("raiz do projeto inacessível: {e}"))?;
+    let root = root.canonicalize().map_err(|e| crate::trf!("raiz do projeto inacessível: {e}", "project root unreachable: {e}"))?;
     let joined = root.join(rel_path);
     // canonicalize resolve links simbólicos: se o link aponta para fora, a checagem pega.
-    let real = joined.canonicalize().map_err(|e| format!("não encontrado: {e}"))?;
+    let real = joined.canonicalize().map_err(|e| crate::trf!("não encontrado: {e}", "not found: {e}"))?;
     if !real.starts_with(&root) {
-        return Err("caminho fora do projeto".into());
+        return Err(crate::i18n::tr("caminho fora do projeto", "path outside the project").into());
     }
     Ok(real)
 }
@@ -84,7 +84,7 @@ pub fn list_dir(root: &Path, rel: &str) -> Result<DirListing, String> {
     let root = root.canonicalize().map_err(|e| e.to_string())?;
     let dir = if rel.is_empty() { root.clone() } else { resolve_in_root(&root, rel)? };
     if !dir.is_dir() {
-        return Err("não é uma pasta".into());
+        return Err(crate::i18n::tr("não é uma pasta", "not a folder").into());
     }
     let gi = gitignore_for(&root);
 
@@ -116,7 +116,7 @@ pub fn read_file(root: &Path, rel: &str) -> Result<FileContent, String> {
     let path = resolve_in_root(root, rel)?;
     let meta = fs::metadata(&path).map_err(|e| e.to_string())?;
     if meta.is_dir() {
-        return Err("é uma pasta".into());
+        return Err(crate::i18n::tr("é uma pasta", "it's a folder").into());
     }
     let size = meta.len();
     if size > MAX_FILE_BYTES {
@@ -139,11 +139,11 @@ pub fn read_file(root: &Path, rel: &str) -> Result<FileContent, String> {
 pub fn check_name(name: &str) -> Result<&str, String> {
     let n = name.trim();
     if n.is_empty() {
-        return Err("escreva um nome".into());
+        return Err(crate::i18n::tr("escreva um nome", "type a name").into());
     }
     const BAD: &str = "/\\:*?\"<>|";
     if n == "." || n == ".." || n.chars().any(|c| BAD.contains(c) || c.is_control()) {
-        return Err("o nome não pode ter / \\ : * ? \" < > |".into());
+        return Err(crate::i18n::tr("o nome não pode ter / \\ : * ? \" < > |", "the name can't contain / \\ : * ? \" < > |").into());
     }
     if n.len() > 255 {
         return Err("nome comprido demais".into());
@@ -154,14 +154,14 @@ pub fn check_name(name: &str) -> Result<&str, String> {
 /// Caminho que ainda não existe: a pasta-mãe tem de estar dentro da raiz.
 fn resolve_new(root: &Path, parent: &str, name: &str) -> Result<PathBuf, String> {
     let name = check_name(name)?;
-    let root = root.canonicalize().map_err(|e| format!("raiz do projeto inacessível: {e}"))?;
+    let root = root.canonicalize().map_err(|e| crate::trf!("raiz do projeto inacessível: {e}", "project root unreachable: {e}"))?;
     let dir = if parent.is_empty() { root.clone() } else { resolve_in_root(&root, parent)? };
     if !dir.is_dir() {
-        return Err("a pasta de destino não existe mais".into());
+        return Err(crate::i18n::tr("a pasta de destino não existe mais", "the destination folder no longer exists").into());
     }
     let target = dir.join(name);
     if target.symlink_metadata().is_ok() {
-        return Err(format!("já existe \"{name}\" nesta pasta"));
+        return Err(crate::trf!("já existe \"{name}\" nesta pasta", "\"{name}\" already exists in this folder"));
     }
     Ok(target)
 }
@@ -171,18 +171,18 @@ fn resolve_new(root: &Path, parent: &str, name: &str) -> Result<PathBuf, String>
 pub fn write_file(root: &Path, rel: &str, text: &str) -> Result<u64, String> {
     let path = resolve_in_root(root, rel)?;
     if path.is_dir() {
-        return Err("é uma pasta".into());
+        return Err(crate::i18n::tr("é uma pasta", "it's a folder").into());
     }
     let perms = fs::metadata(&path).map_err(|e| e.to_string())?.permissions();
     if perms.readonly() {
-        return Err("o arquivo está protegido contra escrita".into());
+        return Err(crate::i18n::tr("o arquivo está protegido contra escrita", "the file is write-protected").into());
     }
     let tmp = path.with_file_name(format!(".{}.veocode-salvando", path.file_name().map(|n| n.to_string_lossy()).unwrap_or_default()));
-    fs::write(&tmp, text.as_bytes()).map_err(|e| format!("não gravou: {e}"))?;
+    fs::write(&tmp, text.as_bytes()).map_err(|e| crate::trf!("não gravou: {e}", "didn't save: {e}"))?;
     let _ = fs::set_permissions(&tmp, perms);
     if let Err(e) = fs::rename(&tmp, &path) {
         let _ = fs::remove_file(&tmp);
-        return Err(format!("não gravou: {e}"));
+        return Err(crate::trf!("não gravou: {e}", "didn't save: {e}"));
     }
     Ok(text.len() as u64)
 }
@@ -202,7 +202,7 @@ pub fn create(root: &Path, parent: &str, name: &str, dir: bool) -> Result<String
 /// Troca o nome de um arquivo ou pasta (na mesma pasta). Devolve o caminho relativo novo.
 pub fn rename(root: &Path, rel: &str, new_name: &str) -> Result<String, String> {
     if rel.is_empty() {
-        return Err("não dá para renomear a pasta do projeto por aqui".into());
+        return Err(crate::i18n::tr("não dá para renomear a pasta do projeto por aqui", "the project folder can't be renamed from here").into());
     }
     let from = resolve_in_root(root, rel)?;
     let parent = rel.rsplit_once('/').map(|(p, _)| p).unwrap_or("");
@@ -215,18 +215,18 @@ pub fn rename(root: &Path, rel: &str, new_name: &str) -> Result<String, String> 
 /// Caminho real de um item do projeto para mandar para a Lixeira (nunca a própria raiz).
 pub fn trash_target(root: &Path, rel: &str) -> Result<PathBuf, String> {
     if rel.is_empty() {
-        return Err("a pasta do projeto não vai para a Lixeira por aqui".into());
+        return Err(crate::i18n::tr("a pasta do projeto não vai para a Lixeira por aqui", "the project folder can't go to the Trash from here").into());
     }
     // não segue o link: apaga o link, não o que ele aponta
     let root_real = root.canonicalize().map_err(|e| e.to_string())?;
     let rel_path = Path::new(rel);
     if rel_path.is_absolute() || rel_path.components().any(|c| !matches!(c, Component::Normal(_))) {
-        return Err("caminho fora do projeto".into());
+        return Err(crate::i18n::tr("caminho fora do projeto", "path outside the project").into());
     }
     let parent = rel.rsplit_once('/').map(|(p, _)| p).unwrap_or("");
     let dir = if parent.is_empty() { root_real.clone() } else { resolve_in_root(&root_real, parent)? };
-    let target = dir.join(rel_path.file_name().ok_or("caminho inválido")?);
-    target.symlink_metadata().map_err(|_| "não existe mais".to_string())?;
+    let target = dir.join(rel_path.file_name().ok_or(crate::i18n::tr("caminho inválido", "invalid path"))?);
+    target.symlink_metadata().map_err(|_| crate::i18n::tr("não existe mais", "no longer exists").to_string())?;
     Ok(target)
 }
 

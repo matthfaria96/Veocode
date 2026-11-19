@@ -7,6 +7,7 @@ import { createSignal } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import { isTauri } from "./api";
 import { projects } from "./store";
+import { tx, txn } from "./i18n";
 
 /** No navegador e no projeto de demonstração, um exemplo no lugar do git de verdade. */
 const real = (pid: string) => isTauri && !projects.find((x) => x.id === pid)?.demo;
@@ -251,7 +252,7 @@ export async function commitFiles(pid: string, hash: string): Promise<CommitFile
 
 /** O diff de um arquivo num commit. */
 export async function commitDiff(pid: string, hash: string, path: string): Promise<string> {
-  if (!real(pid)) return `@@ -1,3 +1,4 @@\n import x from "y";\n-const velho = 1;\n+const novo = 2;\n+const outro = 3;\n export default x;`;
+  if (!real(pid)) return tx("@@ -1,3 +1,4 @@\n import x from \"y\";\n-const velho = 1;\n+const novo = 2;\n+const outro = 3;\n export default x;");
   return invoke<string>("git_commit_diff", { projectId: pid, hash, path });
 }
 
@@ -261,9 +262,9 @@ export async function commitDiff(pid: string, hash: string, path: string): Promi
 export function gitWords(g: { ahead: number; behind: number; changed: number } | undefined | null): { text: string; tip: string }[] {
   if (!g) return [];
   const out: { text: string; tip: string }[] = [];
-  if (g.changed) out.push({ text: `${g.changed} ${g.changed === 1 ? "mudado" : "mudados"}`, tip: "Arquivos mudados desde o último commit (ainda não salvos no git)" });
-  if (g.ahead) out.push({ text: `${g.ahead} para enviar`, tip: "Commits que só existem neste computador" });
-  if (g.behind) out.push({ text: `${g.behind} para baixar`, tip: "Commits que estão no remoto e ainda não aqui" });
+  if (g.changed) out.push({ text: txn(g.changed, "{n} mudado", "{n} mudados"), tip: tx("Arquivos mudados desde o último commit (ainda não salvos no git)") });
+  if (g.ahead) out.push({ text: tx("{ahead} para enviar", { ahead: g.ahead }), tip: tx("Commits que só existem neste computador") });
+  if (g.behind) out.push({ text: tx("{behind} para baixar", { behind: g.behind }), tip: tx("Commits que estão no remoto e ainda não aqui") });
   return out;
 }
 
@@ -271,21 +272,21 @@ export function gitWords(g: { ahead: number; behind: number; changed: number } |
 export function since(sec: number | null): string {
   if (!sec) return "nunca";
   const s = Math.max(0, Date.now() / 1000 - sec);
-  if (s < 90) return "agora";
-  if (s < 3600) return `há ${Math.round(s / 60)} min`;
-  if (s < 86400) return `há ${Math.round(s / 3600)} h`;
-  if (s < 86400 * 14) return `há ${Math.round(s / 86400)} d`;
-  if (s < 86400 * 60) return `há ${Math.round(s / 86400 / 7)} sem`;
-  if (s < 86400 * 365) return `há ${Math.round(s / 86400 / 30)} meses`;
+  if (s < 90) return tx("agora");
+  if (s < 3600) return tx("há {v} min", { v: Math.round(s / 60) });
+  if (s < 86400) return tx("há {v} h", { v: Math.round(s / 3600) });
+  if (s < 86400 * 14) return tx("há {v} d", { v: Math.round(s / 86400) });
+  if (s < 86400 * 60) return tx("há {v} sem", { v: Math.round(s / 86400 / 7) });
+  if (s < 86400 * 365) return tx("há {v} meses", { v: Math.round(s / 86400 / 30) });
   const y = Math.round(s / 86400 / 365);
-  return `há ${y} ${y === 1 ? "ano" : "anos"}`;
+  return tx("há {y} {v}", { y, v: y === 1 ? "ano" : "anos" });
 }
 export const sinceIso = (iso: string) => since(Date.parse(iso) / 1000);
 
 /** O que aconteceu com o arquivo, numa letra e numa palavra. */
 export function changeLabel(c: GitChange): { letter: string; word: string; tone: "new" | "edit" | "deleted" | "conflict" | "moved" } {
-  if (c.conflict) return { letter: "!", word: "em conflito", tone: "conflict" };
-  if (c.untracked) return { letter: "N", word: "novo, fora do git", tone: "new" };
+  if (c.conflict) return { letter: "!", word: tx("em conflito"), tone: "conflict" };
+  if (c.untracked) return { letter: "N", word: tx("novo, fora do git"), tone: "new" };
   const x = c.index !== "." ? c.index : c.work;
   switch (x) {
     case "A":
@@ -293,27 +294,27 @@ export function changeLabel(c: GitChange): { letter: string; word: string; tone:
     case "D":
       return { letter: "A", word: "apagado", tone: "deleted" };
     case "R":
-      return { letter: "R", word: `renomeado de ${c.from ?? "?"}`, tone: "moved" };
+      return { letter: "R", word: tx("renomeado de {v}", { v: c.from ?? "?" }), tone: "moved" };
     case "C":
-      return { letter: "C", word: `copiado de ${c.from ?? "?"}`, tone: "moved" };
+      return { letter: "C", word: tx("copiado de {v}", { v: c.from ?? "?" }), tone: "moved" };
     default:
       return { letter: "M", word: "modificado", tone: "edit" };
   }
 }
 
 export const operationLabel: Record<string, string> = {
-  merge: "Um merge está no meio do caminho",
-  rebase: "Um rebase está no meio do caminho",
-  "cherry-pick": "Um cherry-pick está no meio do caminho",
-  revert: "Um revert está no meio do caminho",
-  bisect: "Um bisect está aberto",
+  get merge() { return tx("Um merge está no meio do caminho"); },
+  get rebase() { return tx("Um rebase está no meio do caminho"); },
+  get "cherry-pick"() { return tx("Um cherry-pick está no meio do caminho"); },
+  get revert() { return tx("Um revert está no meio do caminho"); },
+  get bisect() { return tx("Um bisect está aberto"); },
 };
 
 // ---------------------------------------------------------------- exemplo (navegador)
 
 function demoStatus(): GitStatus {
   const now = Date.now() / 1000;
-  const c = (short: string, subject: string, ago: number, pushed: boolean, refs: string[] = [], parents: string[] = []): GitCommit => ({ hash: short.repeat(5), short, author: "Você", time: now - ago, subject, refs, pushed, parents: parents.map((p) => p.repeat(5)) });
+  const c = (short: string, subject: string, ago: number, pushed: boolean, refs: string[] = [], parents: string[] = []): GitCommit => ({ hash: short.repeat(5), short, author: tx("Você"), time: now - ago, subject, refs, pushed, parents: parents.map((p) => p.repeat(5)) });
   return {
     repo: true,
     top: null,
@@ -330,19 +331,19 @@ function demoStatus(): GitStatus {
       { path: "notas.txt", from: null, index: "?", work: "?", untracked: true, conflict: false },
     ],
     moreChanges: 0,
-    commits: [c("a1b2c3d", "Aba Git em cada projeto", 600, false, ["main"]), c("e4f5a6b", "Ícone do app", 5400, false), c("c7d8e9f", "Terminal por projeto", 86400, true, ["origin/main"]), c("0a1b2c3", "Chat livre", 86400 * 3, true)],
-    incoming: [c("9f8e7d6", "Corrige o README (feito no GitHub)", 7200, true, ["origin/main"])],
+    commits: [c("a1b2c3d", tx("Aba Git em cada projeto"), 600, false, ["main"]), c("e4f5a6b", tx("Ícone do app"), 5400, false), c("c7d8e9f", tx("Terminal por projeto"), 86400, true, ["origin/main"]), c("0a1b2c3", tx("Chat livre"), 86400 * 3, true)],
+    incoming: [c("9f8e7d6", tx("Corrige o README (feito no GitHub)"), 7200, true, ["origin/main"])],
     graph: [
-      c("a1b2c3d", "Aba Git em cada projeto", 600, false, ["main"], ["e4f5a6b"]),
-      c("9f8e7d6", "Corrige o README (feito no GitHub)", 7200, true, ["origin/main"], ["c7d8e9f"]),
-      c("e4f5a6b", "Ícone do app", 5400, false, [], ["c7d8e9f"]),
-      c("b5c6d7e", "Começo do tema claro", 86400 * 2, false, ["tema-claro"], ["0a1b2c3"]),
-      c("c7d8e9f", "Terminal por projeto", 86400, true, [], ["0a1b2c3"]),
-      c("0a1b2c3", "Chat livre", 86400 * 3, true, [], []),
+      c("a1b2c3d", tx("Aba Git em cada projeto"), 600, false, ["main"], ["e4f5a6b"]),
+      c("9f8e7d6", tx("Corrige o README (feito no GitHub)"), 7200, true, ["origin/main"], ["c7d8e9f"]),
+      c("e4f5a6b", tx("Ícone do app"), 5400, false, [], ["c7d8e9f"]),
+      c("b5c6d7e", tx("Começo do tema claro"), 86400 * 2, false, ["tema-claro"], ["0a1b2c3"]),
+      c("c7d8e9f", tx("Terminal por projeto"), 86400, true, [], ["0a1b2c3"]),
+      c("0a1b2c3", tx("Chat livre"), 86400 * 3, true, [], []),
     ],
     branches: [
-      { name: "main", current: true, upstream: "origin/main", ahead: 2, behind: 1, gone: false, time: now - 600, subject: "Aba Git em cada projeto" },
-      { name: "tema-claro", current: false, upstream: null, ahead: 0, behind: 0, gone: false, time: now - 86400 * 5, subject: "Começo do tema claro" },
+      { name: "main", current: true, upstream: "origin/main", ahead: 2, behind: 1, gone: false, time: now - 600, subject: tx("Aba Git em cada projeto") },
+      { name: "tema-claro", current: false, upstream: null, ahead: 0, behind: 0, gone: false, time: now - 86400 * 5, subject: tx("Começo do tema claro") },
     ],
     stashes: [{ message: "WIP on main: ajustes", time: now - 86400 }],
     remotes: [{ name: "origin", url: "https://github.com/voce/veocode.git", github: "voce/veocode", web: "https://github.com/voce/veocode" }],
@@ -358,11 +359,11 @@ function demoGithub(): GitHubInfo {
     state: "ok",
     repo: "voce/veocode",
     message: null,
-    info: { nameWithOwner: "voce/veocode", url: "https://github.com/voce/veocode", description: "Espaço de trabalho para várias contas de IA", visibility: "PRIVATE", isFork: false, isArchived: false, stargazerCount: 3, forkCount: 0, defaultBranchRef: { name: "main" }, pushedAt: iso(86400), latestRelease: { name: "v0.1.0", tagName: "v0.1.0", publishedAt: iso(86400 * 2), url: "https://github.com/voce/veocode/releases" }, issues: 2, pullRequests: 1, viewerPermission: "ADMIN" },
-    prs: [{ number: 12, title: "Tema claro", author: { login: "voce" }, headRefName: "tema-claro", baseRefName: "main", isDraft: true, url: "https://github.com/voce/veocode/pull/12", updatedAt: iso(3600 * 5), reviewDecision: "", checks: { ok: 3, fail: 1, running: 0 } }],
+    info: { nameWithOwner: "voce/veocode", url: "https://github.com/voce/veocode", description: tx("Espaço de trabalho para várias contas de IA"), visibility: "PRIVATE", isFork: false, isArchived: false, stargazerCount: 3, forkCount: 0, defaultBranchRef: { name: "main" }, pushedAt: iso(86400), latestRelease: { name: "v0.1.0", tagName: "v0.1.0", publishedAt: iso(86400 * 2), url: "https://github.com/voce/veocode/releases" }, issues: 2, pullRequests: 1, viewerPermission: "ADMIN" },
+    prs: [{ number: 12, title: tx("Tema claro"), author: { login: "voce" }, headRefName: "tema-claro", baseRefName: "main", isDraft: true, url: "https://github.com/voce/veocode/pull/12", updatedAt: iso(3600 * 5), reviewDecision: "", checks: { ok: 3, fail: 1, running: 0 } }],
     runs: [
-      { databaseId: 2, name: "Build", displayTitle: "Terminal por projeto", status: "completed", conclusion: "success", headBranch: "main", event: "push", createdAt: iso(86400), url: "https://github.com/voce/veocode/actions" },
-      { databaseId: 1, name: "Build", displayTitle: "Chat livre", status: "completed", conclusion: "failure", headBranch: "main", event: "push", createdAt: iso(86400 * 3), url: "https://github.com/voce/veocode/actions" },
+      { databaseId: 2, name: "Build", displayTitle: tx("Terminal por projeto"), status: "completed", conclusion: "success", headBranch: "main", event: "push", createdAt: iso(86400), url: "https://github.com/voce/veocode/actions" },
+      { databaseId: 1, name: "Build", displayTitle: tx("Chat livre"), status: "completed", conclusion: "failure", headBranch: "main", event: "push", createdAt: iso(86400 * 3), url: "https://github.com/voce/veocode/actions" },
     ],
   };
 }

@@ -58,7 +58,7 @@ fn identity(a: &Account) -> Option<(String, Option<String>)> {
         return Some((plan, s("emailAddress").or_else(|| s("displayName"))));
     }
     // login por chave de API do Console: só sabemos que existe
-    v.get("primaryApiKey").filter(|k| k.is_string()).map(|_| ("Chave de API".to_string(), None))
+    v.get("primaryApiKey").filter(|k| k.is_string()).map(|_| (crate::i18n::tr("Chave de API", "API key").to_string(), None))
 }
 
 // ---------------------------------------------------------------- uso
@@ -273,7 +273,7 @@ pub fn status(a: &Account, cache: &mut UsageCache) -> AccountStatus {
             s.plan = Some(plan);
             s.who = who;
         }
-        None => s.detail = Some("Ninguém entrou nesta conta ainda. Use “Entrar” para fazer login no Claude Code.".into()),
+        None => s.detail = Some(crate::i18n::tr("Ninguém entrou nesta conta ainda. Use “Entrar” para fazer login no Claude Code.", "Nobody has signed in to this account yet. Use “Sign in” to log in to Claude Code.").into()),
     }
     if dir.is_dir() {
         let u = usage(&dir, cache);
@@ -304,7 +304,7 @@ pub fn browser_login(a: &Account, on_url: impl Fn(String)) -> Result<(), String>
     use std::io::Read;
     use std::process::{Command, Stdio};
     let claude = crate::xray::util::which("claude").ok_or(
-        "Não achei o comando `claude`. Instale o Claude Code (https://claude.com/claude-code) e tente de novo.",
+        crate::i18n::tr("Não achei o comando `claude`. Instale o Claude Code (https://claude.com/claude-code) e tente de novo.", "Couldn't find the `claude` command. Install Claude Code (https://claude.com/claude-code) and try again."),
     )?;
     cancel_login(&a.id);
     let dir = config_dir(a);
@@ -330,7 +330,7 @@ pub fn browser_login(a: &Account, on_url: impl Fn(String)) -> Result<(), String>
         cmd.env("PATH", j);
     }
     cmd.current_dir(crate::xray::util::home()).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
-    let mut child = cmd.spawn().map_err(|e| format!("não deu para abrir o Claude Code: {e}"))?;
+    let mut child = cmd.spawn().map_err(|e| crate::trf!("não deu para abrir o Claude Code: {e}", "couldn't open Claude Code: {e}"))?;
     if let (Some(stdin), Ok(mut map)) = (child.stdin.take(), LOGINS.lock()) {
         map.get_or_insert_with(HashMap::new).insert(a.id.clone(), (child.id(), stdin));
     }
@@ -361,14 +361,14 @@ pub fn browser_login(a: &Account, on_url: impl Fn(String)) -> Result<(), String>
         return Err("Login cancelado.".into());
     }
     let why = format!("{err}\n{out}").lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with("Paste code")).last().unwrap_or("").to_string();
-    Err(if why.is_empty() { "O login não terminou. Tente de novo.".into() } else { format!("O login não terminou: {why}") })
+    Err(if why.is_empty() { crate::i18n::tr("O login não terminou. Tente de novo.", "Sign-in didn't finish. Try again.").into() } else { crate::trf!("O login não terminou: {why}", "Sign-in didn't finish: {why}") })
 }
 
 /// Cola o código que a página mostra (quando o navegador não volta sozinho para o Claude Code).
 pub fn login_code(id: &str, code: &str) -> Result<(), String> {
     use std::io::Write;
     let mut map = LOGINS.lock().map_err(|e| e.to_string())?;
-    let (_, stdin) = map.as_mut().and_then(|m| m.get_mut(id)).ok_or("Nenhum login em andamento para esta conta.")?;
+    let (_, stdin) = map.as_mut().and_then(|m| m.get_mut(id)).ok_or(crate::i18n::tr("Nenhum login em andamento para esta conta.", "No sign-in in progress for this account."))?;
     writeln!(stdin, "{}", code.trim()).and_then(|_| stdin.flush()).map_err(|e| e.to_string())
 }
 
@@ -385,7 +385,7 @@ pub fn cancel_login(id: &str) {
 /// projeto (o Claude lê o .claude/settings.local.json de lá, onde está o nível de acesso).
 pub fn open_terminal(a: &Account, cwd: Option<&Path>) -> Result<(), String> {
     let claude = crate::xray::util::which("claude").ok_or(
-        "Não achei o comando `claude`. Instale o Claude Code (https://claude.com/claude-code) e tente de novo.",
+        crate::i18n::tr("Não achei o comando `claude`. Instale o Claude Code (https://claude.com/claude-code) e tente de novo.", "Couldn't find the `claude` command. Install Claude Code (https://claude.com/claude-code) and try again."),
     )?;
     let dir = config_dir(a);
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -402,9 +402,9 @@ pub fn open_terminal(a: &Account, cwd: Option<&Path>) -> Result<(), String> {
         if a.config_dir.is_some() {
             script += &format!("export CLAUDE_CONFIG_DIR={}\n", q(&dir_s));
         }
-        script += &format!("echo {}\n", q(&format!("Veocode · conta: {}", a.label)));
-        script += &format!("echo {}\n", q(&format!("Pasta: {cwd_s}")));
-        script += "echo 'Se o Claude pedir login, digite /login.'\necho\n";
+        script += &format!("echo {}\n", q(&crate::trf!("Veocode · conta: {}", "Veocode · account: {}", a.label)));
+        script += &format!("echo {}\n", q(&crate::trf!("Pasta: {cwd_s}", "Folder: {cwd_s}")));
+        script += crate::i18n::tr("echo 'Se o Claude pedir login, digite /login.'\necho\n", "echo 'If Claude asks you to sign in, type /login.'\necho\n");
         script += &format!("cd {} || exit 1\nexec {}\n", q(&cwd_s), q(&claude));
         let file = std::env::temp_dir().join(format!("veocode-claude-{}.command", a.id));
         fs::write(&file, script).map_err(|e| e.to_string())?;
@@ -427,7 +427,7 @@ pub fn open_terminal(a: &Account, cwd: Option<&Path>) -> Result<(), String> {
     }
 
     #[allow(unreachable_code)]
-    Err(format!("Abra um terminal na pasta {cwd_s} e rode: CLAUDE_CONFIG_DIR=\"{dir_s}\" {claude}"))
+    Err(crate::trf!("Abra um terminal na pasta {cwd_s} e rode: CLAUDE_CONFIG_DIR=\"{dir_s}\" {claude}", "Open a terminal in the folder {cwd_s} and run: CLAUDE_CONFIG_DIR=\"{dir_s}\" {claude}"))
 }
 
 #[cfg(test)]

@@ -4,6 +4,7 @@ import { Mic, Square } from "lucide-solid";
 import { For, Show } from "solid-js";
 import { isTauri } from "../api";
 import { listeningTo, toggleVoice, voice } from "../voice";
+import { tx } from "../i18n";
 
 const SHAPE = [0.45, 0.75, 1, 0.8, 0.55];
 
@@ -16,7 +17,7 @@ export function MicButton(props: { target: string; compact?: boolean; disabled?:
       <Show
         when={on()}
         fallback={
-          <button class="mic-btn" classList={{ compact: props.compact }} disabled={props.disabled} title="Falar em vez de digitar (⌥ Espaço)" onClick={() => void toggleVoice(props.target)}>
+          <button class="mic-btn" classList={{ compact: props.compact }} disabled={props.disabled} title={tx("Falar em vez de digitar (⌥ Espaço)")} onClick={() => void toggleVoice(props.target)}>
             <Mic size={props.compact ? 14 : 15} />
           </button>
         }
@@ -25,7 +26,7 @@ export function MicButton(props: { target: string; compact?: boolean; disabled?:
           class="mic-live"
           classList={{ compact: props.compact, starting: v()?.phase === "starting", finishing: v()?.phase === "finishing" }}
           style={{ "--lvl": lvl() }}
-          title="Parar e deixar o texto (Enter) · Esc cancela"
+          title={tx("Parar e deixar o texto (Enter) · Esc cancela")}
           onClick={() => void toggleVoice(props.target)}
         >
           <span class="mic-ring" />
@@ -33,7 +34,7 @@ export function MicButton(props: { target: string; compact?: boolean; disabled?:
             <For each={SHAPE}>{(k, i) => <i style={{ "--k": k, "--d": `${i() * 90}ms` }} />}</For>
           </span>
           <Show when={!props.compact}>
-            <span class="mic-label">{v()?.phase === "starting" ? "Abrindo…" : v()?.phase === "finishing" ? "Escrevendo…" : "Ouvindo"}</span>
+            <span class="mic-label">{v()?.phase === "starting" ? tx("Abrindo…") : v()?.phase === "finishing" ? tx("Escrevendo…") : tx("Ouvindo")}</span>
           </Show>
           <span class="mic-stop"><Square size={9} fill="currentColor" /></span>
         </button>

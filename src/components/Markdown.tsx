@@ -5,6 +5,7 @@
 import { Check, Copy } from "lucide-solid";
 import { createSignal, For, Match, Switch, type JSX } from "solid-js";
 import { api, copyText } from "../api";
+import { tx } from "../i18n";
 
 type Block =
   | { t: "p"; text: string }
@@ -119,7 +120,7 @@ export default function Markdown(props: { text: string }) {
             <Match when={b.t === "code" && b}>
               {(c) => (
                 <div class="md-code">
-                  <span class="md-lang">{c().lang || "código"}</span>
+                  <span class="md-lang">{c().lang || tx("código")}</span>
                   <CodeCopy text={c().text} />
                   <pre>{c().text}</pre>
                 </div>
@@ -142,7 +143,7 @@ function CodeCopy(props: { text: string }) {
       classList={{ done: ok() }}
       onClick={() => void copyText(props.text).then(() => (setOk(true), setTimeout(() => setOk(false), 1400)))}
     >
-      {ok() ? <><Check size={11} /> Copiado</> : <><Copy size={11} /> Copiar</>}
+      {ok() ? <><Check size={11} /> {tx("Copiado")}</> : <><Copy size={11} /> {tx("Copiar")}</>}
     </button>
   );
 }

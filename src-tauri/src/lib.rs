@@ -13,6 +13,7 @@ mod livre;
 mod memory;
 mod term;
 mod settings;
+mod i18n;
 mod skills;
 mod tools;
 mod trail;
@@ -64,14 +65,14 @@ impl AppState {
             return Ok(livre::dir(&self.data_dir));
         }
         let store = self.store.lock().map_err(|e| e.to_string())?;
-        store.get(project_id).map(|p| PathBuf::from(&p.path)).ok_or_else(|| "projeto não encontrado".into())
+        store.get(project_id).map(|p| PathBuf::from(&p.path)).ok_or_else(|| crate::i18n::tr("projeto não encontrado", "project not found").into())
     }
 
     /// Conta do Chat livre: a escolhida nos ajustes ou, se ela sumiu, a padrão.
     fn free_account(&self) -> Result<accounts::Account, String> {
         let chosen = self.settings.lock().map_err(|e| e.to_string())?.free_account.clone();
         let accs = self.accounts.lock().map_err(|e| e.to_string())?;
-        accs.get(&chosen).or_else(|| accs.get(&accs.default_id())).cloned().ok_or_else(|| "Nenhuma conta de IA no Veocode. Adicione uma em Contas.".into())
+        accs.get(&chosen).or_else(|| accs.get(&accs.default_id())).cloned().ok_or_else(|| crate::i18n::tr("Nenhuma conta de IA no Veocode. Adicione uma em Contas.", "No AI accounts in Veocode. Add one in Accounts.").into())
     }
 
     /// (id, pasta de configuração) de cada conta do Claude.
@@ -134,7 +135,7 @@ fn remove_project(state: State<'_, AppState>, project_id: String, trash_folder: 
     // mandar a pasta para a Lixeira: confere antes de tirar da lista, para não sumir pela metade
     let trash = trash_folder.unwrap_or(false);
     if trash {
-        let r = root.as_ref().ok_or("projeto não encontrado")?;
+        let r = root.as_ref().ok_or(crate::i18n::tr("projeto não encontrado", "project not found"))?;
         projects::folder_trashable(r, &[state.config_dir.clone(), state.data_dir.clone()])?;
     }
     state.chats.reset_project(&project_id); // fecha o Claude deste projeto (a conversa continua guardada)
@@ -144,7 +145,7 @@ fn remove_project(state: State<'_, AppState>, project_id: String, trash_folder: 
     state.terms.close_project(&project_id);
     if trash {
         let r = root.clone().unwrap();
-        inventory::to_trash(&[r]).map_err(|e| format!("não deu para mandar a pasta para a Lixeira: {e}"))?;
+        inventory::to_trash(&[r]).map_err(|e| crate::trf!("não deu para mandar a pasta para a Lixeira: {e}", "couldn't send the folder to the Trash: {e}"))?;
     }
     let mut store = state.store.lock().map_err(|e| e.to_string())?;
     store.remove(&project_id);
@@ -156,7 +157,7 @@ fn remove_project(state: State<'_, AppState>, project_id: String, trash_folder: 
 fn update_project(state: State<'_, AppState>, project_id: String, account_id: Option<String>, access: Option<u8>) -> Result<ProjectInfo, String> {
     if let Some(a) = &account_id {
         if state.accounts.lock().map_err(|e| e.to_string())?.get(a).is_none() {
-            return Err("conta não encontrada".into());
+            return Err(crate::i18n::tr("conta não encontrada", "account not found").into());
         }
     }
     let mut store = state.store.lock().map_err(|e| e.to_string())?;
@@ -200,7 +201,7 @@ async fn trash_entry(state: State<'_, AppState>, project_id: String, path: Strin
     let root = state.root_of(&project_id)?;
     blocking(move || {
         let target = files::trash_target(&root, &path)?;
-        inventory::to_trash(&[target]).map_err(|e| format!("não foi para a Lixeira: {e}"))
+        inventory::to_trash(&[target]).map_err(|e| crate::trf!("não foi para a Lixeira: {e}", "didn't go to the Trash: {e}"))
     })
     .await?
 }
@@ -229,12 +230,12 @@ async fn trail_link(state: State<'_, AppState>, project_id: String, path: String
     let file = trail::store_file(&state.data_dir, &project_id);
     blocking(move || {
         if !std::path::Path::new(&path).is_absolute() {
-            return Err("caminho inválido".into());
+            return Err(crate::i18n::tr("caminho inválido", "invalid path").into());
         }
         let mut saved = trail::load(&file);
         saved.hidden.retain(|h| h != &path);
         if !saved.links.iter().any(|l| l.path == path) {
-            saved.links.push(trail::Link { path, how: "vinculada por você".into(), last: 0, manual: true });
+            saved.links.push(trail::Link { path, how: crate::i18n::tr("vinculada por você", "linked by you").into(), last: 0, manual: true });
         }
         trail::save(&file, &saved)
     })
@@ -263,7 +264,7 @@ async fn open_entry(app: AppHandle, state: State<'_, AppState>, project_id: Stri
     use tauri_plugin_opener::OpenerExt;
     let root = state.root_of(&project_id)?;
     let real = files::resolve_in_root(&root, &path)?;
-    app.opener().open_path(real.to_string_lossy(), None::<&str>).map_err(|e| format!("não abriu: {e}"))
+    app.opener().open_path(real.to_string_lossy(), None::<&str>).map_err(|e| crate::trf!("não abriu: {e}", "didn't open: {e}"))
 }
 
 /// Imagem do projeto como data URL (visualizador e faixa de imagens novas).
@@ -354,9 +355,9 @@ fn account_update(state: State<'_, AppState>, id: String, label: Option<String>,
 
 #[tauri::command]
 async fn account_set_key(state: State<'_, AppState>, id: String, key: String) -> Result<AccountInfo, String> {
-    let provider = state.accounts.lock().map_err(|e| e.to_string())?.get(&id).map(|a| a.provider).ok_or("conta não encontrada")?;
+    let provider = state.accounts.lock().map_err(|e| e.to_string())?.get(&id).map(|a| a.provider).ok_or(crate::i18n::tr("conta não encontrada", "account not found"))?;
     if !matches!(provider, Provider::Deepseek | Provider::Openai) {
-        return Err("essa conta não usa chave de API".into());
+        return Err(crate::i18n::tr("essa conta não usa chave de API", "this account doesn't use an API key").into());
     }
     let key_id = id.clone();
     let hint = blocking(move || accounts::remote::set_key(&key_id, &key)).await??;
@@ -371,7 +372,7 @@ async fn account_set_key(state: State<'_, AppState>, id: String, key: String) ->
 fn account_remove(state: State<'_, AppState>, id: String) -> Result<(), String> {
     let using: Vec<String> = state.store.lock().map_err(|e| e.to_string())?.projects.iter().filter(|p| p.account_id == id).map(|p| p.name.clone()).collect();
     if !using.is_empty() {
-        return Err(format!("Ainda em uso por: {}. Troque a conta desses projetos antes.", using.join(", ")));
+        return Err(crate::trf!("Ainda em uso por: {}. Troque a conta desses projetos antes.", "Still in use by: {}. Change those projects' account first.", using.join(", ")));
     }
     let mut store = state.accounts.lock().map_err(|e| e.to_string())?;
     if let Some(a) = store.remove(&id) {
@@ -385,16 +386,16 @@ fn account_remove(state: State<'_, AppState>, id: String) -> Result<(), String> 
 /// Limites do plano (5 horas e semana) de uma conta do Claude. Leitura: não gasta tokens.
 #[tauri::command]
 async fn account_limits(state: State<'_, AppState>, id: String, force: Option<bool>) -> Result<limits::Limits, String> {
-    let a = state.accounts.lock().map_err(|e| e.to_string())?.get(&id).cloned().ok_or("conta não encontrada")?;
+    let a = state.accounts.lock().map_err(|e| e.to_string())?.get(&id).cloned().ok_or(crate::i18n::tr("conta não encontrada", "account not found"))?;
     if a.provider != Provider::Claude {
-        return Err("Limites só existem nas contas do Claude".into());
+        return Err(crate::i18n::tr("Limites só existem nas contas do Claude", "Limits only exist for Claude accounts").into());
     }
     blocking(move || limits::for_account(&a, force.unwrap_or(false))).await
 }
 
 #[tauri::command]
 async fn account_status(state: State<'_, AppState>, id: String) -> Result<AccountStatus, String> {
-    let account = state.accounts.lock().map_err(|e| e.to_string())?.get(&id).cloned().ok_or("conta não encontrada")?;
+    let account = state.accounts.lock().map_err(|e| e.to_string())?.get(&id).cloned().ok_or(crate::i18n::tr("conta não encontrada", "account not found"))?;
     let cache = state.usage.clone();
     blocking(move || {
         let mut c = cache.lock().unwrap_or_else(|e| e.into_inner());
@@ -405,9 +406,9 @@ async fn account_status(state: State<'_, AppState>, id: String) -> Result<Accoun
 
 #[tauri::command(async)]
 fn account_login(state: State<'_, AppState>, id: String) -> Result<(), String> {
-    let account = state.accounts.lock().map_err(|e| e.to_string())?.get(&id).cloned().ok_or("conta não encontrada")?;
+    let account = state.accounts.lock().map_err(|e| e.to_string())?.get(&id).cloned().ok_or(crate::i18n::tr("conta não encontrada", "account not found"))?;
     if account.provider != Provider::Claude {
-        return Err("só contas do Claude fazem login pelo terminal".into());
+        return Err(crate::i18n::tr("só contas do Claude fazem login pelo terminal", "only Claude accounts sign in through the terminal").into());
     }
     accounts::claude::open_login(&account)
 }
@@ -416,9 +417,9 @@ fn account_login(state: State<'_, AppState>, id: String) -> Result<(), String> {
 #[tauri::command]
 async fn account_browser_login(app: AppHandle, state: State<'_, AppState>, id: String) -> Result<(), String> {
     use tauri::Emitter;
-    let account = state.accounts.lock().map_err(|e| e.to_string())?.get(&id).cloned().ok_or("conta não encontrada")?;
+    let account = state.accounts.lock().map_err(|e| e.to_string())?.get(&id).cloned().ok_or(crate::i18n::tr("conta não encontrada", "account not found"))?;
     if account.provider != Provider::Claude {
-        return Err("só contas do Claude fazem login pelo navegador".into());
+        return Err(crate::i18n::tr("só contas do Claude fazem login pelo navegador", "only Claude accounts sign in through the browser").into());
     }
     blocking(move || {
         accounts::claude::browser_login(&account, |url| {
@@ -449,10 +450,10 @@ fn access_others(state: &AppState, account_id: &str, root: &std::path::Path) -> 
     let mut out = vec![];
     if let Ok(accs) = state.accounts.lock() {
         if let Some(a) = accs.get(account_id).filter(|a| a.provider == Provider::Claude) {
-            out.push((format!("conta {}", a.label), accounts::claude::config_dir(a).join("settings.json")));
+            out.push((crate::trf!("conta {}", "account {}", a.label), accounts::claude::config_dir(a).join("settings.json")));
         }
     }
-    out.push(("projeto (.claude/settings.json)".into(), root.join(".claude").join("settings.json")));
+    out.push((crate::i18n::tr("projeto (.claude/settings.json)", "project (.claude/settings.json)").into(), root.join(".claude").join("settings.json")));
     #[cfg(target_os = "macos")]
     out.push(("gerenciado (empresa)".into(), PathBuf::from("/Library/Application Support/ClaudeCode/managed-settings.json")));
     #[cfg(target_os = "windows")]
@@ -461,7 +462,7 @@ fn access_others(state: &AppState, account_id: &str, root: &std::path::Path) -> 
 }
 
 fn access_report_for(state: &AppState, project_id: &str) -> Result<access::Report, String> {
-    let p = state.store.lock().map_err(|e| e.to_string())?.get(project_id).cloned().ok_or("projeto não encontrado")?;
+    let p = state.store.lock().map_err(|e| e.to_string())?.get(project_id).cloned().ok_or(crate::i18n::tr("projeto não encontrado", "project not found"))?;
     let root = PathBuf::from(&p.path);
     let others = access_others(state, &p.account_id, &root);
     Ok(access::report(&root, p.access, &p.overrides, p.applied.as_ref(), &others))
@@ -470,13 +471,13 @@ fn access_report_for(state: &AppState, project_id: &str) -> Result<access::Repor
 /// Grava as regras do nível atual (se `force` ou se o projeto já estava aplicado).
 fn reapply(state: &AppState, project_id: &str, force: bool) -> Result<(), String> {
     let mut store = state.store.lock().map_err(|e| e.to_string())?;
-    let p = store.get_mut(project_id).ok_or("projeto não encontrado")?;
+    let p = store.get_mut(project_id).ok_or(crate::i18n::tr("projeto não encontrado", "project not found"))?;
     if !force && p.applied.is_none() {
         return Ok(());
     }
     let root = PathBuf::from(&p.path);
     if !root.is_dir() {
-        return Err("a pasta do projeto não existe mais".into());
+        return Err(crate::i18n::tr("a pasta do projeto não existe mais", "the project folder no longer exists").into());
     }
     let compiled = access::compile(p.access, &p.overrides);
     let applied = access::apply(&root, &compiled, p.applied.as_ref(), now_ms())?;
@@ -499,9 +500,9 @@ fn access_set(state: State<'_, AppState>, project_id: String, level: Option<u8>,
         }
         if let Some(id) = cap {
             let spec = access::cap(&id).ok_or("ajuste desconhecido")?;
-            let p = store.get_mut(&project_id).ok_or("projeto não encontrado")?;
+            let p = store.get_mut(&project_id).ok_or(crate::i18n::tr("projeto não encontrado", "project not found"))?;
             match rule {
-                Some(r) if !spec.choices.contains(&r) => return Err("essa opção não existe para este item".into()),
+                Some(r) if !spec.choices.contains(&r) => return Err(crate::i18n::tr("essa opção não existe para este item", "that option doesn't exist for this item").into()),
                 Some(r) if r == spec.levels[p.access.min(3) as usize] => {
                     p.overrides.remove(&id);
                 }
@@ -530,7 +531,7 @@ fn access_apply(state: State<'_, AppState>, project_id: String) -> Result<access
 fn access_remove(state: State<'_, AppState>, project_id: String) -> Result<access::Report, String> {
     {
         let mut store = state.store.lock().map_err(|e| e.to_string())?;
-        let p = store.get_mut(&project_id).ok_or("projeto não encontrado")?;
+        let p = store.get_mut(&project_id).ok_or(crate::i18n::tr("projeto não encontrado", "project not found"))?;
         if let Some(a) = p.applied.take() {
             if let Err(e) = access::remove(&a) {
                 p.applied = Some(a);
@@ -553,10 +554,10 @@ fn access_preview(level: u8, overrides: std::collections::BTreeMap<String, acces
 /// Abre o Claude Code no projeto, com a conta dele.
 #[tauri::command(async)]
 fn open_claude(state: State<'_, AppState>, project_id: String) -> Result<(), String> {
-    let p = state.store.lock().map_err(|e| e.to_string())?.get(&project_id).cloned().ok_or("projeto não encontrado")?;
-    let a = state.accounts.lock().map_err(|e| e.to_string())?.get(&p.account_id).cloned().ok_or("conta não encontrada")?;
+    let p = state.store.lock().map_err(|e| e.to_string())?.get(&project_id).cloned().ok_or(crate::i18n::tr("projeto não encontrado", "project not found"))?;
+    let a = state.accounts.lock().map_err(|e| e.to_string())?.get(&p.account_id).cloned().ok_or(crate::i18n::tr("conta não encontrada", "account not found"))?;
     if a.provider != Provider::Claude {
-        return Err(format!("{} não é uma conta do Claude. Troque a conta do projeto para abrir o Claude Code.", a.label));
+        return Err(crate::trf!("{} não é uma conta do Claude. Troque a conta do projeto para abrir o Claude Code.", "{} isn't a Claude account. Change the project's account to open Claude Code.", a.label));
     }
     accounts::claude::open_terminal(&a, Some(std::path::Path::new(&p.path)))
 }
@@ -636,8 +637,8 @@ fn chat_send(
         );
     }
     let base = chat::base_project(&project_id).to_string();
-    let p = state.store.lock().map_err(|e| e.to_string())?.get(&base).cloned().ok_or("projeto não encontrado")?;
-    let mut account = state.accounts.lock().map_err(|e| e.to_string())?.get(&p.account_id).cloned().ok_or("conta não encontrada")?;
+    let p = state.store.lock().map_err(|e| e.to_string())?.get(&base).cloned().ok_or(crate::i18n::tr("projeto não encontrado", "project not found"))?;
+    let mut account = state.accounts.lock().map_err(|e| e.to_string())?.get(&p.account_id).cloned().ok_or(crate::i18n::tr("conta não encontrada", "account not found"))?;
     let claude = account.provider == Provider::Claude;
     // memória do projeto: só para o Claude (nas APIs o texto substituiria as instruções)
     let memory = if claude { memory::prompt(&state.data_dir, &base) } else { None };
@@ -650,7 +651,7 @@ fn chat_send(
     let attach = match attach.filter(|a| !a.is_empty()) {
         Some(rel) => {
             let full = files::resolve_in_root(&root, &rel)?;
-            let mut body = std::fs::read_to_string(&full).map_err(|_| format!("não deu para ler {rel} como texto"))?;
+            let mut body = std::fs::read_to_string(&full).map_err(|_| crate::trf!("não deu para ler {rel} como texto", "couldn't read {rel} as text"))?;
             if body.len() > 60_000 {
                 let mut cut = 60_000;
                 while !body.is_char_boundary(cut) {
@@ -703,7 +704,7 @@ async fn attach_info(paths: Vec<String>) -> Result<Vec<attach::Staged>, String> 
 
 #[tauri::command(async)]
 fn term_open(app: AppHandle, state: State<'_, AppState>, project_id: String, cols: u16, rows: u16) -> Result<term::TermInfo, String> {
-    let p = state.store.lock().map_err(|e| e.to_string())?.get(&project_id).cloned().ok_or("projeto não encontrado")?;
+    let p = state.store.lock().map_err(|e| e.to_string())?.get(&project_id).cloned().ok_or(crate::i18n::tr("projeto não encontrado", "project not found"))?;
     let root = PathBuf::from(&p.path);
     chat::project_root_ok(&root)?;
     let account = state.accounts.lock().map_err(|e| e.to_string())?.get(&p.account_id).cloned();
@@ -784,17 +785,17 @@ async fn chat_conversations(state: State<'_, AppState>, project_id: String) -> R
 #[tauri::command]
 async fn chat_open(state: State<'_, AppState>, project_id: String, kind: String, id: String, account: String) -> Result<Vec<agent::AgentEvent>, String> {
     if !convos::valid_id(&id) {
-        return Err("conversa inválida".into());
+        return Err(crate::i18n::tr("conversa inválida", "invalid conversation").into());
     }
-    let owner = state.accounts.lock().map_err(|e| e.to_string())?.get(&account).cloned().ok_or("A conta desta conversa não existe mais no Veocode.")?;
+    let owner = state.accounts.lock().map_err(|e| e.to_string())?.get(&account).cloned().ok_or(crate::i18n::tr("A conta desta conversa não existe mais no Veocode.", "This conversation's account no longer exists in Veocode."))?;
     let (current, root) = if project_id == livre::ID {
         (state.free_account()?.id, livre::dir(&state.data_dir))
     } else {
-        let p = state.store.lock().map_err(|e| e.to_string())?.get(chat::base_project(&project_id)).cloned().ok_or("projeto não encontrado")?;
+        let p = state.store.lock().map_err(|e| e.to_string())?.get(chat::base_project(&project_id)).cloned().ok_or(crate::i18n::tr("projeto não encontrado", "project not found"))?;
         (p.account_id.clone(), PathBuf::from(&p.path))
     };
     if current != account {
-        return Err(format!("Esta conversa é da conta {}. Troque a conta para continuar nela.", owner.label));
+        return Err(crate::trf!("Esta conversa é da conta {}. Troque a conta para continuar nela.", "This conversation belongs to the {} account. Switch accounts to continue it.", owner.label));
     }
     let chats = state.chats.clone();
     #[cfg(debug_assertions)]
@@ -802,18 +803,18 @@ async fn chat_open(state: State<'_, AppState>, project_id: String, kind: String,
     let r = blocking(move || {
         if kind == "claude" {
             if owner.provider != Provider::Claude {
-                return Err("conversa inválida".to_string());
+                return Err(crate::i18n::tr("conversa inválida", "invalid conversation").to_string());
             }
             let file = convos::claude_dir(&accounts::claude::config_dir(&owner), &root).join(format!("{id}.jsonl"));
             if !file.is_file() {
-                return Err("Essa sessão do Claude não existe mais.".into());
+                return Err(crate::i18n::tr("Essa sessão do Claude não existe mais.", "That Claude session no longer exists.").into());
             }
             chats.open(&project_id, &account, "claude", &id, None)?;
             Ok(agent::read_session(&root, &account, &file, convos::MAX_STEPS))
         } else {
             let (acc, msgs) = convos::load_api(&chats.api_dir(&project_id), &id)?;
             if acc != account {
-                return Err("conversa inválida".into());
+                return Err(crate::i18n::tr("conversa inválida", "invalid conversation").into());
             }
             let ts = convos::api_list(&chats.api_dir(&project_id)).iter().find(|c| c.id == id).map(|c| c.updated).unwrap_or(0);
             let evs = convos::api_events(&account, &msgs, ts);
@@ -864,13 +865,13 @@ async fn vault_reveal(id: String) -> Result<String, String> {
 #[tauri::command]
 async fn chat_delete(state: State<'_, AppState>, project_id: String, kind: String, id: String, account: String) -> Result<(), String> {
     if !convos::valid_id(&id) {
-        return Err("conversa inválida".into());
+        return Err(crate::i18n::tr("conversa inválida", "invalid conversation").into());
     }
     let root = state.root_of(&project_id)?;
     let files: Vec<PathBuf> = if kind == "claude" {
-        let owner = state.accounts.lock().map_err(|e| e.to_string())?.get(&account).cloned().ok_or("A conta desta conversa não existe mais no Veocode.")?;
+        let owner = state.accounts.lock().map_err(|e| e.to_string())?.get(&account).cloned().ok_or(crate::i18n::tr("A conta desta conversa não existe mais no Veocode.", "This conversation's account no longer exists in Veocode."))?;
         if owner.provider != Provider::Claude {
-            return Err("conversa inválida".into());
+            return Err(crate::i18n::tr("conversa inválida", "invalid conversation").into());
         }
         let dir = convos::claude_dir(&accounts::claude::config_dir(&owner), &root);
         // a sessão e, se houver, a pasta dos ajudantes dela (subagentes)
@@ -880,12 +881,12 @@ async fn chat_delete(state: State<'_, AppState>, project_id: String, kind: Strin
         [dir.join(format!("{id}.json")), dir.join(format!("{id}.meta.json"))].into_iter().filter(|p| p.exists()).collect()
     };
     if files.is_empty() {
-        return Err("Essa conversa já não existe.".into());
+        return Err(crate::i18n::tr("Essa conversa já não existe.", "That conversation no longer exists.").into());
     }
     if state.chats.current(&project_id).is_some_and(|(k, c)| k == kind && c == id) {
         state.chats.reset(&project_id);
     }
-    blocking(move || inventory::to_trash(&files).map_err(|e| format!("Não deu para mandar para a Lixeira: {e}"))).await?
+    blocking(move || inventory::to_trash(&files).map_err(|e| crate::trf!("Não deu para mandar para a Lixeira: {e}", "Couldn't send it to the Trash: {e}"))).await?
 }
 
 #[tauri::command]
@@ -998,16 +999,16 @@ async fn inventory_trash(state: State<'_, AppState>, path: String) -> Result<(),
 
 /// Conta do Claude e pasta do projeto validadas para rodar `claude plugin|mcp`.
 fn claude_target(state: &AppState, account: &str, project: Option<String>) -> Result<(Option<PathBuf>, Option<PathBuf>), String> {
-    let a = state.accounts.lock().map_err(|e| e.to_string())?.get(account).cloned().ok_or("conta não encontrada")?;
+    let a = state.accounts.lock().map_err(|e| e.to_string())?.get(account).cloned().ok_or(crate::i18n::tr("conta não encontrada", "account not found"))?;
     if a.provider != Provider::Claude {
-        return Err("só contas do Claude têm plugins e MCP".into());
+        return Err(crate::i18n::tr("só contas do Claude têm plugins e MCP", "only Claude accounts have plugins and MCP").into());
     }
     // conta padrão: sem CLAUDE_CONFIG_DIR (senão o Claude procuraria o .claude.json no lugar errado)
     let dir = a.config_dir.is_some().then(|| accounts::claude::config_dir(&a));
     let project = match project.filter(|p| !p.is_empty()) {
         Some(p) => {
             if !state.inv_projects.lock().map_err(|e| e.to_string())?.contains(&p) {
-                return Err("Essa pasta não está no inventário. Atualize e tente de novo.".into());
+                return Err(crate::i18n::tr("Essa pasta não está no inventário. Atualize e tente de novo.", "That folder isn't in the inventory. Refresh and try again.").into());
             }
             Some(PathBuf::from(p))
         }
@@ -1047,7 +1048,7 @@ fn xray_caches(state: State<'_, AppState>) -> Result<Vec<xray::caches::CacheSpec
 }
 
 fn find_cache(state: &AppState, id: &str) -> Result<xray::caches::CacheSpec, String> {
-    xray::caches::known(&state.project_roots()).into_iter().find(|c| c.id == id).ok_or_else(|| "cache não encontrado".into())
+    xray::caches::known(&state.project_roots()).into_iter().find(|c| c.id == id).ok_or_else(|| crate::i18n::tr("cache não encontrado", "cache not found").into())
 }
 
 #[tauri::command]
@@ -1101,14 +1102,14 @@ async fn xray_toggle_machine(engine: String, id: String, start: bool) -> Result<
 #[tauri::command]
 async fn xray_processes(state: State<'_, AppState>) -> Result<Vec<xray::procs::AgentGroup>, String> {
     let mut guard = state.sys.lock().map_err(|e| e.to_string())?;
-    let sys = guard.as_mut().ok_or("não deu para ler os processos do sistema")?;
+    let sys = guard.as_mut().ok_or(crate::i18n::tr("não deu para ler os processos do sistema", "couldn't read the system processes"))?;
     Ok(xray::procs::snapshot(sys))
 }
 
 #[tauri::command]
 async fn xray_kill(state: State<'_, AppState>, pid: u32) -> Result<(), String> {
     let mut guard = state.sys.lock().map_err(|e| e.to_string())?;
-    let sys = guard.as_mut().ok_or("não deu para ler os processos do sistema")?;
+    let sys = guard.as_mut().ok_or(crate::i18n::tr("não deu para ler os processos do sistema", "couldn't read the system processes"))?;
     xray::procs::kill(sys, pid)
 }
 
@@ -1117,7 +1118,7 @@ async fn xray_kill(state: State<'_, AppState>, pid: u32) -> Result<(), String> {
 async fn xray_ports(state: State<'_, AppState>) -> Result<xray::procs::PortReport, String> {
     let roots = state.project_roots();
     let mut guard = state.sys.lock().map_err(|e| e.to_string())?;
-    let sys = guard.as_mut().ok_or("não deu para ler os processos do sistema")?;
+    let sys = guard.as_mut().ok_or(crate::i18n::tr("não deu para ler os processos do sistema", "couldn't read the system processes"))?;
     Ok(xray::procs::ports(sys, &roots, &xray::util::home()))
 }
 
@@ -1125,7 +1126,7 @@ async fn xray_ports(state: State<'_, AppState>) -> Result<xray::procs::PortRepor
 async fn xray_kill_leftover(state: State<'_, AppState>, pid: u32) -> Result<(), String> {
     let roots = state.project_roots();
     let mut guard = state.sys.lock().map_err(|e| e.to_string())?;
-    let sys = guard.as_mut().ok_or("não deu para ler os processos do sistema")?;
+    let sys = guard.as_mut().ok_or(crate::i18n::tr("não deu para ler os processos do sistema", "couldn't read the system processes"))?;
     xray::procs::kill_leftover(sys, pid, &roots, &xray::util::home())
 }
 
@@ -1134,6 +1135,12 @@ async fn xray_kill_leftover(state: State<'_, AppState>, pid: u32) -> Result<(), 
 #[tauri::command(async)]
 fn settings_get(state: State<'_, AppState>) -> Result<settings::Settings, String> {
     Ok(state.settings.lock().map_err(|e| e.to_string())?.clone())
+}
+
+/// A tela avisa o idioma em uso (o ajuste ou o do sistema) para as mensagens do Rust.
+#[tauri::command]
+fn i18n_set(en: bool) {
+    i18n::set_en(en);
 }
 
 #[tauri::command(async)]
@@ -1215,6 +1222,7 @@ pub fn run() {
             git_commit_files,
             git_commit_diff,
             settings_get,
+            i18n_set,
             settings_set,
             app_paths,
             access_report,

@@ -8,6 +8,7 @@ import { createEffect, createSignal, For, Match, on, Show, Switch } from "solid-
 import { currentProject, setWs, ws } from "../store";
 import { panelAt, setPanelAt } from "../layoutMode";
 import ActivityIcon, { kindColor } from "./ActivityIcon";
+import { tx } from "../i18n";
 
 // a aba escolhida continua a mesma ao mudar o painel de lugar (embaixo ↔ aba fixa)
 const [tab, setTab] = createSignal<"activity" | "agent" | "terminal">("activity");
@@ -53,16 +54,16 @@ export default function BottomPanel(props: { asTab?: boolean }) {
   return (
     <section class="bottom-panel" classList={{ "as-tab": props.asTab }} style={props.asTab ? undefined : { height: `${height()}px` }}>
       <Show when={!props.asTab}>
-        <div class="panel-resize" onPointerDown={drag} onDblClick={() => setHeight(height() > 300 ? 240 : Math.round(window.innerHeight * 0.5))} title="Arraste para mudar a altura (dois cliques: alto/baixo)" />
+        <div class="panel-resize" onPointerDown={drag} onDblClick={() => setHeight(height() > 300 ? 240 : Math.round(window.innerHeight * 0.5))} title={tx("Arraste para mudar a altura (dois cliques: alto/baixo)")} />
       </Show>
       <div class="panel-tabs">
         <button classList={{ active: tab() === "activity" }} onClick={() => setTab("activity")}>
-          Atividade <span class="count">{ws.events.length}</span>
+          {tx("Atividade")} <span class="count">{ws.events.length}</span>
         </button>
         <button classList={{ active: tab() === "agent" }} onClick={() => setTab("agent")} data-target="terminal">
-          Comandos do agente
+          {tx("Comandos do agente")}
         </button>
-        <button classList={{ active: tab() === "terminal" }} onClick={() => setTab("terminal")} title="Terminal seu, aberto na pasta deste projeto">
+        <button classList={{ active: tab() === "terminal" }} onClick={() => setTab("terminal")} title={tx("Terminal seu, aberto na pasta deste projeto")}>
           Terminal <Show when={(terms.byProject[currentProject().id] ?? []).length}><span class="count">{(terms.byProject[currentProject().id] ?? []).length}</span></Show>
         </button>
         <div class="panel-spacer" />
@@ -70,30 +71,30 @@ export default function BottomPanel(props: { asTab?: boolean }) {
           when={currentProject().demo}
           fallback={
             <>
-              <button class="demo-btn" classList={{ on: follow() }} onClick={() => setFollow(!follow())} title="Abrir a árvore e o arquivo que o agente está mexendo">
-                <Crosshair size={12} /> {follow() ? "Seguindo o agente" : "Seguir o agente"}
+              <button class="demo-btn" classList={{ on: follow() }} onClick={() => setFollow(!follow())} title={tx("Abrir a árvore e o arquivo que o agente está mexendo")}>
+                <Crosshair size={12} /> {follow() ? tx("Seguindo o agente") : tx("Seguir o agente")}
               </button>
-              <span class="watching"><span class="work-dot live" /> observando a pasta</span>
+              <span class="watching"><span class="work-dot live" /> {tx("observando a pasta")}</span>
             </>
           }
         >
-          <button class="demo-btn" onClick={() => setWs("paused", !ws.paused)} title="Pausar a demonstração do agente">
+          <button class="demo-btn" onClick={() => setWs("paused", !ws.paused)} title={tx("Pausar a demonstração do agente")}>
             {ws.paused ? <Play size={12} /> : <Pause size={12} />}
-            {ws.paused ? "Continuar demo" : "Pausar demo"}
+            {ws.paused ? tx("Continuar demo") : tx("Pausar demo")}
           </button>
         </Show>
         <span class="panel-moves">
-          <button class="icon-btn small" title={panelAt() === "tab" ? "Mover para baixo da conversa" : "Abrir como aba fixa, no lugar da conversa"} onClick={() => setPanelAt(panelAt() === "tab" ? "bottom" : "tab")}>
+          <button class="icon-btn small" title={panelAt() === "tab" ? tx("Mover para baixo da conversa") : tx("Abrir como aba fixa, no lugar da conversa")} onClick={() => setPanelAt(panelAt() === "tab" ? "bottom" : "tab")}>
             {panelAt() === "tab" ? <PanelBottom size={13} /> : <PanelTop size={13} />}
           </button>
-          <button class="icon-btn small" title="Fechar" onClick={() => setPanelAt("none")}><X size={13} /></button>
+          <button class="icon-btn small" title={tx("Fechar")} onClick={() => setPanelAt("none")}><X size={13} /></button>
         </span>
       </div>
       <Switch>
         <Match when={tab() === "activity"}>
           <div class="timeline" ref={activityEl}>
             <Show when={ws.events.length === 0 && !currentProject().demo}>
-              <div class="tl-empty">Nada ainda. Quando um agente trabalhar nesta pasta (pelo chat, pelo Terminal ou pelo editor), cada passo aparece aqui. Mudanças feitas por você ou por outro programa também.</div>
+              <div class="tl-empty">{tx("Nada ainda. Quando um agente trabalhar nesta pasta (pelo chat, pelo Terminal ou pelo editor), cada passo aparece aqui. Mudanças feitas por você ou por outro programa também.")}</div>
             </Show>
             <For each={ws.events}>
               {(e) => (
@@ -102,7 +103,7 @@ export default function BottomPanel(props: { asTab?: boolean }) {
                   <span class="tl-node" style={{ "--k": kindColor[e.kind] }}>
                     <ActivityIcon kind={e.kind} size={11} />
                   </span>
-                  <span class="tl-agent" style={e.color ? { color: e.color } : undefined}>{e.agent}</span>
+                  <span class="tl-agent" style={e.color ? { color: e.color } : undefined}>{tx(e.agent)}</span>
                   <span class="tl-title">{e.title}</span>
                   <span class="tl-detail">{e.status === "running" ? "…" : e.detail}</span>
                 </div>
@@ -111,14 +112,14 @@ export default function BottomPanel(props: { asTab?: boolean }) {
           </div>
         </Match>
         <Match when={tab() === "terminal"}>
-          <Suspense fallback={<div class="pterm-empty"><span class="spinner" /> Carregando o terminal…</div>}>
+          <Suspense fallback={<div class="pterm-empty"><span class="spinner" /> {tx("Carregando o terminal…")}</div>}>
             <ProjectTerminal />
           </Suspense>
         </Match>
         <Match when={tab() === "agent"}>
           <div class="terminal" ref={termEl}>
             <Show when={!currentProject().demo}>
-              <div class="term-line dim">Comandos que o agente roda aparecem aqui, com o fim da saída. Para digitar os seus, use a aba Terminal.</div>
+              <div class="term-line dim">{tx("Comandos que o agente roda aparecem aqui, com o fim da saída. Para digitar os seus, use a aba Terminal.")}</div>
             </Show>
             <For each={ws.terminal}>{(l) => <div class={`term-line ${l.tone ?? ""}`}>{l.text}</div>}</For>
             <div class="term-line"><span class="caret" /></div>

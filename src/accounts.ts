@@ -5,14 +5,15 @@ import { createStore, reconcile } from "solid-js/store";
 import { isTauri } from "./api";
 import { accounts as mockAccounts } from "./data/mock";
 import { setProjects, showToast } from "./store";
+import { dec, tx } from "./i18n";
 
 export type ProviderId = "claude" | "deepseek" | "openai" | "ollama";
 
 export const providers: Record<ProviderId, { id: ProviderId; name: string; kind: "nuvem" | "local"; auth: string }> = {
-  claude: { id: "claude", name: "Claude", kind: "nuvem", auth: "Login do Claude Code" },
-  deepseek: { id: "deepseek", name: "DeepSeek", kind: "nuvem", auth: "Chave de API" },
-  openai: { id: "openai", name: "Compatível com OpenAI", kind: "nuvem", auth: "Chave de API" },
-  ollama: { id: "ollama", name: "Ollama", kind: "local", auth: "Servidor local" },
+  claude: { id: "claude", name: "Claude", kind: "nuvem", get auth() { return tx("Login do Claude Code"); } },
+  deepseek: { id: "deepseek", name: "DeepSeek", kind: "nuvem", get auth() { return tx("Chave de API"); } },
+  openai: { id: "openai", get name() { return tx("Compatível com OpenAI"); }, kind: "nuvem", get auth() { return tx("Chave de API"); } },
+  ollama: { id: "ollama", name: "Ollama", kind: "local", get auth() { return tx("Servidor local"); } },
 };
 
 export interface Account {
@@ -74,7 +75,7 @@ export const [accts, setAccts] = createStore<AcctState>({ list: [], loaded: fals
 
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
-const placeholder: Account = { id: "", label: "Sem conta", provider: "claude", color: "#6c7589", model: null, configDir: null, baseUrl: null, keyHint: null, createdAt: 0, dir: null };
+const placeholder: Account = { id: "", get label() { return tx("Sem conta"); }, provider: "claude", color: "#6c7589", model: null, configDir: null, baseUrl: null, keyHint: null, createdAt: 0, dir: null };
 
 /** Nunca devolve undefined: conta apagada (ou o projeto demo) cai na primeira conta. */
 export const accountById = (id: string): Account => accts.list.find((a) => a.id === id) ?? accts.list[0] ?? placeholder;
@@ -92,7 +93,7 @@ const mockList = (): Account[] =>
 
 const mockStatus = (a: Account): AccountStatus => {
   const m = mockAccounts.find((x) => x.id === a.id);
-  const base = { id: a.id, state: "pronta" as AccountState, plan: m?.plan ?? null, who: a.provider === "claude" ? "voce@exemplo.com" : null, detail: null, models: m ? [m.model] : [], balance: a.provider === "deepseek" ? "US$ 7,40" : null, active: m?.status === "ativa", usage: null };
+  const base = { id: a.id, state: "pronta" as AccountState, plan: m?.plan ?? null, who: a.provider === "claude" ? tx("voce@exemplo.com") : null, detail: null, models: m ? [m.model] : [], balance: a.provider === "deepseek" ? `US$ ${dec(7.4, 2)}` : null, active: m?.status === "ativa", usage: null };
   if (a.provider !== "claude") return base;
   const days = [3.1, 5.4, 2.2, 6.8, 4.1, 1.2, 1.8].map((x) => Math.round(x * 1e6 * (a.id === "claude-trabalho" ? 0.4 : 1)));
   return { ...base, usage: { today: days[6], todayOut: days[6] / 5, last5h: days[6] * 0.6, days, sessionsToday: 3, messagesToday: 120, lastActiveSecs: m?.status === "ativa" ? 4 : 5400, models: [["claude-opus-5-5", days[6] * 4]] } };
@@ -101,7 +102,7 @@ const mockStatus = (a: Account): AccountStatus => {
 // ---------------------------------------------------------------- carregar
 
 export async function loadAccounts() {
-  const list = isTauri ? await invoke<Account[]>("accounts_list").catch((e) => (showToast(`Contas: ${errMsg(e)}`), [] as Account[])) : mockList();
+  const list = isTauri ? await invoke<Account[]>("accounts_list").catch((e) => (showToast(tx("Contas: {v}", { v: errMsg(e) })), [] as Account[])) : mockList();
   setAccts("list", reconcile(list, { key: "id" }));
   setAccts("loaded", true);
   // o projeto demo nasce apontando para uma conta fictícia: usa a primeira de verdade
@@ -130,7 +131,7 @@ export async function checkAccount(id: string) {
 // ---------------------------------------------------------------- alterar
 
 const needsApp = () => {
-  throw new Error("No navegador é só demonstração. Abra pelo app para mexer nas contas.");
+  throw new Error(tx("No navegador é só demonstração. Abra pelo app para mexer nas contas."));
 };
 
 export async function addAccount(n: NewAccount, key?: string): Promise<Account> {
@@ -214,20 +215,20 @@ export function cancelLogin(id: string) {
 // ---------------------------------------------------------------- formatação
 
 export const fmtTokens = (n: number) =>
-  n >= 1e6 ? `${(n / 1e6).toFixed(n >= 1e7 ? 0 : 1).replace(".", ",")} M` : n >= 1e3 ? `${Math.round(n / 1e3)} k` : `${Math.round(n)}`;
+  n >= 1e6 ? `${dec(n / 1e6, n >= 1e7 ? 0 : 1)} M` : n >= 1e3 ? `${Math.round(n / 1e3)} k` : `${Math.round(n)}`;
 
 export const fmtAgo = (s: number | null) =>
-  s === null ? "nunca" : s < 90 ? "agora" : s < 3600 ? `há ${Math.round(s / 60)} min` : s < 86400 ? `há ${Math.round(s / 3600)} h` : `há ${Math.round(s / 86400)} d`;
+  s === null ? tx("nunca") : s < 90 ? tx("agora") : s < 3600 ? tx("há {v} min", { v: Math.round(s / 60) }) : s < 86400 ? tx("há {v} h", { v: Math.round(s / 3600) }) : tx("há {v} d", { v: Math.round(s / 86400) });
 
 export const prettyModel = (m: string) =>
   m.replace(/^claude-/, "").replace(/-(\d+)-(\d+)$/, " $1.$2").replace(/^./, (c) => c.toUpperCase());
 
 export const stateText: Record<AccountState, string> = {
-  pronta: "pronta",
-  semLogin: "sem login",
-  semChave: "sem chave",
-  offline: "fora do ar",
-  erro: "com erro",
+  get pronta() { return tx("pronta"); },
+  get semLogin() { return tx("sem login"); },
+  get semChave() { return tx("sem chave"); },
+  get offline() { return tx("fora do ar"); },
+  get erro() { return tx("com erro"); },
 };
 
 export const palette = ["#e8915b", "#c084fc", "#4f8cff", "#34d399", "#f472b6", "#fbbf24", "#22d3ee", "#f87171"];

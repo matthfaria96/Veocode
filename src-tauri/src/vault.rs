@@ -53,7 +53,7 @@ pub fn list() -> Vec<Item> {
 }
 
 fn write(items: &[Item]) -> Result<(), String> {
-    let f = FILE.get().ok_or("cofre não iniciado")?;
+    let f = FILE.get().ok_or(crate::i18n::tr("cofre não iniciado", "vault not started"))?;
     let tmp = f.with_extension("json.tmp");
     std::fs::write(&tmp, serde_json::to_vec_pretty(items).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
     std::fs::rename(&tmp, f).map_err(|e| e.to_string())
@@ -69,10 +69,10 @@ fn clean_env(v: Option<String>) -> Result<Option<String>, String> {
     let Some(v) = v.map(|s| s.trim().to_uppercase()).filter(|s| !s.is_empty()) else { return Ok(None) };
     let ok = v.len() <= 64 && v.chars().next().is_some_and(|c| c.is_ascii_alphabetic()) && v.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
     if !ok {
-        return Err("o nome da variável usa só letras, números e _ (ex.: OPENAI_API_KEY)".into());
+        return Err(crate::i18n::tr("o nome da variável usa só letras, números e _ (ex.: OPENAI_API_KEY)", "the variable name uses only letters, numbers and _ (e.g. OPENAI_API_KEY)").into());
     }
     if matches!(v.as_str(), "PATH" | "HOME" | "SHELL" | "USER" | "TERM" | "CLAUDE_CONFIG_DIR") {
-        return Err(format!("{v} é usada pelo sistema; escolha outro nome"));
+        return Err(crate::trf!("{v} é usada pelo sistema; escolha outro nome", "{v} is used by the system; choose another name"));
     }
     Ok(Some(v))
 }
@@ -82,7 +82,7 @@ pub fn save(mut item: Item, secret: Option<String>) -> Result<Item, String> {
     let _g = LOCK.lock().map_err(|_| "cofre ocupado")?;
     item.name = item.name.trim().to_string();
     if item.name.is_empty() {
-        return Err("dê um nome (ex.: OpenAI pessoal)".into());
+        return Err(crate::i18n::tr("dê um nome (ex.: OpenAI pessoal)", "give it a name (e.g. Personal OpenAI)").into());
     }
     if !matches!(item.kind.as_str(), "chave" | "login" | "outro") {
         return Err("tipo desconhecido".into());
@@ -92,7 +92,7 @@ pub fn save(mut item: Item, secret: Option<String>) -> Result<Item, String> {
     let existing = items.iter().position(|x| x.id == item.id && !item.id.is_empty());
     if let Some(env) = &item.env {
         if items.iter().any(|x| x.id != item.id && x.env.as_deref() == Some(env) && overlaps(&x.projects, &item.projects)) {
-            return Err(format!("já existe outra entrada usando {env} nos mesmos projetos"));
+            return Err(crate::trf!("já existe outra entrada usando {env} nos mesmos projetos", "another entry already uses {env} in the same projects"));
         }
     }
     if item.id.is_empty() {
@@ -103,12 +103,12 @@ pub fn save(mut item: Item, secret: Option<String>) -> Result<Item, String> {
     match secret.map(|s| s.trim().to_string()) {
         Some(s) if !s.is_empty() => {
             if s.len() > 4000 || s.chars().any(|c| c.is_control()) {
-                return Err("isso não parece uma chave ou senha".into());
+                return Err(crate::i18n::tr("isso não parece uma chave ou senha", "that doesn't look like a key or password").into());
             }
-            entry(&item.id)?.set_password(&s).map_err(|e| format!("não consegui salvar no chaveiro: {e}"))?;
+            entry(&item.id)?.set_password(&s).map_err(|e| crate::trf!("não consegui salvar no chaveiro: {e}", "couldn't save to the keychain: {e}"))?;
             item.hint = hint(&s);
         }
-        _ if existing.is_none() => return Err("cole a chave ou a senha".into()),
+        _ if existing.is_none() => return Err(crate::i18n::tr("cole a chave ou a senha", "paste the key or password").into()),
         _ => item.hint = items[existing.unwrap()].hint.clone(),
     }
     match existing {
@@ -139,7 +139,7 @@ pub fn delete(id: &str) -> Result<(), String> {
 
 /// Só quando a pessoa clica em copiar.
 pub fn reveal(id: &str) -> Result<String, String> {
-    entry(id)?.get_password().map_err(|_| "não achei no chaveiro".to_string())
+    entry(id)?.get_password().map_err(|_| crate::i18n::tr("não achei no chaveiro", "couldn't find it in the keychain").to_string())
 }
 
 /// Variáveis que entram no Claude/terminal deste projeto. Segredos que não estão mais no chaveiro ficam de fora.
@@ -171,15 +171,15 @@ pub fn prompt_for(project_id: &str) -> Option<String> {
         .map(|it| {
             let env = it.env.unwrap();
             if it.kind == "login" {
-                format!("- {env}_USER e {env}_PASSWORD: login de {}{}", it.name, it.site.map(|s| format!(" ({s})")).unwrap_or_default())
+                crate::trf!("- {env}_USER e {env}_PASSWORD: login de {}{}", "- {env}_USER and {env}_PASSWORD: login for {}{}", it.name, it.site.map(|s| format!(" ({s})")).unwrap_or_default())
             } else {
                 format!("- {env}: {}", it.name)
             }
         })
         .collect();
     (!lines.is_empty()).then(|| {
-        format!(
-            "O usuário já guardou estas credenciais no cofre do Veocode e elas estão disponíveis como variáveis de ambiente neste processo:\n{}\nUse essas variáveis (por exemplo lendo do ambiente ou num .env que você mesmo monte com elas) em vez de pedir chaves ou senhas ao usuário. Nunca imprima, registre ou grave os valores em arquivos versionados.",
+        crate::trf!(
+            "O usuário já guardou estas credenciais no cofre do Veocode e elas estão disponíveis como variáveis de ambiente neste processo:\n{}\nUse essas variáveis (por exemplo lendo do ambiente ou num .env que você mesmo monte com elas) em vez de pedir chaves ou senhas ao usuário. Nunca imprima, registre ou grave os valores em arquivos versionados.", "The user has already saved these credentials in the Veocode vault and they're available as environment variables in this process:\n{}\nUse these variables (for example reading them from the environment or in a .env you build from them) instead of asking the user for keys or passwords. Never print, log or write the values to versioned files.",
             lines.join("\n")
         )
     })

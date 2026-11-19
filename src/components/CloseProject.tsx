@@ -11,6 +11,7 @@ import { forgetGit, git } from "../git";
 import { absPathOf, projects, removeProject } from "../store";
 import { forgetProject } from "../terminal";
 import { ProjectIcon } from "./icons";
+import { tx, txn } from "../i18n";
 
 const [closing, setClosing] = createSignal<string | null>(null);
 export const askCloseProject = (id: string) => setClosing(id);
@@ -44,11 +45,11 @@ function CloseDialog(props: { id: string; onClose: () => void }) {
   return (
     <div class="palette-backdrop" onClick={props.onClose}>
       <div class="dialog close-dialog" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.key === "Escape" && props.onClose()} tabIndex={-1} ref={(el) => queueMicrotask(() => el.focus())}>
-        <button class="icon-btn close-dialog-x" title="Cancelar" onClick={props.onClose}><X size={15} /></button>
+        <button class="icon-btn close-dialog-x" title={tx("Cancelar")} onClick={props.onClose}><X size={15} /></button>
         <div class="close-dialog-head">
           <ProjectIcon id={p().id} name={p().name} stack={p().stack} size={34} />
           <div>
-            <h3>Fechar {p().name}</h3>
+            <h3>{tx("Fechar {name}", { name: p().name })}</h3>
             <code title={path()}>{path()}</code>
           </div>
         </div>
@@ -57,15 +58,15 @@ function CloseDialog(props: { id: string; onClose: () => void }) {
           <button role="radio" aria-checked={!trash()} class="close-choice" classList={{ on: !trash() }} onClick={() => setTrash(false)}>
             <span class="close-choice-icon"><FolderMinus size={18} /></span>
             <span>
-              <strong>Só tirar do Veocode</strong>
-              <small>Sai da lista e da tela inicial. A pasta continua no computador e dá para adicionar de novo.</small>
+              <strong>{tx("Só tirar do Veocode")}</strong>
+              <small>{tx("Sai da lista e da tela inicial. A pasta continua no computador e dá para adicionar de novo.")}</small>
             </span>
           </button>
           <button role="radio" aria-checked={trash()} class="close-choice danger" classList={{ on: trash() }} onClick={() => setTrash(true)}>
             <span class="close-choice-icon"><Trash2 size={18} /></span>
             <span>
-              <strong>Tirar e mandar a pasta para a Lixeira</strong>
-              <small>Para quando terminou de vez. Dá para recuperar pela Lixeira enquanto ela não for esvaziada.</small>
+              <strong>{tx("Tirar e mandar a pasta para a Lixeira")}</strong>
+              <small>{tx("Para quando terminou de vez. Dá para recuperar pela Lixeira enquanto ela não for esvaziada.")}</small>
             </span>
           </button>
         </div>
@@ -74,22 +75,20 @@ function CloseDialog(props: { id: string; onClose: () => void }) {
           <p class="close-warn">
             <AlertTriangle size={14} />
             <span>
-              {changed() > 0 ? `${changed()} ${changed() === 1 ? "arquivo mudado ainda não foi guardado" : "arquivos mudados ainda não foram guardados"} no git` : ""}
-              {changed() > 0 && ahead() > 0 ? " e " : ""}
-              {ahead() > 0 ? `${ahead()} ${ahead() === 1 ? "commit não foi enviado" : "commits não foram enviados"} ao GitHub` : ""}. Se a pasta sumir, isso só fica na Lixeira.
+              {tx("{v}{v2}{v3}. Se a pasta sumir, isso só fica na Lixeira.", { v: changed() > 0 ? txn(changed(), "{n} arquivo mudado ainda não foi guardado no git", "{n} arquivos mudados ainda não foram guardados no git") : "", v2: changed() > 0 && ahead() > 0 ? tx(" e ") : "", v3: ahead() > 0 ? txn(ahead(), "{n} commit não foi enviado ao GitHub", "{n} commits não foram enviados ao GitHub") : "" })}
             </span>
           </p>
         </Show>
         <Show when={anyBusy(props.id)}>
-          <p class="close-warn"><AlertTriangle size={14} /><span>A IA está trabalhando neste projeto agora: fechar interrompe a resposta.</span></p>
+          <p class="close-warn"><AlertTriangle size={14} /><span>{tx("A IA está trabalhando neste projeto agora: fechar interrompe a resposta.")}</span></p>
         </Show>
 
         <div class="dialog-actions">
-          <button class="ghost-btn" onClick={() => api.reveal(path()).catch(() => {})}>Mostrar no Finder</button>
+          <button class="ghost-btn" onClick={() => api.reveal(path()).catch(() => {})}>{tx("Mostrar no Finder")}</button>
           <span style={{ flex: 1 }} />
-          <button class="ghost-btn" onClick={props.onClose}>Cancelar</button>
+          <button class="ghost-btn" onClick={props.onClose}>{tx("Cancelar")}</button>
           <button class={trash() ? "danger-btn" : "primary-btn"} disabled={busy()} onClick={() => void go()}>
-            {trash() ? "Fechar e mandar para a Lixeira" : "Fechar projeto"}
+            {trash() ? tx("Fechar e mandar para a Lixeira") : tx("Fechar projeto")}
           </button>
         </div>
       </div>

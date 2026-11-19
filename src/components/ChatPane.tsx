@@ -22,6 +22,7 @@ import { ProjectIcon } from "./icons";
 import Markdown from "./Markdown";
 import { ProviderMark } from "./ui";
 import MsgTools, { focusComposer } from "./MsgTools";
+import { tx } from "../i18n";
 
 type Block = { kind: "msg"; item: FeedItem } | { kind: "steps"; items: FeedItem[] };
 
@@ -82,7 +83,7 @@ export default function ChatPane(props: { pid: string; index: number }) {
       style={{ "--c": a().color }}
     >
       <Show when={dropOver() === props.pid}>
-        <div class="pane-drop-hint">{drag()?.kind === "pane" ? "Trocar de lugar" : `Pôr ${drag()?.label} aqui`}</div>
+        <div class="pane-drop-hint">{drag()?.kind === "pane" ? tx("Trocar de lugar") : tx("Pôr {label} aqui", { label: drag()?.label })}</div>
       </Show>
       <header
         class="pane-head"
@@ -91,8 +92,8 @@ export default function ChatPane(props: { pid: string; index: number }) {
           startDrag(e, props.pid, "pane", p().name, (target) => swapPanes(props.pid, target));
         }}
       >
-        <span class="pane-grip" title="Arraste para trocar de lugar"><GripVertical size={13} /></span>
-        <button class="pane-title" ref={titleBtn} onClick={() => setPick(!pick())} title="Trocar o projeto deste canto">
+        <span class="pane-grip" title={tx("Arraste para trocar de lugar")}><GripVertical size={13} /></span>
+        <button class="pane-title" ref={titleBtn} onClick={() => setPick(!pick())} title={tx("Trocar o projeto deste canto")}>
           <ProjectIcon id={p().id} name={p().name} stack={p().stack} size={18} />
           <strong>{p().name}</strong>
           <ChevronDown size={12} />
@@ -106,35 +107,35 @@ export default function ChatPane(props: { pid: string; index: number }) {
           </span>
         </Show>
         <span class="pane-tools">
-          <span class="pane-acc" title={`Conta: ${a().label}`}><ProviderMark id={a().id} size={16} /></span>
-          <Show when={isPinned(props.pid)}><span class="pane-pinned" title="Fixado neste lugar"><Pin size={11} /></span></Show>
+          <span class="pane-acc" title={tx("Conta: {label}", { label: a().label })}><ProviderMark id={a().id} size={16} /></span>
+          <Show when={isPinned(props.pid)}><span class="pane-pinned" title={tx("Fixado neste lugar")}><Pin size={11} /></span></Show>
           <Show when={panes().length > 1}>
-            <button class="icon-btn small" title={maximized() === props.pid ? "Voltar para a divisão (Esc)" : "Ampliar na tela toda (os outros continuam rodando)"} onClick={() => setMaximized(maximized() === props.pid ? null : props.pid)}>
+            <button class="icon-btn small" title={maximized() === props.pid ? tx("Voltar para a divisão (Esc)") : tx("Ampliar na tela toda (os outros continuam rodando)")} onClick={() => setMaximized(maximized() === props.pid ? null : props.pid)}>
               {maximized() === props.pid ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
             </button>
           </Show>
-          <button class="icon-btn small" title="Abrir o projeto completo (arquivos, editor, terminal)" onClick={openFull}><PanelRightOpen size={12} /></button>
-          <button class="icon-btn small" ref={moreBtn} classList={{ on: more() }} title="Mais opções" onClick={() => setMore(!more())}><MoreHorizontal size={13} /></button>
-          <button class="icon-btn small pane-close" title="Tirar da tela (o projeto continua na lista e trabalhando)" onClick={() => closePane(props.pid)}><X size={13} /></button>
+          <button class="icon-btn small" title={tx("Abrir o projeto completo (arquivos, editor, terminal)")} onClick={openFull}><PanelRightOpen size={12} /></button>
+          <button class="icon-btn small" ref={moreBtn} classList={{ on: more() }} title={tx("Mais opções")} onClick={() => setMore(!more())}><MoreHorizontal size={13} /></button>
+          <button class="icon-btn small pane-close" title={tx("Tirar da tela (o projeto continua na lista e trabalhando)")} onClick={() => closePane(props.pid)}><X size={13} /></button>
         </span>
         <Show when={more()}>
           <div class="menu pop-in pane-menu right" ref={(el) => dismissable(el, () => setMore(false), () => moreBtn)}>
-            <button class="menu-item" disabled={chat().busy} onClick={() => (setMore(false), void newChat(ck()).then(() => clearFeed(props.pid)))}><MessageSquarePlus size={15} /><span>Nova conversa</span><small>a anterior fica guardada</small></button>
-            <button class="menu-item" onClick={() => (setMore(false), togglePin(props.pid))}><Pin size={15} /><span>{isPinned(props.pid) ? "Soltar deste lugar" : "Fixar neste lugar"}</span><small>{isPinned(props.pid) ? "pode dar lugar a outro" : "não sai sozinho"}</small></button>
-            <button class="menu-item" onClick={() => (setMore(false), setPick(true))}><ArrowLeftRight size={15} /><span>Trocar o projeto deste canto</span></button>
+            <button class="menu-item" disabled={chat().busy} onClick={() => (setMore(false), void newChat(ck()).then(() => clearFeed(props.pid)))}><MessageSquarePlus size={15} /><span>{tx("Nova conversa")}</span><small>{tx("a anterior fica guardada")}</small></button>
+            <button class="menu-item" onClick={() => (setMore(false), togglePin(props.pid))}><Pin size={15} /><span>{isPinned(props.pid) ? tx("Soltar deste lugar") : tx("Fixar neste lugar")}</span><small>{isPinned(props.pid) ? tx("pode dar lugar a outro") : tx("não sai sozinho")}</small></button>
+            <button class="menu-item" onClick={() => (setMore(false), setPick(true))}><ArrowLeftRight size={15} /><span>{tx("Trocar o projeto deste canto")}</span></button>
             <div class="menu-sep" />
-            <button class="menu-item" onClick={() => (setMore(false), closePane(props.pid))}><X size={15} /><span>Tirar da tela</span></button>
+            <button class="menu-item" onClick={() => (setMore(false), closePane(props.pid))}><X size={15} /><span>{tx("Tirar da tela")}</span></button>
           </div>
         </Show>
         <Show when={pick()}>
           <div class="menu pop-in pane-menu" ref={(el) => dismissable(el, () => setPick(false), () => titleBtn)}>
-            <small class="menu-title">Mostrar neste canto</small>
-            <For each={others()} fallback={<small class="menu-title">Nenhum outro projeto</small>}>
+            <small class="menu-title">{tx("Mostrar neste canto")}</small>
+            <For each={others()} fallback={<small class="menu-title">{tx("Nenhum outro projeto")}</small>}>
               {(o) => (
                 <button class="menu-item" onClick={() => (replacePane(props.pid, o.id), setPick(false))}>
                   <ProjectIcon id={o.id} name={o.name} stack={o.stack} size={16} />
                   <span>{o.name}</span>
-                  <Show when={panes().includes(o.id)}><small>troca de lugar</small></Show>
+                  <Show when={panes().includes(o.id)}><small>{tx("troca de lugar")}</small></Show>
                 </button>
               )}
             </For>
@@ -143,7 +144,7 @@ export default function ChatPane(props: { pid: string; index: number }) {
       </header>
 
       <div class="pane-scroll" ref={scroller} onScroll={onScroll}>
-        <Show when={feed().loaded || feed().items.length} fallback={<div class="pane-empty"><span class="spinner" /> Lendo a conversa…</div>}>
+        <Show when={feed().loaded || feed().items.length} fallback={<div class="pane-empty"><span class="spinner" /> {tx("Lendo a conversa…")}</div>}>
           <Show when={list().length || chat().busy} fallback={<PaneIdle pid={props.pid} />}>
             <For each={list()}>
               {(b) =>
@@ -177,14 +178,14 @@ export default function ChatPane(props: { pid: string; index: number }) {
               <div class="perm-ask pop-in" style={{ "--c": a().color }}>
                 <div class="perm-ask-head">
                   <ShieldCheck size={14} />
-                  <span>O nível pede para confirmar</span>
+                  <span>{tx("O nível pede para confirmar")}</span>
                   <small>{q.tool}</small>
                 </div>
                 <strong>{q.title}</strong>
                 <Show when={q.detail}><pre>{q.detail}</pre></Show>
                 <div class="perm-ask-actions">
-                  <button class="ghost-btn" disabled={q.answering} onClick={() => answerPermission(ck(), q.requestId, false)}><Ban size={13} /> Recusar</button>
-                  <button class="primary-btn small" disabled={q.answering} onClick={() => answerPermission(ck(), q.requestId, true)}><Check size={13} /> Permitir</button>
+                  <button class="ghost-btn" disabled={q.answering} onClick={() => answerPermission(ck(), q.requestId, false)}><Ban size={13} /> {tx("Recusar")}</button>
+                  <button class="primary-btn small" disabled={q.answering} onClick={() => answerPermission(ck(), q.requestId, true)}><Check size={13} /> {tx("Permitir")}</button>
                 </div>
               </div>
             )}
@@ -193,7 +194,7 @@ export default function ChatPane(props: { pid: string; index: number }) {
             <div class="bubble chat-error">
               <AlertTriangle size={14} />
               <span>{chat().error}</span>
-              <button class="icon-btn small" title="Fechar" onClick={() => clearError(ck())}><X size={12} /></button>
+              <button class="icon-btn small" title={tx("Fechar")} onClick={() => clearError(ck())}><X size={12} /></button>
             </div>
           </Show>
         </Show>
@@ -202,12 +203,12 @@ export default function ChatPane(props: { pid: string; index: number }) {
       <MediaStrip pid={props.pid} compact />
       <div class="pane-composer" classList={{ dropping: dropPid() === ck(), "has-atts": attsOf(ck()).length > 0, listening: listeningTo(ck()) }} data-attach-pid={ck()}>
         <AttachBar pid={ck()} />
-        <button class="icon-btn pane-clip" classList={{ on: attsOf(ck()).length > 0 }} title="Anexar arquivos ou imagens (ou cole com ⌘V, ou arraste do Finder)" onClick={() => void pickFiles(ck())}><Paperclip size={14} /></button>
+        <button class="icon-btn pane-clip" classList={{ on: attsOf(ck()).length > 0 }} title={tx("Anexar arquivos ou imagens (ou cole com ⌘V, ou arraste do Finder)")} onClick={() => void pickFiles(ck())}><Paperclip size={14} /></button>
         <textarea
           rows={1}
           value={chat().input}
           readOnly={listeningTo(ck())}
-          placeholder={listeningTo(ck()) ? "Pode falar… (Enter para, Esc cancela)" : `Pedir algo em ${p().name}… (⌥ Espaço para falar)`}
+          placeholder={listeningTo(ck()) ? tx("Pode falar… (Enter para, Esc cancela)") : tx("Pedir algo em {name}… (⌥ Espaço para falar)", { name: p().name })}
           onPaste={(e) => void pasteFiles(ck(), e)}
           onInput={(e) => setInput(ck(), e.currentTarget.value)}
           onKeyDown={(e) => {
@@ -223,9 +224,9 @@ export default function ChatPane(props: { pid: string; index: number }) {
         <MicButton target={ck()} compact />
         <Show
           when={chat().busy}
-          fallback={<button class="send-btn" disabled={!chat().input.trim() && !attsOf(ck()).length} title="Enviar (Enter)" onClick={send}><SendHorizontal size={14} /></button>}
+          fallback={<button class="send-btn" disabled={!chat().input.trim() && !attsOf(ck()).length} title={tx("Enviar (Enter)")} onClick={send}><SendHorizontal size={14} /></button>}
         >
-          <button class="send-btn stop" title="Parar (Esc)" onClick={() => void stopChat(ck())}><Square size={12} /></button>
+          <button class="send-btn stop" title={tx("Parar (Esc)")} onClick={() => void stopChat(ck())}><Square size={12} /></button>
         </Show>
       </div>
     </section>
@@ -248,7 +249,7 @@ function Steps(props: { items: FeedItem[] }) {
             </>
           )}
         </Show>
-        <Show when={failed() > 0}><small class="work-sum-fail">{failed()} falhou</small></Show>
+        <Show when={failed() > 0}><small class="work-sum-fail">{tx("{failed} falhou", { failed: failed() })}</small></Show>
         <ChevronDown size={12} class="work-chev" />
       </button>
       <Show when={open()}>
@@ -274,20 +275,20 @@ function PaneIdle(props: { pid: string }) {
   const a = () => accountById(p().accountId);
   const g = () => git.summaries[props.pid];
   const ideas = () => [
-    g()?.changed ? "Revise as mudanças que ainda não foram salvas no git e me diga se algo parece errado" : "Me explique como este projeto está organizado",
-    "Procure bugs ou pontos frágeis no código e liste os mais importantes",
-    "Rode os testes (ou o build) e me diga o que falhou",
+    g()?.changed ? tx("Revise as mudanças que ainda não foram salvas no git e me diga se algo parece errado") : tx("Me explique como este projeto está organizado"),
+    tx("Procure bugs ou pontos frágeis no código e liste os mais importantes"),
+    tx("Rode os testes (ou o build) e me diga o que falhou"),
   ];
   return (
     <div class="pane-idle">
       <div class="pane-idle-mark"><ProjectIcon id={p().id} name={p().name} stack={p().stack} size={40} /></div>
       <strong>{p().name}</strong>
       <small>
-        {p().stack || "Projeto"}
+        {p().stack || tx("Projeto")}
         <Show when={g()?.repo}> · <GitBranch size={11} /> {g()!.branch ?? "git"}</Show>
         <Show when={gitWords(g()).length}> · {gitWords(g()).map((w) => w.text).join(" · ")}</Show>
       </small>
-      <p>Nenhuma conversa nas últimas 24 h. Que tal começar por uma destas?</p>
+      <p>{tx("Nenhuma conversa nas últimas 24 h. Que tal começar por uma destas?")}</p>
       <div class="pane-ideas">
         <For each={ideas()}>
           {(t, i) => (

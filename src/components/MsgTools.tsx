@@ -3,6 +3,7 @@
 import { Check, Copy, CornerDownLeft, Pencil } from "lucide-solid";
 import { createSignal, Show } from "solid-js";
 import { copyText } from "../api";
+import { tx } from "../i18n";
 
 export default function MsgTools(props: { text: string; onReuse?: () => void; onEdit?: () => void }) {
   const [ok, setOk] = createSignal(false);
@@ -15,14 +16,14 @@ export default function MsgTools(props: { text: string; onReuse?: () => void; on
   };
   return (
     <span class="msg-tools" classList={{ done: ok() }}>
-      <button title={ok() ? "Copiado" : "Copiar"} onClick={copy}>{ok() ? <Check size={12} /> : <Copy size={12} />}</button>
+      <button title={ok() ? tx("Copiado") : tx("Copiar")} onClick={copy}>{ok() ? <Check size={12} /> : <Copy size={12} />}</button>
       <Show when={props.onEdit}>
-        <button title="Editar e mandar de novo: o Claude esquece esta versão e o que veio depois" onClick={(e) => (e.stopPropagation(), props.onEdit!())}>
+        <button title={tx("Editar e mandar de novo: o Claude esquece esta versão e o que veio depois")} onClick={(e) => (e.stopPropagation(), props.onEdit!())}>
           <Pencil size={12} />
         </button>
       </Show>
       <Show when={props.onReuse}>
-        <button title="Usar de novo: volta para a caixa de texto para você ajustar e enviar" onClick={(e) => (e.stopPropagation(), props.onReuse!())}>
+        <button title={tx("Usar de novo: volta para a caixa de texto para você ajustar e enviar")} onClick={(e) => (e.stopPropagation(), props.onReuse!())}>
           <CornerDownLeft size={12} />
         </button>
       </Show>

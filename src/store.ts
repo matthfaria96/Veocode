@@ -2,6 +2,7 @@ import { createSignal } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { demoProject, type Project } from "./data/mock";
 import { api, isTauri, prettyPath, type FileContent, type DirListing, type ProjectInfo } from "./api";
+import { locale, tx } from "./i18n";
 
 export type View = "board" | "workspace" | "accounts" | "system" | "inventory" | "settings" | "livre";
 
@@ -30,8 +31,8 @@ const fromInfo = (i: ProjectInfo): Project => ({
   stack: i.stack,
   accountId: i.accountId,
   access: i.access,
-  branch: i.branch ?? "sem git",
-  lastActive: i.exists ? "—" : "pasta sumiu",
+  branch: i.branch ?? tx("sem git"),
+  lastActive: i.exists ? "—" : tx("pasta sumiu"),
   live: false,
   demo: false,
   exists: i.exists,
@@ -55,7 +56,7 @@ export async function loadProjects() {
     setProjects(reconcile(list.length ? list.map(fromInfo) : [structuredClone(demoProject)], { key: "id" }));
     if (list.length > 0) setProjectId(list[0].id);
   } catch (e) {
-    showToast(`Não deu para abrir a lista de projetos: ${e}`);
+    showToast(tx("Não deu para abrir a lista de projetos: {e}", { e }));
   } finally {
     window.clearTimeout(slow);
     setProjectsSlow(false);
@@ -79,21 +80,21 @@ export async function addProjectPath(path: string, go = true) {
       setProjectId(info.id);
       setView("workspace");
     }
-    showToast(`${info.name} adicionado em modo Leitura`);
+    showToast(tx("{name} adicionado em modo Leitura", { name: info.name }));
   } catch (e) {
     showToast(String(e instanceof Error ? e.message : e));
   }
 }
 
 export async function removeProject(id: string, trashFolder = false): Promise<boolean> {
-  const name = projects.find((p) => p.id === id)?.name ?? "Projeto";
+  const name = projects.find((p) => p.id === id)?.name ?? tx("Projeto");
   try {
     await api.removeProject(id, trashFolder);
     const rest = projects.filter((p) => p.id !== id && !p.demo);
     setProjects(rest.length ? rest : [structuredClone(demoProject)]);
     if (projectId() === id) setProjectId(rest[0]?.id ?? "demo");
     if (!rest.length && view() === "workspace") setView("board");
-    showToast(trashFolder ? `${name} fechado e a pasta foi para a Lixeira` : `${name} saiu do Veocode (a pasta continua no disco)`);
+    showToast(trashFolder ? tx("{name} fechado e a pasta foi para a Lixeira", { name }) : tx("{name} saiu do Veocode (a pasta continua no disco)", { name }));
     return true;
   } catch (e) {
     showToast(String(e));
@@ -104,7 +105,7 @@ export async function removeProject(id: string, trashFolder = false): Promise<bo
 const persist = (id: string, change: { accountId?: string; access?: number }): Promise<void> => {
   const p = projects.find((x) => x.id === id);
   if (!p || p.demo) return Promise.resolve();
-  return Promise.resolve(api.updateProject(id, change)).then(() => undefined, (e) => showToast(`Não salvou: ${e}`));
+  return Promise.resolve(api.updateProject(id, change)).then(() => undefined, (e) => showToast(tx("Não salvou: {e}", { e })));
 };
 
 export function setProjectAccount(id: string, accountId: string): Promise<void> {
@@ -206,7 +207,7 @@ export function pushEvent(e: Omit<ActivityEvent, "id" | "time" | "status"> & { s
   const id = ++eventSeq;
   const now = e.at ? new Date(e.at) : new Date();
   delete e.at;
-  const time = now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  const time = now.toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit", second: "2-digit" });
   const ev: ActivityEvent = { status: "running", ...e, id, time };
   setWs("events", (list) => [...list, ev].slice(-400));
   return id;

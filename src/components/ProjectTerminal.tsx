@@ -5,6 +5,7 @@ import { isTauri, prettyPath } from "../api";
 import { currentProject } from "../store";
 import { closeTerm, setActiveTerm, terms } from "../terminal";
 import { fitNow, loadExisting, mount, openIn } from "../termView";
+import { tx } from "../i18n";
 
 /** Caminho longo: só o fim, que é o que diferencia as pastas. */
 const short = (s: string) => (s.length > 44 ? `…${s.slice(-43)}` : s);
@@ -48,25 +49,25 @@ export default function ProjectTerminal() {
         fallback={
           <div class="pterm-empty">
             <SquareTerminal size={18} />
-            <span>{isTauri ? "O projeto de demonstração não tem terminal: adicione uma pasta sua para abrir um." : "O terminal precisa do app: no navegador não dá para abrir um shell."}</span>
+            <span>{isTauri ? tx("O projeto de demonstração não tem terminal: adicione uma pasta sua para abrir um.") : tx("O terminal precisa do app: no navegador não dá para abrir um shell.")}</span>
           </div>
         }
       >
         <div class="pterm-bar">
           <For each={list()}>
             {(t) => (
-              <div class="pterm-tab" classList={{ on: active() === t.id, dead: !t.alive }} onClick={() => setActiveTerm(pid(), t.id)} title={t.alive ? `${t.shell} em ${t.cwd}` : "O shell terminou"}>
+              <div class="pterm-tab" classList={{ on: active() === t.id, dead: !t.alive }} onClick={() => setActiveTerm(pid(), t.id)} title={t.alive ? tx("{shell} em {cwd}", { shell: t.shell, cwd: t.cwd }) : tx("O shell terminou")}>
                 <span class="pterm-dot" />
                 <span>{t.name}</span>
-                <button title="Fechar este terminal" onClick={(e) => (e.stopPropagation(), closeTerm(pid(), t.id))}><X size={11} /></button>
+                <button title={tx("Fechar este terminal")} onClick={(e) => (e.stopPropagation(), closeTerm(pid(), t.id))}><X size={11} /></button>
               </div>
             )}
           </For>
-          <button class="pterm-add" title="Novo terminal neste projeto" disabled={terms.opening} onClick={add}><Plus size={13} /></button>
+          <button class="pterm-add" title={tx("Novo terminal neste projeto")} disabled={terms.opening} onClick={add}><Plus size={13} /></button>
           <div class="pterm-info">
             <span title={p().path}><FolderOpen size={11} /> {short(prettyPath(p().path ?? ""))}</span>
             <Show when={acc().provider === "claude"}>
-              <span class="pterm-acc" style={{ "--c": acc().color }} title="O comando claude digitado aqui usa a conta deste projeto"><Bot size={11} /> claude = {acc().label}</span>
+              <span class="pterm-acc" style={{ "--c": acc().color }} title={tx("O comando claude digitado aqui usa a conta deste projeto")}><Bot size={11} /> {tx("claude = {label}", { label: acc().label })}</span>
             </Show>
           </div>
         </div>
@@ -74,8 +75,8 @@ export default function ProjectTerminal() {
       <div class="pterm-box" ref={box} classList={{ hidden: !real() }} />
       <Show when={real() && !list().length}>
         <div class="pterm-empty">
-          <Show when={terms.opening} fallback={<button class="ghost-btn small" onClick={add}><SquareTerminal size={12} /> Abrir um terminal nesta pasta</button>}>
-            <span class="spinner" /> Abrindo o terminal…
+          <Show when={terms.opening} fallback={<button class="ghost-btn small" onClick={add}><SquareTerminal size={12} /> {tx("Abrir um terminal nesta pasta")}</button>}>
+            <span class="spinner" /> {tx("Abrindo o terminal…")}
           </Show>
         </div>
       </Show>

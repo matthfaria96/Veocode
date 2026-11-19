@@ -51,7 +51,7 @@ pub fn private_rules() -> Vec<String> {
 
 pub fn target(data: &Path, home: &Path, pc: bool) -> Result<Target, String> {
     let cwd = dir(data);
-    std::fs::create_dir_all(&cwd).map_err(|e| format!("não deu para criar a pasta do Chat livre: {e}"))?;
+    std::fs::create_dir_all(&cwd).map_err(|e| crate::trf!("não deu para criar a pasta do Chat livre: {e}", "couldn't create the Free chat folder: {e}"))?;
     let mut overrides = BTreeMap::new();
     overrides.insert("net".to_string(), if pc { Rule::Pergunta } else { Rule::Permitido });
     let mut c = access::compile(0, &overrides);
@@ -60,19 +60,19 @@ pub fn target(data: &Path, home: &Path, pc: bool) -> Result<Target, String> {
             c.deny.push(x);
         }
     }
-    let base = "Você está no Chat livre do Veocode: uma conversa geral, fora de qualquer projeto, para tirar dúvidas. \
-                Responda em português do Brasil, direto e amigável. Você não edita nem cria arquivos e não roda comandos.";
+    let base = crate::i18n::tr("Você está no Chat livre do Veocode: uma conversa geral, fora de qualquer projeto, para tirar dúvidas. \
+                Responda em português do Brasil, direto e amigável. Você não edita nem cria arquivos e não roda comandos.", "You're in Veocode's Free chat: a general conversation, outside any project, for questions. Answer in the language the person writes in (English if unsure), direct and friendly. You don't edit or create files and don't run commands.");
     let prompt = if pc {
-        format!(
+        crate::trf!(
             "{base}\nA pessoa deixou você olhar o computador dela, só para ler. A pasta pessoal é {}. \
              Pode listar, ler e buscar arquivos para responder (achar um arquivo, explicar um documento, ver o que tem numa pasta). \
              Pastas de credenciais (.ssh, .aws, chaveiro, cookies e afins) estão bloqueadas: não tente abrir. \
              Prefira buscas em pastas específicas (Documents, Downloads, Desktop) a varrer a pasta pessoal inteira, \
-             e diga em uma linha o que vai olhar antes de abrir algo pessoal.",
+             e diga em uma linha o que vai olhar antes de abrir algo pessoal.", "{base}\nThe person let you look at their computer, read-only. The home folder is {}. You can list, read and search files to answer (find a file, explain a document, see what's in a folder). Credential folders (.ssh, .aws, keychain, cookies and the like) are blocked: don't try to open them. Prefer searching specific folders (Documents, Downloads, Desktop) over scanning the whole home folder, and say in one line what you're going to look at before opening something personal.",
             home.display()
         )
     } else {
-        format!("{base}\nVocê não tem acesso aos arquivos do computador: só vê o que a pessoa escrever. Pode pesquisar na internet quando ajudar.")
+        crate::trf!("{base}\nVocê não tem acesso aos arquivos do computador: só vê o que a pessoa escrever. Pode pesquisar na internet quando ajudar.", "{base}\nYou have no access to the computer's files: you only see what the person writes. You can search the web when it helps.")
     };
     Ok(Target {
         tools_root: if pc { home.to_path_buf() } else { cwd.clone() },

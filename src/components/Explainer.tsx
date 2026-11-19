@@ -3,6 +3,7 @@
 // fechar, e ela vira só um botão (lembrado neste computador).
 import { HelpCircle, X } from "lucide-solid";
 import { createSignal, For, Show, type JSX } from "solid-js";
+import { tx } from "../i18n";
 
 export interface Term {
   word: string;
@@ -35,7 +36,7 @@ export default function Explainer(props: { id: string; title: string; intro: JSX
       when={open()}
       fallback={
         <button class="explain-open" onClick={() => set(true)}>
-          <HelpCircle size={13} /> {props.openLabel ?? "O que é esta tela?"}
+          <HelpCircle size={13} /> {props.openLabel ?? tx("O que é esta tela?")}
         </button>
       }
     >
@@ -43,7 +44,7 @@ export default function Explainer(props: { id: string; title: string; intro: JSX
         <div class="explain-head">
           <HelpCircle size={16} />
           <strong>{props.title}</strong>
-          <button class="icon-btn" title="Esconder explicação" onClick={() => set(false)}><X size={14} /></button>
+          <button class="icon-btn" title={tx("Esconder explicação")} onClick={() => set(false)}><X size={14} /></button>
         </div>
         <p class="explain-intro">{props.intro}</p>
         <Show when={props.terms?.length}>
@@ -61,7 +62,7 @@ export default function Explainer(props: { id: string; title: string; intro: JSX
         <Show when={props.calm}>
           <p class="explain-calm">{props.calm}</p>
         </Show>
-        <button class="link-btn explain-ok" onClick={() => set(false)}>Entendi, esconder</button>
+        <button class="link-btn explain-ok" onClick={() => set(false)}>{tx("Entendi, esconder")}</button>
       </div>
     </Show>
   );

@@ -5,6 +5,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { createStore, reconcile } from "solid-js/store";
 import { isTauri } from "./api";
 import { projects, setProjects, showToast } from "./store";
+import { tx } from "./i18n";
 
 export type Rule = "permitido" | "pergunta" | "bloqueado";
 
@@ -47,11 +48,11 @@ export const [acc, setAcc] = createStore<AccState>({ reports: {}, busy: {}, demo
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 const isDemo = (id: string) => !!projects.find((p) => p.id === id)?.demo;
 
-export const ruleText: Record<Rule, string> = { permitido: "Permitido", pergunta: "Pergunta", bloqueado: "Bloqueado" };
+export const ruleText: Record<Rule, string> = { get permitido() { return tx("Permitido"); }, get pergunta() { return tx("Pergunta"); }, get bloqueado() { return tx("Bloqueado"); } };
 export const modeText: Record<string, string> = {
-  plan: "Plan (só planeja)",
-  default: "Manual (pergunta antes)",
-  acceptEdits: "Aceitar edições",
+  get plan() { return tx("Plan (só planeja)"); },
+  get default() { return tx("Manual (pergunta antes)"); },
+  get acceptEdits() { return tx("Aceitar edições"); },
 };
 
 // ---------------------------------------------------------------- navegador puro (exemplo)
@@ -67,12 +68,12 @@ const MOCK: [string, string, string, Rule[], Rule[]][] = [
 const mockReport = (level: number, o: Record<string, Rule>): AccessReport => ({
   level,
   mode: ["plan", "default", "acceptEdits", "acceptEdits"][level],
-  caps: MOCK.map(([id, label, hint, levels, choices]) => ({ id, label, hint, rule: o[id] ?? levels[level], fromLevel: levels[level], choices, rules: [] })),
+  caps: MOCK.map(([id, label, hint, levels, choices]) => ({ id, label: tx(label), hint: tx(hint), rule: o[id] ?? levels[level], fromLevel: levels[level], choices, rules: [] })),
   file: "",
   fileState: { state: "naoAplicado" },
   ownRules: [],
   loosen: [],
-  preview: "No navegador é só exemplo.",
+  preview: tx("No navegador é só exemplo."),
 });
 
 // ---------------------------------------------------------------- ações
@@ -125,7 +126,7 @@ export const removeAccess = (id: string) => run(id, () => invoke<AccessReport>("
 export async function openClaude(id: string) {
   try {
     await invoke("open_claude", { projectId: id });
-    showToast("Abrindo o Claude Code no Terminal…");
+    showToast(tx("Abrindo o Claude Code no Terminal…"));
   } catch (e) {
     showToast(errMsg(e));
   }

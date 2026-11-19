@@ -137,7 +137,7 @@ enum Fail {
 impl Fail {
     fn text(&self) -> String {
         match self {
-            Fail::Refused(_) => "A Anthropic não está liberando a consulta de uso agora. O número se atualiza sozinho a cada resposta do Claude por aqui.".into(),
+            Fail::Refused(_) => crate::i18n::tr("A Anthropic não está liberando a consulta de uso agora. O número se atualiza sozinho a cada resposta do Claude por aqui.", "Anthropic isn't allowing usage lookups right now. The number updates on its own with every Claude answer here.").into(),
             Fail::Other(s) => s.clone(),
         }
     }
@@ -156,9 +156,9 @@ fn token(a: &Account) -> Result<String, String> {
     if found.is_none() {
         found = keychain(&service(a)).and_then(|s| pick(&s));
     }
-    let (tok, exp) = found.ok_or("Sem login do Claude Code nesta conta")?;
+    let (tok, exp) = found.ok_or(crate::i18n::tr("Sem login do Claude Code nesta conta", "No Claude Code login on this account"))?;
     if exp != i64::MAX && exp < (now() as i64) * 1000 {
-        return Err("O login venceu: use o Claude uma vez e o uso aparece de novo".into());
+        return Err(crate::i18n::tr("O login venceu: use o Claude uma vez e o uso aparece de novo", "The login expired: use Claude once and the usage shows up again").into());
     }
     Ok(tok)
 }
@@ -201,13 +201,13 @@ fn fetch(tok: &str) -> Result<Limits, Fail> {
         .call();
     let v: serde_json::Value = match res {
         Ok(r) => r.into_json().map_err(|e| Fail::Other(e.to_string()))?,
-        Err(ureq::Error::Status(401, _)) => return Err(Fail::Other("O login venceu: use o Claude uma vez e o uso aparece de novo".into())),
+        Err(ureq::Error::Status(401, _)) => return Err(Fail::Other(crate::i18n::tr("O login venceu: use o Claude uma vez e o uso aparece de novo", "The login expired: use Claude once and the usage shows up again").into())),
         Err(ureq::Error::Status(403 | 429, r)) => {
             let wait = r.header("retry-after").and_then(|s| s.trim().parse::<u64>().ok()).map(Duration::from_secs);
             return Err(Fail::Refused(wait));
         }
         Err(ureq::Error::Status(c, _)) => return Err(Fail::Other(format!("A Anthropic respondeu {c}"))),
-        Err(_) => return Err(Fail::Other("Sem internet para ler o uso".into())),
+        Err(_) => return Err(Fail::Other(crate::i18n::tr("Sem internet para ler o uso", "No internet to read the usage").into())),
     };
     Ok(parse(&v))
 }

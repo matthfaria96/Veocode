@@ -8,6 +8,7 @@ import { ask } from "./dialogs";
 import { chatOf, chats, listConversations, newChat, ofChat, onChatSession, openConversation, setChatMeta, setInput, stopChat, type Convo } from "./chat";
 import { projects, setWs, showToast, ws } from "./store";
 import { setMemoryText } from "./memoryStore";
+import { locale, tx } from "./i18n";
 
 export type ConvTab = { key: string; title: string; session?: string | null; account?: string };
 type ProjectTabs = { list: ConvTab[]; active: string };
@@ -87,10 +88,10 @@ const running = (pid: string) => tabsOf(pid).filter((t) => chatOf(t.key).busy).l
 export function newTab(pid: string, title = "Nova conversa"): string | null {
   ensure(pid);
   if (tabsOf(pid).length >= MAX_TABS) {
-    showToast(`Até ${MAX_TABS} conversas abertas por projeto: conclua ou feche uma`);
+    showToast(tx("Até {MAX_TABS} conversas abertas por projeto: conclua ou feche uma", { MAX_TABS }));
     return null;
   }
-  if (running(pid) >= MAX_RUNNING) showToast(`${MAX_RUNNING} conversas já estão trabalhando: cada uma gasta do limite da conta`);
+  if (running(pid) >= MAX_RUNNING) showToast(tx("{MAX_RUNNING} conversas já estão trabalhando: cada uma gasta do limite da conta", { MAX_RUNNING }));
   const key = `${pid}~${Date.now().toString(36)}`;
   const account = projects.find((x) => x.id === pid)?.accountId;
   setTabs(pid, produce((t: ProjectTabs) => {
@@ -129,11 +130,11 @@ async function drop(pid: string, key: string) {
 export async function closeTab(pid: string, key: string) {
   if (chatOf(key).busy) {
     const r = await ask({
-      title: "Esta conversa ainda está trabalhando",
-      body: "Fechar agora para o Claude no meio do que está fazendo. A conversa continua no histórico do projeto.",
+      title: tx("Esta conversa ainda está trabalhando"),
+      body: tx("Fechar agora para o Claude no meio do que está fazendo. A conversa continua no histórico do projeto."),
       options: [
-        { id: "back", label: "Deixar terminar", tone: "ghost" },
-        { id: "stop", label: "Parar e fechar", tone: "danger" },
+        { id: "back", label: tx("Deixar terminar"), tone: "ghost" },
+        { id: "stop", label: tx("Parar e fechar"), tone: "danger" },
       ],
     });
     if (r?.id !== "stop") return;
@@ -173,34 +174,34 @@ function summaryOf(key: string): { title: string; text: string; files: string[] 
   const title = tabsOf(pid).find((t) => t.key === key)?.title ?? "Conversa";
   const lines = [
     asks.length ? `Pedidos: ${asks.slice(-5).join(" | ")}` : "",
-    files.length ? `Arquivos mexidos: ${files.slice(0, 15).join(", ")}${files.length > 15 ? ` e mais ${files.length - 15}` : ""}` : "",
-    last ? `Fim da conversa: ${cut(last.title, 500)}` : "",
+    files.length ? tx("Arquivos mexidos: {list}", { list: files.slice(0, 15).join(", ") + (files.length > 15 ? tx(" e mais {v}", { v: files.length - 15 }) : "") }) : "",
+    last ? tx("Fim da conversa: {v}", { v: cut(last.title, 500) }) : "",
   ].filter(Boolean);
   return { title, text: lines.join("\n"), files };
 }
 
 /** Concluir: o resumo vai para a memória do projeto e a aba fecha. */
 export async function concludeTab(pid: string, key: string) {
-  if (chatOf(key).busy) return showToast("Espere a conversa terminar (ou pare) antes de concluir");
+  if (chatOf(key).busy) return showToast(tx("Espere a conversa terminar (ou pare) antes de concluir"));
   const s = summaryOf(key);
   if (s && isTauri) {
-    const date = new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "short" });
+    const date = new Date().toLocaleDateString(locale(), { day: "2-digit", month: "short" });
     try {
       setMemoryText(pid, await invoke<string>("memory_add", { projectId: pid, entry: `## ${date} · ${s.title}\n${s.text}` }));
     } catch (e) {
-      return showToast(`Não deu para guardar o resumo: ${e}`);
+      return showToast(tx("Não deu para guardar o resumo: {e}", { e }));
     }
   }
   await drop(pid, key);
-  showToast(s ? "Conversa concluída: o resumo foi para a memória do projeto" : "Conversa concluída");
+  showToast(s ? tx("Conversa concluída: o resumo foi para a memória do projeto") : tx("Conversa concluída"));
 }
 
 /** Conversa pesada: abre uma nova com o resumo já na caixa (o Claude não relê tudo). */
 export function continueFresh(pid: string, key: string) {
   const s = summaryOf(key);
-  const k = newTab(pid, s ? `${s.title.slice(0, 34)} (cont.)` : "Nova conversa");
+  const k = newTab(pid, s ? tx("{v} (cont.)", { v: s.title.slice(0, 34) }) : "Nova conversa");
   if (!k) return;
-  if (s) setInput(k, `Continuando uma conversa anterior. Resumo:\n${s.text}\n\nAgora: `);
+  if (s) setInput(k, tx("Continuando uma conversa anterior. Resumo:\n{text}\n\nAgora: ", { text: s.text }));
   requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>(".center .composer textarea")?.focus());
 }
 

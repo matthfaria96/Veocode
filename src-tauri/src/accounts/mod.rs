@@ -119,7 +119,7 @@ impl AccountStore {
     pub fn add(&mut self, n: NewAccount, claude_root: &Path) -> Result<Account, String> {
         let label = n.label.trim();
         if label.is_empty() {
-            return Err("dê um nome para a conta".into());
+            return Err(crate::i18n::tr("dê um nome para a conta", "give the account a name").into());
         }
         let mut id = format!("a{:x}", now_ms());
         while self.get(&id).is_some() {
@@ -142,20 +142,20 @@ impl AccountStore {
                     Some(d) => {
                         let p = PathBuf::from(d);
                         if !p.is_dir() {
-                            return Err("essa pasta não existe".into());
+                            return Err(crate::i18n::tr("essa pasta não existe", "that folder doesn't exist").into());
                         }
                         p.canonicalize().map_err(|e| e.to_string())?
                     }
                     None => {
                         let p = claude_root.join(&id);
-                        fs::create_dir_all(&p).map_err(|e| format!("não consegui criar a pasta da conta: {e}"))?;
+                        fs::create_dir_all(&p).map_err(|e| crate::trf!("não consegui criar a pasta da conta: {e}", "couldn't create the account folder: {e}"))?;
                         p.canonicalize().map_err(|e| e.to_string())?
                     }
                 };
                 let dir_s = dir.to_string_lossy().to_string();
                 let canon = |p: PathBuf| p.canonicalize().unwrap_or(p);
                 if self.accounts.iter().any(|a| a.provider == Provider::Claude && canon(claude::config_dir(a)) == dir) {
-                    return Err("já existe uma conta usando essa pasta".into());
+                    return Err(crate::i18n::tr("já existe uma conta usando essa pasta", "an account already uses that folder").into());
                 }
                 acc.config_dir = Some(dir_s);
             }
@@ -177,7 +177,7 @@ impl AccountStore {
     }
 
     pub fn update(&mut self, id: &str, label: Option<String>, color: Option<String>, model: Option<String>) -> Result<Account, String> {
-        let a = self.accounts.iter_mut().find(|a| a.id == id).ok_or("conta não encontrada")?;
+        let a = self.accounts.iter_mut().find(|a| a.id == id).ok_or(crate::i18n::tr("conta não encontrada", "account not found"))?;
         if let Some(l) = label.map(|l| l.trim().to_string()).filter(|l| !l.is_empty()) {
             a.label = l;
         }
@@ -191,7 +191,7 @@ impl AccountStore {
     }
 
     pub fn set_key_hint(&mut self, id: &str, hint: Option<String>) -> Result<Account, String> {
-        let a = self.accounts.iter_mut().find(|a| a.id == id).ok_or("conta não encontrada")?;
+        let a = self.accounts.iter_mut().find(|a| a.id == id).ok_or(crate::i18n::tr("conta não encontrada", "account not found"))?;
         a.key_hint = hint;
         Ok(a.clone())
     }

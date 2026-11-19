@@ -387,6 +387,7 @@ export const topics: Topic[] = [
         title: "O que dá para mudar",
         items: [
           "Claro ou escuro: tema escuro, claro ou igual ao do computador (troca sozinho). O terminal continua escuro.",
+          "Idioma: português, inglês ou igual ao do computador. Muda todas as telas na hora; a IA responde no idioma em que você escreve.",
           "Ícones detalhados: pastas com volume e cor (src azul, testes verdes, assets rosa, node_modules cinza…), arquivos com a etiqueta do tipo (TS, RS, CSS…) e cada projeto com uma cor e a sigla da tecnologia.",
           "Ícones minimalistas: traços finos de uma cor só, mais discretos.",
           "Animações completas ou reduzidas: reduzidas tira laços e deslizes para quem se incomoda com movimento.",

@@ -3,6 +3,7 @@ import { FileCode2, FileText, File as FileIcon, X } from "lucide-solid";
 import { For, Show, type JSX } from "solid-js";
 import { attsOf, removeAtt, type Att } from "../attachments";
 import { formatBytes } from "../data/mock";
+import { tx } from "../i18n";
 
 const icon = (a: Att) => (a.kind === "pdf" ? <FileText size={14} /> : a.kind === "text" ? <FileCode2 size={14} /> : <FileIcon size={14} />);
 
@@ -19,10 +20,10 @@ export default function AttachBar(props: { pid: string; extra?: JSX.Element }) {
               <Show when={!a.thumb}>
                 <span class="att-text">
                   <strong>{a.name}</strong>
-                  <small>{a.kind === "pdf" ? "PDF" : a.kind === "text" ? "texto" : "arquivo"} · {formatBytes(a.bytes)}</small>
+                  <small>{a.kind === "pdf" ? "PDF" : a.kind === "text" ? tx("texto") : tx("arquivo")} · {formatBytes(a.bytes)}</small>
                 </span>
               </Show>
-              <button class="att-x" title="Tirar o anexo" onClick={() => removeAtt(props.pid, a.path)}><X size={11} /></button>
+              <button class="att-x" title={tx("Tirar o anexo")} onClick={() => removeAtt(props.pid, a.path)}><X size={11} /></button>
             </div>
           )}
         </For>

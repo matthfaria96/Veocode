@@ -6,6 +6,7 @@ import { Bot, Database, Eye, FolderOpen, KeyRound, Lock, MessageSquare, Package,
 import { For, type JSX } from "solid-js";
 import { FileIcon, FolderIcon, ProjectIcon } from "../components/icons";
 import type { TopicId } from "./topics";
+import { tx } from "../i18n";
 
 const C = { claude: "#e8915b", deep: "#4f8cff", local: "#34d399", purple: "#a78bfa", ok: "#34d399", warn: "#fbbf24", err: "#f87171", info: "#60a5fa" };
 const levels: [string, string][] = [["Leitura", "#60a5fa"], ["Sugerir", "#a78bfa"], ["Editar", "#fbbf24"], ["Total", "#f87171"]];
@@ -30,9 +31,9 @@ const rise = (i: number): JSX.CSSProperties => ({ "animation-delay": `${i * 0.16
 
 function Inicio() {
   const steps: [string, (p: { x: number; y: number; size: number; class: string }) => JSX.Element, string][] = [
-    ["Pasta", (p) => <FolderOpen {...p} />, C.info],
-    ["Conta", (p) => <User {...p} />, C.claude],
-    ["Conversa", (p) => <MessageSquare {...p} />, C.ok],
+    [tx("Pasta"), (p) => <FolderOpen {...p} />, C.info],
+    [tx("Conta"), (p) => <User {...p} />, C.claude],
+    [tx("Conversa"), (p) => <MessageSquare {...p} />, C.ok],
   ];
   return (
     <Svg>
@@ -53,7 +54,7 @@ function Inicio() {
       </For>
       <path d="M160 78 H192" class="il-flow" style={{ "--c": C.info }} />
       <path d="M328 78 H360" class="il-flow" style={{ "--c": C.claude }} />
-      <text x={260} y={156} class="il-t il-mid il-dim">e o nível de acesso decide quanto ela pode mexer</text>
+      <text x={260} y={156} class="il-t il-mid il-dim">{tx("e o nível de acesso decide quanto ela pode mexer")}</text>
       <For each={levels}>{([, c], i) => <rect x={150 + i() * 56} y={170} width={52} height={8} rx={4} style={{ fill: c, opacity: 0.75 }} />}</For>
       <circle cx={0} cy={174} r={9} class="il-knob il-slide" />
     </Svg>
@@ -123,18 +124,18 @@ function Projetos() {
       </For>
       {/* painel de baixo: o terminal do projeto */}
       <line x1={126} y1={140} x2={362} y2={140} class="il-sep" />
-      <text x={138} y={155} class="il-t il-tiny il-dim">Atividade</text>
+      <text x={138} y={155} class="il-t il-tiny il-dim">{tx("Atividade")}</text>
       <rect x={186} y={145} width={50} height={14} rx={7} class="il-pill" style={{ "--c": C.info }} />
       <text x={211} y={155} class="il-t il-mid il-tiny">Terminal</text>
       <rect x={134} y={164} width={220} height={42} rx={6} class="il-term" />
       <g class="il-rise" style={rise(1)}>
-        <text x={142} y={178} class="il-t il-mono il-tiny"><tspan class="il-term-p">loja $</tspan> npm test</text>
+        <text x={142} y={178} class="il-t il-mono il-tiny"><tspan class="il-term-p">{tx("loja $")}</tspan> {tx("npm test")}</text>
       </g>
       <g class="il-rise" style={rise(2)}>
-        <text x={142} y={191} class="il-t il-mono il-tiny il-term-ok">✓ 12 testes passaram</text>
+        <text x={142} y={191} class="il-t il-mono il-tiny il-term-ok">{tx("✓ 12 testes passaram")}</text>
       </g>
       <g class="il-rise" style={rise(3)}>
-        <text x={142} y={202} class="il-t il-mono il-tiny"><tspan class="il-term-p">loja $</tspan></text>
+        <text x={142} y={202} class="il-t il-mono il-tiny"><tspan class="il-term-p">{tx("loja $")}</tspan></text>
         <rect x={177} y={195} width={5} height={9} class="il-blink" style={{ fill: C.info }} />
       </g>
       <line x1={362} y1={8} x2={362} y2={212} class="il-sep" />
@@ -159,9 +160,9 @@ function Projetos() {
 
 function Nivel() {
   const rules: [string, string, string][] = [
-    ["Editar arquivos", "Permitido", C.ok],
-    ["Rodar comandos", "Pergunta", C.warn],
-    ["git push", "Bloqueado", C.err],
+    [tx("Editar arquivos"), tx("Permitido"), C.ok],
+    [tx("Rodar comandos"), tx("Pergunta"), C.warn],
+    ["git push", tx("Bloqueado"), C.err],
   ];
   return (
     <Svg>
@@ -170,7 +171,7 @@ function Nivel() {
         {([label, c], i) => (
           <>
             <circle cx={70 + i() * 126.6} cy={74} r={7} style={{ fill: c }} />
-            <text x={70 + i() * 126.6} y={104} class="il-t il-mid" style={{ fill: c }}>{label}</text>
+            <text x={70 + i() * 126.6} y={104} class="il-t il-mid" style={{ fill: c }}>{tx(label)}</text>
           </>
         )}
       </For>
@@ -200,7 +201,7 @@ function Chat() {
       <g class="il-seq" style={seq(1)}>
         <rect x={132} y={50} width={200} height={20} rx={8} class="il-step" />
         <circle cx={145} cy={60} r={4} style={{ fill: C.info }} />
-        <text x={156} y={63.5} class="il-t il-tiny">Leu src/app.ts</text>
+        <text x={156} y={63.5} class="il-t il-tiny">{tx("Leu src/app.ts")}</text>
       </g>
       <g class="il-seq" style={seq(2)}>
         <rect x={132} y={76} width={244} height={42} rx={10} class="il-bubble" />
@@ -209,15 +210,15 @@ function Chat() {
       </g>
       <g class="il-seq" style={{ ...seq(3), "--c": C.warn }}>
         <rect x={132} y={124} width={244} height={46} rx={10} class="il-ask" />
-        <text x={144} y={141} class="il-t">Rodar npm install?</text>
+        <text x={144} y={141} class="il-t">{tx("Rodar npm install?")}</text>
         <rect x={144} y={149} width={56} height={15} rx={6} class="il-btn-ok" />
-        <text x={172} y={159.5} class="il-t il-mid il-tiny il-on-c">Permitir</text>
+        <text x={172} y={159.5} class="il-t il-mid il-tiny il-on-c">{tx("Permitir")}</text>
         <rect x={206} y={149} width={56} height={15} rx={6} class="il-btn" />
-        <text x={234} y={159.5} class="il-t il-mid il-tiny">Recusar</text>
+        <text x={234} y={159.5} class="il-t il-mid il-tiny">{tx("Recusar")}</text>
       </g>
       <rect x={132} y={180} width={256} height={26} rx={9} class="il-input" />
       <rect x={140} y={186} width={46} height={14} rx={7} class="il-pill" style={{ "--c": levels[2][1] }} />
-      <text x={163} y={196} class="il-t il-mid il-tiny" style={{ fill: levels[2][1] }}>Editar</text>
+      <text x={163} y={196} class="il-t il-mid il-tiny" style={{ fill: levels[2][1] }}>{tx("Editar")}</text>
       <circle cx={374} cy={193} r={8} class="il-send" />
     </Svg>
   );
@@ -230,22 +231,22 @@ function Livre() {
       {/* os dois modos: o marcador vai de "Só conversa" para "Olhar o PC" */}
       <rect x={206} y={16} width={190} height={22} rx={8} class="il-input" />
       <rect x={209} y={19} width={92} height={16} rx={6} class="il-thumb" />
-      <text x={255} y={30.5} class="il-t il-mid il-tiny">Só conversa</text>
+      <text x={255} y={30.5} class="il-t il-mid il-tiny">{tx("Só conversa")}</text>
       <Eye x={312} y={21} size={11} class="il-ico" style={{ color: C.info }} />
-      <text x={355} y={30.5} class="il-t il-mid il-tiny" style={{ fill: C.info }}>Olhar o PC</text>
+      <text x={355} y={30.5} class="il-t il-mid il-tiny" style={{ fill: C.info }}>{tx("Olhar o PC")}</text>
       <g class="il-seq" style={seq(1)}>
         <rect x={268} y={48} width={130} height={22} rx={10} class="il-bubble-me" />
-        <text x={333} y={62.5} class="il-t il-mid il-tiny">Ache o contrato em PDF</text>
+        <text x={333} y={62.5} class="il-t il-mid il-tiny">{tx("Ache o contrato em PDF")}</text>
       </g>
       <g class="il-seq" style={seq(2)}>
         <rect x={122} y={78} width={220} height={20} rx={8} class="il-step" />
         <circle cx={135} cy={88} r={4} style={{ fill: C.info }} />
-        <text x={146} y={91.5} class="il-t il-tiny">Lendo ~/Downloads/contrato.pdf</text>
+        <text x={146} y={91.5} class="il-t il-tiny">{tx("Lendo ~/Downloads/contrato.pdf")}</text>
       </g>
       <g class="il-seq" style={{ ...seq(3), "--c": C.err }}>
         <rect x={122} y={102} width={220} height={20} rx={8} class="il-step il-step-no" />
         <Lock x={130} y={106} size={11} class="il-ico" style={{ color: C.err }} />
-        <text x={146} y={115.5} class="il-t il-tiny" style={{ fill: C.err }}>~/.ssh bloqueado</text>
+        <text x={146} y={115.5} class="il-t il-tiny" style={{ fill: C.err }}>{tx("~/.ssh bloqueado")}</text>
       </g>
       <g class="il-seq" style={seq(4)}>
         <rect x={122} y={128} width={260} height={42} rx={10} class="il-bubble" />
@@ -282,7 +283,7 @@ function Contas() {
               <g>
                 <rect x={k.x + 150} y={32} width={52} height={20} rx={10} class="il-pill" style={{ "--c": C.ok }} />
                 <KeyRound x={k.x + 157} y={36} size={12} class="il-ico" style={{ color: C.ok }} />
-                <text x={k.x + 183} y={46} class="il-t il-mid il-tiny" style={{ fill: C.ok }}>saldo</text>
+                <text x={k.x + 183} y={46} class="il-t il-mid il-tiny" style={{ fill: C.ok }}>{tx("saldo")}</text>
               </g>
             )}
           </g>
@@ -294,10 +295,10 @@ function Contas() {
 
 function Inventario() {
   const rows: { ico: (p: { x: number; y: number; size: number; class: string }) => JSX.Element; c: string; where: string; wc: string; st: string; sc: string; run?: boolean; w: number }[] = [
-    { ico: (p) => <Bot {...p} />, c: C.claude, where: "meu-app", wc: C.info, st: "rodando", sc: C.ok, run: true, w: 60 },
-    { ico: (p) => <Package {...p} />, c: C.claude, where: "toda a conta", wc: C.purple, st: "ligado", sc: C.ok, w: 40 },
-    { ico: (p) => <Server {...p} />, c: C.claude, where: "toda a conta", wc: C.purple, st: "parado", sc: "#6c7589", w: 24 },
-    { ico: (p) => <Database {...p} />, c: "#6c7589", where: "computador", wc: "#6c7589", st: "2,1 GB", sc: C.warn, w: 80 },
+    { ico: (p) => <Bot {...p} />, c: C.claude, where: tx("meu-app"), wc: C.info, st: tx("rodando"), sc: C.ok, run: true, w: 60 },
+    { ico: (p) => <Package {...p} />, c: C.claude, where: tx("toda a conta"), wc: C.purple, st: tx("ligado"), sc: C.ok, w: 40 },
+    { ico: (p) => <Server {...p} />, c: C.claude, where: tx("toda a conta"), wc: C.purple, st: tx("parado"), sc: "#6c7589", w: 24 },
+    { ico: (p) => <Database {...p} />, c: "#6c7589", where: tx("computador"), wc: "#6c7589", st: "2,1 GB", sc: C.warn, w: 80 },
   ];
   return (
     <Svg>
@@ -364,9 +365,9 @@ function RaioX() {
 
 function Skills() {
   const cols: [string, string, (p: { x: number; y: number; size: number; class: string }) => JSX.Element][] = [
-    ["Da conta", C.claude, (p) => <User {...p} />],
-    ["Plugins", C.purple, (p) => <Package {...p} />],
-    ["Do projeto", C.info, (p) => <FolderOpen {...p} />],
+    [tx("Da conta"), C.claude, (p) => <User {...p} />],
+    [tx("Plugins"), C.purple, (p) => <Package {...p} />],
+    [tx("Do projeto"), C.info, (p) => <FolderOpen {...p} />],
   ];
   return (
     <Svg>
@@ -400,8 +401,8 @@ function Skills() {
 
 function Ajustes() {
   const cards: { x: number; style: "detalhado" | "minimalista"; label: string; on: boolean }[] = [
-    { x: 40, style: "detalhado", label: "Detalhados", on: true },
-    { x: 276, style: "minimalista", label: "Minimalistas", on: false },
+    { x: 40, style: "detalhado", label: tx("Detalhados"), on: true },
+    { x: 276, style: "minimalista", label: tx("Minimalistas"), on: false },
   ];
   const tree: [string, boolean][] = [["src", true], ["App.tsx", false], ["main.rs", false], ["tests", true]];
   return (
@@ -436,15 +437,15 @@ function Ajustes() {
 
 function Palavras() {
   const words: [string, number, number, string][] = [
-    ["Skill", 60, 50, C.claude],
+    [tx("Skill"), 60, 50, C.claude],
     ["MCP", 190, 34, C.info],
-    ["Plugin", 320, 56, C.purple],
-    ["Token", 440, 40, C.warn],
-    ["Agente", 100, 128, C.ok],
-    ["Projeto", 236, 110, C.info],
-    ["Cache", 370, 136, "#a4acbf"],
-    ["Lixeira", 170, 180, C.err],
-    ["Conta", 330, 186, C.claude],
+    [tx("Plugin"), 320, 56, C.purple],
+    [tx("Token"), 440, 40, C.warn],
+    [tx("Agente"), 100, 128, C.ok],
+    [tx("Projeto"), 236, 110, C.info],
+    [tx("Cache"), 370, 136, "#a4acbf"],
+    [tx("Lixeira"), 170, 180, C.err],
+    [tx("Conta"), 330, 186, C.claude],
   ];
   return (
     <Svg>

@@ -5,6 +5,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { createStore } from "solid-js/store";
 import { copyText, isTauri } from "./api";
 import { showToast } from "./store";
+import { tx } from "./i18n";
 
 export type VaultKind = "chave" | "login" | "outro";
 export interface VaultItem {
@@ -26,13 +27,13 @@ const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 /** Atalhos para os serviços mais comuns: já vêm com o nome da variável certa. */
 export const presets: { label: string; env: string; kind: VaultKind; color: string; hint: string }[] = [
   { label: "OpenAI", env: "OPENAI_API_KEY", kind: "chave", color: "#10a37f", hint: "sk-…" },
-  { label: "Anthropic", env: "ANTHROPIC_API_KEY", kind: "chave", color: "#e8915b", hint: "sk-ant-…" },
-  { label: "Google Gemini", env: "GEMINI_API_KEY", kind: "chave", color: "#4f8cff", hint: "AIza…" },
+  { get label() { return tx("Anthropic"); }, env: "ANTHROPIC_API_KEY", kind: "chave", color: "#e8915b", hint: "sk-ant-…" },
+  { get label() { return "Google Gemini"; }, env: "GEMINI_API_KEY", kind: "chave", color: "#4f8cff", hint: "AIza…" },
   { label: "GitHub", env: "GITHUB_TOKEN", kind: "chave", color: "#a78bfa", hint: "ghp_…" },
-  { label: "Stripe", env: "STRIPE_SECRET_KEY", kind: "chave", color: "#635bff", hint: "sk_live_… ou sk_test_…" },
-  { label: "Supabase", env: "SUPABASE_KEY", kind: "chave", color: "#3ecf8e", hint: "eyJ…" },
-  { label: "Login de site", env: "SITE", kind: "login", color: "#fbbf24", hint: "senha" },
-  { label: "Outro segredo", env: "", kind: "outro", color: "#94a3b8", hint: "valor" },
+  { get label() { return tx("Stripe"); }, env: "STRIPE_SECRET_KEY", kind: "chave", color: "#635bff", get hint() { return tx("sk_live_… ou sk_test_…"); } },
+  { get label() { return tx("Supabase"); }, env: "SUPABASE_KEY", kind: "chave", color: "#3ecf8e", hint: "eyJ…" },
+  { get label() { return tx("Login de site"); }, env: "SITE", kind: "login", color: "#fbbf24", hint: "senha" },
+  { get label() { return tx("Outro segredo"); }, env: "", kind: "outro", color: "#94a3b8", hint: "valor" },
 ];
 
 const mock: VaultItem[] = [
@@ -45,7 +46,7 @@ export async function loadVault() {
   try {
     setVault({ items: await invoke<VaultItem[]>("vault_list"), loaded: true });
   } catch (e) {
-    showToast(`Não deu para abrir o cofre: ${errMsg(e)}`);
+    showToast(tx("Não deu para abrir o cofre: {v}", { v: errMsg(e) }));
   }
 }
 
@@ -54,13 +55,13 @@ export async function saveVault(item: Partial<VaultItem> & { name: string; kind:
   if (!isTauri) {
     const it = { ...full, id: full.id || `m${Date.now()}`, hint: secret ? `…${secret.slice(-4)}` : full.hint };
     setVault("items", (l) => [...l.filter((x) => x.id !== it.id), it]);
-    showToast("Navegador: só simulação");
+    showToast(tx("Navegador: só simulação"));
     return true;
   }
   try {
     const saved = await invoke<VaultItem>("vault_save", { item: full, secret: secret || null });
     setVault("items", (l) => [...l.filter((x) => x.id !== saved.id), saved]);
-    showToast(`${saved.name} guardado no chaveiro`);
+    showToast(tx("{name} guardado no chaveiro", { name: saved.name }));
     return true;
   } catch (e) {
     showToast(errMsg(e));
@@ -72,7 +73,7 @@ export async function deleteVault(it: VaultItem) {
   try {
     if (isTauri) await invoke("vault_delete", { id: it.id });
     setVault("items", (l) => l.filter((x) => x.id !== it.id));
-    showToast(`${it.name} saiu do cofre`);
+    showToast(tx("{name} saiu do cofre", { name: it.name }));
   } catch (e) {
     showToast(errMsg(e));
   }
@@ -82,7 +83,7 @@ export async function copyVault(it: VaultItem) {
   try {
     const s = isTauri ? await invoke<string>("vault_reveal", { id: it.id }) : "exemplo";
     await copyText(s);
-    showToast(`${it.kind === "login" ? "Senha" : "Chave"} de ${it.name} copiada`);
+    showToast(tx("{v} de {name} copiada", { v: it.kind === "login" ? tx("Senha") : tx("Chave"), name: it.name }));
   } catch (e) {
     showToast(errMsg(e));
   }

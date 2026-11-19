@@ -171,7 +171,7 @@ impl Chats {
         let mut map = self.map.lock().map_err(|e| e.to_string())?;
         let chat = map.entry(project.to_string()).or_default();
         if chat.busy.load(Ordering::SeqCst) {
-            return Err("O agente ainda está respondendo. Espere ou pare antes de trocar de conversa.".into());
+            return Err(crate::i18n::tr("O agente ainda está respondendo. Espere ou pare antes de trocar de conversa.", "The agent is still answering. Wait or stop it before switching conversations.").into());
         }
         if let Some(mut p) = chat.claude.take() {
             let _ = p.child.kill();
@@ -212,7 +212,7 @@ impl Chats {
         let mut map = self.map.lock().map_err(|e| e.to_string())?;
         let chat = map.entry(a.project_id.clone()).or_default();
         if chat.busy.load(Ordering::SeqCst) {
-            return Err("O Claude ainda está respondendo. Espere ou pare a resposta.".into());
+            return Err(crate::i18n::tr("O Claude ainda está respondendo. Espere ou pare a resposta.", "Claude is still answering. Wait or stop the answer.").into());
         }
         // pedido editado: fecha o processo e recomeça a conversa do ponto antes dele
         let mut resume_at: Option<String> = None;
@@ -256,7 +256,7 @@ impl Chats {
             let proc_id = NEXT_GEN.fetch_add(1, Ordering::SeqCst);
             let proc = spawn_claude(&a, resume.as_deref(), resume_at.as_deref().filter(|_| resume.is_some()), level_key, proc_id)?;
             chat.claude = Some(proc);
-            let stdout = chat.claude.as_mut().unwrap().child.stdout.take().ok_or("sem saída do Claude")?;
+            let stdout = chat.claude.as_mut().unwrap().child.stdout.take().ok_or(crate::i18n::tr("sem saída do Claude", "no output from Claude"))?;
             let stderr = chat.claude.as_mut().unwrap().child.stderr.take();
             let me = Arc::clone(self);
             let project = a.project_id.clone();
@@ -269,7 +269,7 @@ impl Chats {
 
         let mut text = a.text.clone();
         if let Some((path, content)) = &a.attach {
-            text = format!("{text}\n\n(Arquivo aberto no Veocode: {path})");
+            text = crate::trf!("{text}\n\n(Arquivo aberto no Veocode: {path})", "{text}\n\n(File open in Veocode: {path})");
             let _ = content; // o Claude lê o arquivo sozinho; só avisamos qual é
         }
         // âncora: o que vinha antes deste pedido ("" = começo da conversa)
@@ -334,7 +334,7 @@ impl Chats {
         if busy.swap(false, Ordering::SeqCst) {
             std::thread::sleep(Duration::from_millis(150));
             let tail = err_tail.lock().map(|t| t.trim().to_string()).unwrap_or_default();
-            emit(&app, &project, ChatEvent::Error { message: if tail.is_empty() { "O Claude fechou antes de terminar.".into() } else { explain(&tail) } });
+            emit(&app, &project, ChatEvent::Error { message: if tail.is_empty() { crate::i18n::tr("O Claude fechou antes de terminar.", "Claude closed before finishing.").into() } else { explain(&tail) } });
         }
     }
 
@@ -412,7 +412,7 @@ impl Chats {
                     parts.push(format!("{:.0} s", s.max(1.0)));
                 }
                 if denied > 0 {
-                    parts.push(format!("{denied} ação(ões) bloqueada(s) pelo nível"));
+                    parts.push(crate::trf!("{denied} ação(ões) bloqueada(s) pelo nível", "{denied} action(s) blocked by the level"));
                 }
                 if !ok {
                     match v.get("result").and_then(Value::as_str).filter(|r| !r.trim().is_empty()) {
@@ -437,16 +437,16 @@ impl Chats {
     /// Resposta da pessoa a um pedido de permissão.
     pub fn answer(&self, project: &str, request_id: &str, allow: bool) -> Result<(), String> {
         let mut map = self.map.lock().map_err(|e| e.to_string())?;
-        let c = map.get_mut(project).ok_or("conversa não encontrada")?;
+        let c = map.get_mut(project).ok_or(crate::i18n::tr("conversa não encontrada", "conversation not found"))?;
         if let Some(tx) = c.api_pending.remove(request_id) {
-            return tx.send(allow).map_err(|_| "a resposta já tinha sido parada".to_string());
+            return tx.send(allow).map_err(|_| crate::i18n::tr("a resposta já tinha sido parada", "the answer had already been stopped").to_string());
         }
-        let input = c.pending.remove(request_id).ok_or("esse pedido já foi respondido")?;
-        let p = c.claude.as_mut().ok_or("o Claude não está mais rodando")?;
+        let input = c.pending.remove(request_id).ok_or(crate::i18n::tr("esse pedido já foi respondido", "that request was already answered"))?;
+        let p = c.claude.as_mut().ok_or(crate::i18n::tr("o Claude não está mais rodando", "Claude is no longer running"))?;
         let response = if allow {
             json!({"behavior":"allow","updatedInput":input})
         } else {
-            json!({"behavior":"deny","message":"A pessoa recusou no Veocode."})
+            json!({"behavior":"deny","message":crate::i18n::tr("A pessoa recusou no Veocode.", "The person declined in Veocode.")})
         };
         write_line(&mut p.stdin, &json!({"type":"control_response","response":{"subtype":"success","request_id":request_id,"response":response}}))
     }
@@ -481,7 +481,7 @@ impl Chats {
                     let _ = p.child.kill();
                 }
                 drop(m);
-                emit(&app, &project, ChatEvent::Done { ok: false, detail: Some("parado".into()) });
+                emit(&app, &project, ChatEvent::Done { ok: false, detail: Some(crate::i18n::tr("parado", "stopped").into()) });
             });
         }
         Ok(())
@@ -539,7 +539,7 @@ impl Chats {
             let mut map = self.map.lock().map_err(|e| e.to_string())?;
             let chat = map.entry(a.project_id.clone()).or_default();
             if chat.busy.load(Ordering::SeqCst) {
-                return Err("Ainda respondendo. Espere ou pare a resposta.".into());
+                return Err(crate::i18n::tr("Ainda respondendo. Espere ou pare a resposta.", "Still answering. Wait or stop the answer.").into());
             }
             if chat.history_account != a.account.id {
                 chat.history.clear();
@@ -557,7 +557,7 @@ impl Chats {
             let conv = chat.api_conv.clone().unwrap_or_default();
             let mut content = a.text.clone();
             if let Some((path, body)) = &a.attach {
-                content = format!("{content}\n\nArquivo `{path}` (aberto no Veocode):\n```\n{body}\n```");
+                content = crate::trf!("{content}\n\nArquivo `{path}` (aberto no Veocode):\n```\n{body}\n```", "{content}\n\nFile `{path}` (open in Veocode):\n```\n{body}\n```");
             }
             let content = crate::attach::api_text(&content, &a.files);
             chat.history.push(json!({"role":"user","content":content}));
@@ -601,13 +601,13 @@ impl Chats {
                 Ok(end) => {
                     let mut parts = vec![];
                     if end.steps > 0 {
-                        parts.push(format!("{} {}", end.steps, if end.steps == 1 { "passo" } else { "passos" }));
+                        parts.push(format!("{} {}", end.steps, if end.steps == 1 { crate::i18n::tr("passo", "step") } else { crate::i18n::tr("passos", "steps") }));
                     }
                     if end.no_tools {
-                        parts.push("este modelo não aceita ferramentas: só conversa".into());
+                        parts.push(crate::i18n::tr("este modelo não aceita ferramentas: só conversa", "this model doesn't support tools: just chat").into());
                     }
                     if end.hit_limit {
-                        parts.push("parou no limite de rodadas".into());
+                        parts.push(crate::i18n::tr("parou no limite de rodadas", "stopped at the round limit").into());
                     }
                     if end.stopped {
                         parts.push("interrompido".into());
@@ -635,16 +635,16 @@ fn cut(s: &str, n: usize) -> String {
 fn write_line(stdin: &mut ChildStdin, v: &Value) -> Result<(), String> {
     let mut s = v.to_string();
     s.push('\n');
-    stdin.write_all(s.as_bytes()).and_then(|_| stdin.flush()).map_err(|e| format!("não deu para falar com o Claude: {e}"))
+    stdin.write_all(s.as_bytes()).and_then(|_| stdin.flush()).map_err(|e| crate::trf!("não deu para falar com o Claude: {e}", "couldn't talk to Claude: {e}"))
 }
 
 /// Mensagens de erro comuns do Claude Code em português.
 fn explain(stderr: &str) -> String {
     let l = stderr.to_lowercase();
     if l.contains("not logged in") || l.contains("/login") || l.contains("authentication") {
-        "Esta conta do Claude não está logada. Em Contas, use “Entrar” para fazer o login.".into()
+        crate::i18n::tr("Esta conta do Claude não está logada. Em Contas, use “Entrar” para fazer o login.", "This Claude account isn't signed in. In Accounts, use “Sign in” to log in.").into()
     } else {
-        format!("O Claude parou com erro: {}", cut(stderr, 300))
+        crate::trf!("O Claude parou com erro: {}", "Claude stopped with an error: {}", cut(stderr, 300))
     }
 }
 
@@ -654,13 +654,13 @@ pub fn model_choice(model: Option<String>, effort: Option<String>) -> Result<(Op
     let model = model.map(|m| m.trim().to_string()).filter(|m| !m.is_empty());
     if let Some(m) = &model {
         if m.len() > 64 || !m.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '.' | '_' | '[' | ']')) {
-            return Err(format!("modelo inválido: {m}"));
+            return Err(crate::trf!("modelo inválido: {m}", "invalid model: {m}"));
         }
     }
     let effort = effort.map(|e| e.trim().to_string()).filter(|e| !e.is_empty());
     if let Some(e) = &effort {
         if !matches!(e.as_str(), "low" | "medium" | "high" | "xhigh" | "max") {
-            return Err(format!("força inválida: {e}"));
+            return Err(crate::trf!("força inválida: {e}", "invalid effort: {e}"));
         }
     }
     Ok((model, effort))
@@ -669,7 +669,7 @@ pub fn model_choice(model: Option<String>, effort: Option<String>) -> Result<(Op
 static NEXT_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 fn spawn_claude(a: &SendArgs, resume: Option<&str>, resume_at: Option<&str>, level_key: String, proc_id: u64) -> Result<ClaudeProc, String> {
-    let claude = crate::xray::util::which("claude").ok_or("Não achei o comando `claude`. Instale o Claude Code e tente de novo.")?;
+    let claude = crate::xray::util::which("claude").ok_or(crate::i18n::tr("Não achei o comando `claude`. Instale o Claude Code e tente de novo.", "Couldn't find the `claude` command. Install Claude Code and try again."))?;
     let mut cmd = Command::new(&claude);
     cmd.args(["--output-format", "stream-json", "--verbose", "--input-format", "stream-json", "--include-partial-messages"])
         .args(["--permission-prompt-tool", "stdio", "--permission-mode", a.mode])
@@ -731,8 +731,8 @@ fn spawn_claude(a: &SendArgs, resume: Option<&str>, resume_at: Option<&str>, lev
         use std::os::windows::process::CommandExt;
         cmd.creation_flags(0x0800_0000); // sem janela de console
     }
-    let mut child = cmd.spawn().map_err(|e| format!("não deu para abrir o Claude: {e}"))?;
-    let stdin = child.stdin.take().ok_or("sem entrada do Claude")?;
+    let mut child = cmd.spawn().map_err(|e| crate::trf!("não deu para abrir o Claude: {e}", "couldn't open Claude: {e}"))?;
+    let stdin = child.stdin.take().ok_or(crate::i18n::tr("sem entrada do Claude", "no input from Claude"))?;
     Ok(ClaudeProc { child, stdin, account: a.account.id.clone(), level_key, proc_id })
 }
 
@@ -743,9 +743,9 @@ fn describe(tool: &str, input: &Value, description: Option<&str>) -> (String, Op
     match tool {
         "Edit" | "MultiEdit" | "NotebookEdit" => (format!("Editar {}", file.clone().unwrap_or_default()), None, file),
         "Write" => (format!("Escrever {}", file.clone().unwrap_or_default()), s("content").map(|c| format!("{} linhas", c.lines().count())), file),
-        "Bash" | "PowerShell" => (s("description").map(|d| cut(&d, 90)).unwrap_or_else(|| "Rodar um comando".into()), s("command").map(|c| cut(&c, 400)), None),
-        "WebFetch" => ("Abrir uma página".into(), s("url"), None),
-        "WebSearch" => ("Pesquisar na internet".into(), s("query"), None),
+        "Bash" | "PowerShell" => (s("description").map(|d| cut(&d, 90)).unwrap_or_else(|| crate::i18n::tr("Rodar um comando", "Run a command").into()), s("command").map(|c| cut(&c, 400)), None),
+        "WebFetch" => (crate::i18n::tr("Abrir uma página", "Open a page").into(), s("url"), None),
+        "WebSearch" => (crate::i18n::tr("Pesquisar na internet", "Search the web").into(), s("query"), None),
         t if t.starts_with("mcp__") => {
             let rest = t.trim_start_matches("mcp__").replacen("__", " · ", 1);
             (format!("Usar MCP {rest}"), Some(cut(&input.to_string(), 300)), None)
@@ -802,7 +802,7 @@ impl apiagent::Hooks for AppHooks<'_> {
 }
 
 pub fn project_root_ok(root: &Path) -> Result<(), String> {
-    if root.is_dir() { Ok(()) } else { Err("a pasta do projeto não existe mais".into()) }
+    if root.is_dir() { Ok(()) } else { Err(crate::i18n::tr("a pasta do projeto não existe mais", "the project folder no longer exists").into()) }
 }
 
 #[cfg(test)]

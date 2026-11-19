@@ -35,12 +35,12 @@ pub fn wire_for(a: &Account, ag: &ureq::Agent) -> Result<Wire, String> {
         let base = if base.is_empty() { crate::accounts::OLLAMA_URL.to_string() } else { base };
         let model = match a.model.clone().filter(|m| !m.is_empty()) {
             Some(m) => m,
-            None => first_ollama_model(ag, &base).ok_or("O Ollama não tem nenhum modelo baixado. Rode `ollama pull` com um modelo e tente de novo.")?,
+            None => first_ollama_model(ag, &base).ok_or(crate::i18n::tr("O Ollama não tem nenhum modelo baixado. Rode `ollama pull` com um modelo e tente de novo.", "Ollama has no models downloaded. Run `ollama pull` with a model and try again."))?,
         };
         return Ok(Wire::Ollama { base, model });
     }
     remote::check_base_url(&base)?;
-    let key = remote::get_key(&a.id).ok_or("Esta conta está sem chave de API. Cole a chave em Contas.")?;
+    let key = remote::get_key(&a.id).ok_or(crate::i18n::tr("Esta conta está sem chave de API. Cole a chave em Contas.", "This account has no API key. Paste the key in Accounts."))?;
     let model = a.model.clone().filter(|m| !m.is_empty()).unwrap_or_else(|| if a.provider == Provider::Deepseek { "deepseek-chat".into() } else { "gpt-4o-mini".into() });
     Ok(Wire::OpenAi { base, key, model })
 }
@@ -65,20 +65,20 @@ enum Fail {
 
 fn fail(e: ureq::Error, with_tools: bool) -> Fail {
     match e {
-        ureq::Error::Status(401 | 403, _) => Fail::Msg("A chave foi recusada. Confira a chave em Contas.".into()),
-        ureq::Error::Status(402, _) => Fail::Msg("Sem saldo na conta da API.".into()),
-        ureq::Error::Status(429, _) => Fail::Msg("Limite de requisições atingido. Tente de novo em instantes.".into()),
+        ureq::Error::Status(401 | 403, _) => Fail::Msg(crate::i18n::tr("A chave foi recusada. Confira a chave em Contas.", "The key was rejected. Check the key in Accounts.").into()),
+        ureq::Error::Status(402, _) => Fail::Msg(crate::i18n::tr("Sem saldo na conta da API.", "No balance on the API account.").into()),
+        ureq::Error::Status(429, _) => Fail::Msg(crate::i18n::tr("Limite de requisições atingido. Tente de novo em instantes.", "Rate limit reached. Try again in a moment.").into()),
         ureq::Error::Status(c, r) => {
             let body = r.into_string().unwrap_or_default();
             if with_tools && (c == 400 || c == 422) && body.to_lowercase().contains("tool") {
                 Fail::NoTools
             } else if c == 404 {
-                Fail::Msg(format!("Modelo ou endereço não encontrado ({}).", cut(&body, 120)))
+                Fail::Msg(crate::trf!("Modelo ou endereço não encontrado ({}).", "Model or address not found ({}).", cut(&body, 120)))
             } else {
-                Fail::Msg(format!("A API respondeu com erro {c}: {}", cut(&body, 160)))
+                Fail::Msg(crate::trf!("A API respondeu com erro {c}: {}", "The API answered with error {c}: {}", cut(&body, 160)))
             }
         }
-        ureq::Error::Transport(t) => Fail::Msg(format!("Sem conexão: {t}")),
+        ureq::Error::Transport(t) => Fail::Msg(crate::trf!("Sem conexão: {t}", "No connection: {t}")),
     }
 }
 
@@ -231,41 +231,41 @@ pub struct End {
     pub hit_limit: bool,
 }
 
-const LEVEL_NAMES: [&str; 4] = ["Leitura", "Sugerir", "Editar", "Total"];
+const LEVEL_NAMES: [[&str; 2]; 4] = [["Leitura", "Read"], ["Sugerir", "Suggest"], ["Editar", "Edit"], ["Total", "Full"]];
 
 /// Instruções do sistema: o projeto, as ferramentas e o que o nível deixa.
 pub fn system_prompt(t: &Turn, tools: bool) -> String {
     if let Some(intro) = &t.intro {
         let mut s = intro.clone();
         if t.tools && !tools {
-            s.push_str("\nEste modelo não aceita ferramentas: você não consegue ver os arquivos, só conversar.");
+            s.push_str(crate::i18n::tr("\nEste modelo não aceita ferramentas: você não consegue ver os arquivos, só conversar.", "\nThis model doesn't support tools: you can't see the files, only chat."));
         }
         return s;
     }
-    let mut s = format!(
-        "Você trabalha dentro do Veocode no projeto \"{}\". Responda em português do Brasil, direto e claro.\n",
+    let mut s = crate::trf!(
+        "Você trabalha dentro do Veocode no projeto \"{}\". Responda em português do Brasil, direto e claro.\n", "You work inside Veocode on the project \"{}\". Answer in the language the person writes in (English if unsure), direct and clear.\n",
         t.project_name
     );
     if !tools {
-        s.push_str("Você não tem acesso aos arquivos: só vê o que a pessoa colar ou anexar.");
+        s.push_str(crate::i18n::tr("Você não tem acesso aos arquivos: só vê o que a pessoa colar ou anexar.", "You have no access to the files: you only see what the person pastes or attaches."));
         return s;
     }
     s.push_str(
-        "Você tem ferramentas para listar, ler, buscar, escrever e editar arquivos do projeto e rodar comandos na pasta dele. \
+        crate::i18n::tr("Você tem ferramentas para listar, ler, buscar, escrever e editar arquivos do projeto e rodar comandos na pasta dele. \
          Use caminhos relativos à raiz do projeto; nada fora da pasta. Leia antes de editar e prefira edit_file a reescrever o arquivo inteiro. \
-         Ao terminar, diga em poucas linhas o que fez.\n",
+         Ao terminar, diga em poucas linhas o que fez.\n", "You have tools to list, read, search, write and edit the project's files and run commands in its folder. Use paths relative to the project root; nothing outside the folder. Read before editing and prefer edit_file over rewriting the whole file. When you finish, say in a few lines what you did.\n"),
     );
-    s.push_str(&format!("Nível de acesso do projeto: {}. Regras:\n", LEVEL_NAMES[t.level.min(3) as usize]));
+    s.push_str(&crate::trf!("Nível de acesso do projeto: {}. Regras:\n", "Project access level: {}. Rules:\n", { let n = LEVEL_NAMES[t.level.min(3) as usize]; crate::i18n::tr(n[0], n[1]) }));
     let text = |r: Rule| match r {
         Rule::Permitido => "permitido",
-        Rule::Pergunta => "precisa da aprovação da pessoa (o Veocode pergunta sozinho, só chame a ferramenta)",
-        Rule::Bloqueado => "bloqueado: não tente, nem por outro caminho",
+        Rule::Pergunta => crate::i18n::tr("precisa da aprovação da pessoa (o Veocode pergunta sozinho, só chame a ferramenta)", "needs the person's approval (Veocode asks on its own, just call the tool)"),
+        Rule::Bloqueado => crate::i18n::tr("bloqueado: não tente, nem por outro caminho", "blocked: don't try, not even another way"),
     };
     for (cap, r) in effective(t.level, &t.overrides) {
         if matches!(cap.id, "mcp" | "outside") {
             continue;
         }
-        s.push_str(&format!("- {}: {}\n", cap.label, text(r)));
+        s.push_str(&format!("- {}: {}\n", cap.label(), text(r)));
     }
     s
 }
@@ -292,7 +292,7 @@ pub fn run_turn(ag: &ureq::Agent, t: &Turn, msgs: &mut Vec<Value>, h: &mut dyn H
                 full[0] = json!({"role":"system","content": system_prompt(t, false)});
                 round(ag, t.wire, &full, false, t.cancel, &mut |d| h.delta(d)).map_err(|f| match f {
                     Fail::Msg(m) => m,
-                    Fail::NoTools => "o modelo recusou o pedido".into(),
+                    Fail::NoTools => crate::i18n::tr("o modelo recusou o pedido", "the model refused the request").into(),
                 })?
             }
             Err(Fail::Msg(m)) => return Err(m),
@@ -304,7 +304,7 @@ pub fn run_turn(ag: &ureq::Agent, t: &Turn, msgs: &mut Vec<Value>, h: &mut dyn H
         if t.cancel.load(Ordering::SeqCst) {
             // chamadas que não rodaram ainda precisam de resposta para a conversa continuar válida
             for c in &r.calls {
-                msgs.push(tool_msg(t.wire, c, "Parado pela pessoa antes de rodar."));
+                msgs.push(tool_msg(t.wire, c, crate::i18n::tr("Parado pela pessoa antes de rodar.", "Stopped by the person before running.")));
             }
             end.stopped = true;
             return Ok(end);
@@ -315,7 +315,7 @@ pub fn run_turn(ag: &ureq::Agent, t: &Turn, msgs: &mut Vec<Value>, h: &mut dyn H
         for (i, c) in r.calls.iter().enumerate() {
             let id = format!("api-{stamp}-{n}-{i}");
             let result = if t.cancel.load(Ordering::SeqCst) {
-                "Parado pela pessoa antes de rodar.".to_string()
+                crate::i18n::tr("Parado pela pessoa antes de rodar.", "Stopped by the person before running.").to_string()
             } else {
                 end.steps += 1;
                 run_call(t, c, &id, h)
@@ -351,24 +351,24 @@ fn run_call(t: &Turn, c: &Call, id: &str, h: &mut dyn Hooks) -> String {
         h.step(e);
     };
     if c.args.is_null() {
-        finish(h, false, Some("argumentos inválidos".into()), false, vec![]);
-        return "Erro: os argumentos não são um JSON válido. Chame de novo com um objeto JSON.".into();
+        finish(h, false, Some(crate::i18n::tr("argumentos inválidos", "invalid arguments").into()), false, vec![]);
+        return crate::i18n::tr("Erro: os argumentos não são um JSON válido. Chame de novo com um objeto JSON.", "Error: the arguments aren't valid JSON. Call again with a JSON object.").into();
     }
     let (rule, why) = tools::decide(c, t.level, &t.overrides);
     match rule {
         Rule::Bloqueado => {
-            finish(h, false, Some(format!("bloqueado pelo nível ({why})")), false, vec![]);
-            return format!("Bloqueado pelo nível de acesso do projeto ({why}). Não tente de novo por outro caminho: explique à pessoa o que precisaria liberar.");
+            finish(h, false, Some(crate::trf!("bloqueado pelo nível ({why})", "blocked by the level ({why})")), false, vec![]);
+            return crate::trf!("Bloqueado pelo nível de acesso do projeto ({why}). Não tente de novo por outro caminho: explique à pessoa o que precisaria liberar.", "Blocked by the project's access level ({why}). Don't try again another way: explain to the person what they would need to allow.");
         }
         Rule::Pergunta => match h.ask(c, &look) {
             Some(true) => {}
             Some(false) => {
                 finish(h, false, Some("recusado".into()), false, vec![]);
-                return "A pessoa recusou esta ação. Não tente de novo; pergunte o que ela prefere.".into();
+                return crate::i18n::tr("A pessoa recusou esta ação. Não tente de novo; pergunte o que ela prefere.", "The person declined this action. Don't try again; ask what they prefer.").into();
             }
             None => {
-                finish(h, false, Some("parado".into()), false, vec![]);
-                return "Parado pela pessoa.".into();
+                finish(h, false, Some(crate::i18n::tr("parado", "stopped").into()), false, vec![]);
+                return crate::i18n::tr("Parado pela pessoa.", "Stopped by the person.").into();
             }
         },
         Rule::Permitido => {}

@@ -69,9 +69,9 @@ impl ProjectStore {
 
     /// Adiciona uma pasta. Se ela já estiver na lista, devolve a existente.
     pub fn add(&mut self, path: &Path, default_account: &str) -> Result<Project, String> {
-        let canon = path.canonicalize().map_err(|e| format!("pasta inacessível: {e}"))?;
+        let canon = path.canonicalize().map_err(|e| crate::trf!("pasta inacessível: {e}", "folder unreachable: {e}"))?;
         if !canon.is_dir() {
-            return Err("não é uma pasta".into());
+            return Err(crate::i18n::tr("não é uma pasta", "not a folder").into());
         }
         let path_str = canon.to_string_lossy().to_string();
         if let Some(p) = self.projects.iter().find(|p| p.path == path_str) {
@@ -100,7 +100,7 @@ impl ProjectStore {
 
     /// Atualiza só o que a interface pode mudar: conta e nível de acesso.
     pub fn update(&mut self, id: &str, account_id: Option<String>, access: Option<u8>) -> Result<Project, String> {
-        let p = self.projects.iter_mut().find(|p| p.id == id).ok_or("projeto não encontrado")?;
+        let p = self.projects.iter_mut().find(|p| p.id == id).ok_or(crate::i18n::tr("projeto não encontrado", "project not found"))?;
         if let Some(a) = account_id {
             p.account_id = a;
         }
@@ -145,7 +145,7 @@ pub fn detect_stack(root: &Path) -> String {
     if has("Dockerfile") || has("docker-compose.yml") || has("compose.yaml") {
         parts.push("Docker");
     }
-    if parts.is_empty() { "pasta".into() } else { parts.join(" · ") }
+    if parts.is_empty() { crate::i18n::tr("pasta", "folder").into() } else { parts.join(" · ") }
 }
 
 /// Lê o branch atual direto de .git/HEAD (sem precisar do git instalado).
@@ -199,14 +199,14 @@ mod tests {
 pub fn folder_trashable(root: &std::path::Path, keep: &[std::path::PathBuf]) -> Result<(), String> {
     let home = crate::xray::util::home();
     if !root.is_absolute() || !root.is_dir() {
-        return Err("a pasta do projeto não existe mais".into());
+        return Err(crate::i18n::tr("a pasta do projeto não existe mais", "the project folder no longer exists").into());
     }
     let shallow = root.components().count() < 4; // "/", "Users", nome, pasta
     let inside_home = root.starts_with(&home) && root != home;
     let holds_ours = keep.iter().any(|k| k.starts_with(root));
     let system = ["Desktop", "Documents", "Downloads", "Library", "Applications", "Pictures", "Movies", "Music"].iter().any(|d| root == home.join(d));
     if shallow || !inside_home || holds_ours || system {
-        return Err(format!("por segurança, o Veocode não manda {} inteira para a Lixeira. Use o Finder se quiser mesmo.", root.display()));
+        return Err(crate::trf!("por segurança, o Veocode não manda {} inteira para a Lixeira. Use o Finder se quiser mesmo.", "for safety, Veocode won't send all of {} to the Trash. Use Finder if you really want to.", root.display()));
     }
     Ok(())
 }

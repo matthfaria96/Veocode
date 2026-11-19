@@ -37,26 +37,37 @@ pub struct Applied {
 
 pub struct Cap {
     pub id: &'static str,
-    pub label: &'static str,
-    pub hint: &'static str,
+    /// [português, inglês]
+    pub label: [&'static str; 2],
+    pub hint: [&'static str; 2],
     /// estado em cada nível: leitura, sugerir, editar, total
     pub levels: [Rule; 4],
     pub choices: &'static [Rule],
+}
+
+impl Cap {
+    /// Nome no idioma da tela.
+    pub fn label(&self) -> &'static str {
+        crate::i18n::tr(self.label[0], self.label[1])
+    }
+    pub fn hint(&self) -> &'static str {
+        crate::i18n::tr(self.hint[0], self.hint[1])
+    }
 }
 
 const ALL: &[Rule] = &[Permitido, Pergunta, Bloqueado];
 const NO_ALLOW: &[Rule] = &[Pergunta, Bloqueado];
 
 pub const CAPS: &[Cap] = &[
-    Cap { id: "edit", label: "Editar arquivos", hint: "Edit, Write e notebooks. Em Pergunta, o Claude mostra o diff e espera você aprovar.", levels: [Bloqueado, Pergunta, Permitido, Permitido], choices: ALL },
-    Cap { id: "shell", label: "Rodar comandos no terminal", hint: "Em Pergunta, só comandos de leitura (ls, git status…) rodam sem perguntar.", levels: [Bloqueado, Pergunta, Pergunta, Permitido], choices: ALL },
-    Cap { id: "install", label: "Instalar no sistema", hint: "brew, npm -g, pip, cargo install, sudo", levels: [Bloqueado, Bloqueado, Pergunta, Pergunta], choices: ALL },
-    Cap { id: "push", label: "Publicar com git push", hint: "manda o código para o GitHub ou outro remoto", levels: [Bloqueado, Bloqueado, Pergunta, Pergunta], choices: ALL },
-    Cap { id: "vm", label: "Criar VMs e containers", hint: "docker, podman, lima, colima, utm", levels: [Bloqueado, Bloqueado, Pergunta, Pergunta], choices: ALL },
-    Cap { id: "net", label: "Acesso à internet", hint: "WebFetch e WebSearch; bloqueado também barra curl e wget", levels: [Pergunta, Pergunta, Permitido, Permitido], choices: ALL },
-    Cap { id: "mcp", label: "Ferramentas MCP", hint: "servidores MCP da conta e do projeto", levels: [Bloqueado, Pergunta, Pergunta, Pergunta], choices: NO_ALLOW },
-    Cap { id: "secrets", label: "Ler arquivos secretos", hint: ".env, chaves .pem/.key, ~/.ssh, ~/.aws", levels: [Bloqueado, Bloqueado, Bloqueado, Pergunta], choices: ALL },
-    Cap { id: "outside", label: "Sair da pasta do projeto", hint: "ler ou escrever com as ferramentas de arquivo fora desta pasta", levels: [Bloqueado, Bloqueado, Bloqueado, Pergunta], choices: NO_ALLOW },
+    Cap { id: "edit", label: ["Editar arquivos", "Edit files"], hint: ["Edit, Write e notebooks. Em Pergunta, o Claude mostra o diff e espera você aprovar.", "Edit, Write and notebooks. On Asks, Claude shows the diff and waits for your approval."], levels: [Bloqueado, Pergunta, Permitido, Permitido], choices: ALL },
+    Cap { id: "shell", label: ["Rodar comandos no terminal", "Run commands in the terminal"], hint: ["Em Pergunta, só comandos de leitura (ls, git status…) rodam sem perguntar.", "On Asks, only read commands (ls, git status…) run without asking."], levels: [Bloqueado, Pergunta, Pergunta, Permitido], choices: ALL },
+    Cap { id: "install", label: ["Instalar no sistema", "Install on the system"], hint: ["brew, npm -g, pip, cargo install, sudo", "brew, npm -g, pip, cargo install, sudo"], levels: [Bloqueado, Bloqueado, Pergunta, Pergunta], choices: ALL },
+    Cap { id: "push", label: ["Publicar com git push", "Publish with git push"], hint: ["manda o código para o GitHub ou outro remoto", "sends the code to GitHub or another remote"], levels: [Bloqueado, Bloqueado, Pergunta, Pergunta], choices: ALL },
+    Cap { id: "vm", label: ["Criar VMs e containers", "Create VMs and containers"], hint: ["docker, podman, lima, colima, utm", "docker, podman, lima, colima, utm"], levels: [Bloqueado, Bloqueado, Pergunta, Pergunta], choices: ALL },
+    Cap { id: "net", label: ["Acesso à internet", "Internet access"], hint: ["WebFetch e WebSearch; bloqueado também barra curl e wget", "WebFetch and WebSearch; blocked also stops curl and wget"], levels: [Pergunta, Pergunta, Permitido, Permitido], choices: ALL },
+    Cap { id: "mcp", label: ["Ferramentas MCP", "MCP tools"], hint: ["servidores MCP da conta e do projeto", "the account's and the project's MCP servers"], levels: [Bloqueado, Pergunta, Pergunta, Pergunta], choices: NO_ALLOW },
+    Cap { id: "secrets", label: ["Ler arquivos secretos", "Read secret files"], hint: [".env, chaves .pem/.key, ~/.ssh, ~/.aws", ".env, .pem/.key keys, ~/.ssh, ~/.aws"], levels: [Bloqueado, Bloqueado, Bloqueado, Pergunta], choices: ALL },
+    Cap { id: "outside", label: ["Sair da pasta do projeto", "Leave the project folder"], hint: ["ler ou escrever com as ferramentas de arquivo fora desta pasta", "read or write with the file tools outside this folder"], levels: [Bloqueado, Bloqueado, Bloqueado, Pergunta], choices: NO_ALLOW },
 ];
 
 pub const MODES: [&str; 4] = ["plan", "default", "acceptEdits", "acceptEdits"];
@@ -197,7 +208,7 @@ fn read_json(file: &Path) -> Result<Map<String, Value>, String> {
         Ok(s) => match serde_json::from_str::<Value>(&s) {
             Ok(Value::Object(m)) => Ok(m),
             // nunca sobrescreve um arquivo que não entende
-            _ => Err(format!("{} não é um JSON válido. Corrija ou apague o arquivo e tente de novo.", file.display())),
+            _ => Err(crate::trf!("{} não é um JSON válido. Corrija ou apague o arquivo e tente de novo.", "{} isn't valid JSON. Fix or delete the file and try again.", file.display())),
         },
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Map::new()),
         Err(e) => Err(e.to_string()),
@@ -328,7 +339,7 @@ fn exclude_from_git(root: &Path) {
     if !s.is_empty() && !s.ends_with('\n') {
         s.push('\n');
     }
-    s += &format!("# Veocode: regras de acesso pessoais\n{line}\n");
+    s += &crate::trf!("# Veocode: regras de acesso pessoais\n{line}\n", "# Veocode: personal access rules\n{line}\n");
     let _ = fs::write(&ex, s);
 }
 
@@ -400,8 +411,8 @@ pub fn report(root: &Path, level: u8, overrides: &BTreeMap<String, Rule>, applie
         .iter()
         .map(|(cap, r)| CapRow {
             id: cap.id.into(),
-            label: cap.label.into(),
-            hint: cap.hint.into(),
+            label: cap.label().into(),
+            hint: cap.hint().into(),
             rule: *r,
             from_level: cap.levels[l],
             choices: cap.choices.to_vec(),
@@ -451,7 +462,7 @@ pub fn report(root: &Path, level: u8, overrides: &BTreeMap<String, Rule>, applie
             Some((name.clone(), str_list(pm.get("allow")), pm.get("defaultMode").and_then(Value::as_str).map(String::from)))
         })
         .collect();
-    sources.push(("este projeto (suas regras)".into(), in_file("allow").into_iter().filter(|x| !ours.allow.contains(x)).collect(), None));
+    sources.push((crate::i18n::tr("este projeto (suas regras)", "this project (your rules)").into(), in_file("allow").into_iter().filter(|x| !ours.allow.contains(x)).collect(), None));
     for (name, allows, mode) in sources {
         for a in allows {
             if let Some(cap) = asking.iter().find(|cap| touches(cap, &a)) {

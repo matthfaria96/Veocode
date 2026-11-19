@@ -7,6 +7,7 @@ import { askName, confirmAction } from "./dialogs";
 import { dropDraft, isUnsaved, markOwn, moveDraft, saveNow } from "./editing";
 import { loadDir, openRealFile } from "./realProject";
 import { absPathOf, closeTab, projectId, setWs, showToast, ws } from "./store";
+import { tx } from "./i18n";
 
 const errText = (e: unknown) => String(e instanceof Error ? e.message : e);
 const parentOf = (p: string) => (p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : "");
@@ -23,8 +24,8 @@ async function expandTo(dir: string) {
 }
 
 export async function newEntry(parent: string, dir: boolean) {
-  const where = parent ? `em ${parent}` : "na pasta do projeto";
-  const name = await askName(dir ? "Nova pasta" : "Novo arquivo", "Criar", dir ? "nova-pasta" : "novo-arquivo.txt", `Vai ser criado ${where}.`);
+  const where = parent ? tx("em {parent}", { parent }) : tx("na pasta do projeto");
+  const name = await askName(dir ? tx("Nova pasta") : tx("Novo arquivo"), tx("Criar"), dir ? "nova-pasta" : "novo-arquivo.txt", tx("Vai ser criado {where}.", { where }));
   if (!name) return;
   try {
     markOwn(projectId(), parent ? `${parent}/${name}` : name);
@@ -35,14 +36,14 @@ export async function newEntry(parent: string, dir: boolean) {
       setWs("expanded", path, true);
       await loadDir(path);
     } else openRealFile(path);
-    showToast(`${dir ? "Pasta criada" : "Arquivo criado"}: ${name}`);
+    showToast(`${dir ? tx("Pasta criada") : tx("Arquivo criado")}: ${name}`);
   } catch (e) {
-    showToast(`Não criou: ${errText(e)}`);
+    showToast(tx("Não criou: {v}", { v: errText(e) }));
   }
 }
 
 export async function renameEntry(path: string, isDir: boolean) {
-  const name = await askName(isDir ? "Renomear pasta" : "Renomear arquivo", "Renomear", nameOf(path));
+  const name = await askName(isDir ? tx("Renomear pasta") : tx("Renomear arquivo"), tx("Renomear"), nameOf(path));
   if (!name || name === nameOf(path)) return;
   if (!isDir && isUnsaved(path)) await saveNow(path);
   try {
@@ -60,17 +61,17 @@ export async function renameEntry(path: string, isDir: boolean) {
     if (ws.expanded[path]) setWs("expanded", to, true);
     await loadDir(parentOf(path));
     if (isDir && ws.expanded[to]) await loadDir(to);
-    showToast(`Renomeado para ${name}`);
+    showToast(tx("Renomeado para {name}", { name }));
   } catch (e) {
-    showToast(`Não renomeou: ${errText(e)}`);
+    showToast(tx("Não renomeou: {v}", { v: errText(e) }));
   }
 }
 
 export async function trashEntry(path: string, isDir: boolean) {
   const ok = await confirmAction(
-    `Mover ${nameOf(path)} para a Lixeira?`,
-    isDir ? "A pasta e tudo o que tem dentro vão para a Lixeira. Dá para recuperar de lá enquanto ela não for esvaziada." : "Dá para recuperar da Lixeira enquanto ela não for esvaziada.",
-    "Mover para a Lixeira",
+    tx("Mover {v} para a Lixeira?", { v: nameOf(path) }),
+    isDir ? tx("A pasta e tudo o que tem dentro vão para a Lixeira. Dá para recuperar de lá enquanto ela não for esvaziada.") : tx("Dá para recuperar da Lixeira enquanto ela não for esvaziada."),
+    tx("Mover para a Lixeira"),
     true,
   );
   if (!ok) return;
@@ -84,7 +85,7 @@ export async function trashEntry(path: string, isDir: boolean) {
       }
     }
     await loadDir(parentOf(path));
-    showToast(`${nameOf(path)} foi para a Lixeira`);
+    showToast(tx("{v} foi para a Lixeira", { v: nameOf(path) }));
   } catch (e) {
     showToast(errText(e));
   }
@@ -110,9 +111,9 @@ export async function copyPath(path: string) {
   const root = absPathOf(projectId()) ?? "";
   try {
     await navigator.clipboard.writeText(path ? `${root}/${path}` : root);
-    showToast("Caminho copiado");
+    showToast(tx("Caminho copiado"));
   } catch {
-    showToast("Não deu para copiar");
+    showToast(tx("Não deu para copiar"));
   }
 }
 

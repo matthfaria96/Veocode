@@ -6,6 +6,7 @@ import { Show, type JSX } from "solid-js";
 import { accountById, fmtAgo } from "../accounts";
 import type { Convo } from "../chat";
 import { ProviderMark } from "./ui";
+import { tx } from "../i18n";
 
 export default function ConvoRow(props: {
   c: Convo;
@@ -33,7 +34,7 @@ export default function ConvoRow(props: {
       >
         <span class="convo-bar" />
         <span class="convo-main">
-          <span class="convo-title">{props.c.title}</span>
+          <span class="convo-title">{tx(props.c.title)}</span>
           <Show when={props.c.lastPrompt}><span class="convo-last">↳ {props.c.lastPrompt}</span></Show>
           <span class="convo-meta">
             <ProviderMark id={props.c.account} size={14} />
@@ -42,11 +43,11 @@ export default function ConvoRow(props: {
             <span>· {ago(props.c.updated)}</span>
           </span>
         </span>
-        <Show when={props.opening} fallback={<Show when={props.current} fallback={<Show when={props.locked}><Lock size={12} class="convo-lock" /></Show>}><span class="convo-badge">aberta</span></Show>}>
+        <Show when={props.opening} fallback={<Show when={props.current} fallback={<Show when={props.locked}><Lock size={12} class="convo-lock" /></Show>}><span class="convo-badge">{tx("aberta")}</span></Show>}>
           <span class="spinner" />
         </Show>
       </button>
-      <button class="convo-del" title="Apagar esta conversa (vai para a Lixeira)" aria-label="Apagar esta conversa" onClick={props.onDelete}>
+      <button class="convo-del" title={tx("Apagar esta conversa (vai para a Lixeira)")} aria-label={tx("Apagar esta conversa")} onClick={props.onDelete}>
         <Trash2 size={13} />
       </button>
     </div>

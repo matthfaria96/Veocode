@@ -15,6 +15,7 @@ import Explainer from "../components/Explainer";
 import ComputerTabs from "../components/ComputerTabs";
 import { SkillDetail } from "./SkillDetail";
 import { every } from "../every";
+import { dec, tx } from "../i18n";
 
 // ---------------------------------------------------------------- modelo
 
@@ -25,8 +26,8 @@ type Tone = "on" | "off" | "run" | "warn" | "bad";
 type Where = { kind: "conta"; accounts: string[] } | { kind: "projeto"; path: string } | { kind: "pc" };
 type Stored = { kind: "projeto" | "pc" | "nuvem"; text: string; tip: string };
 
-const storedPc = (what: string): Stored => ({ kind: "pc", text: "no computador", tip: `${what} Os arquivos ficam na pasta da conta do Claude neste computador, não dentro do projeto: não vão junto no git.` });
-const storedProject: Stored = { kind: "projeto", text: "dentro do projeto", tip: "Os arquivos estão dentro da pasta do projeto (em .claude/ ou .mcp.json). Vão junto no git: quem clonar o repositório também recebe." };
+const storedPc = (what: string): Stored => ({ kind: "pc", text: tx("no computador"), tip: tx("{what} Os arquivos ficam na pasta da conta do Claude neste computador, não dentro do projeto: não vão junto no git.", { what }) });
+const storedProject: Stored = { kind: "projeto", get text() { return tx("dentro do projeto"); }, get tip() { return tx("Os arquivos estão dentro da pasta do projeto (em .claude/ ou .mcp.json). Vão junto no git: quem clonar o repositório também recebe."); } };
 
 interface Action {
   label: string;
@@ -56,14 +57,14 @@ interface Row {
 }
 
 const cats: { id: Cat; label: string; icon: (p: LucideProps) => JSX.Element; hint: string }[] = [
-  { id: "skills", label: "Receitas, atalhos e ajudantes", icon: Puzzle, hint: "Instruções extras que o Claude lê. Cada uma ocupa um pouco de toda conversa, mesmo sem uso: apagar as que você não usa deixa o Claude mais leve." },
-  { id: "mcp", label: "Conexões (MCP)", icon: Server, hint: "Pontes para outros programas e sites (Figma, GitHub…). Cada conversa aberta liga a sua; com o Claude fechado, não rodam." },
-  { id: "plugins", label: "Pacotes (plugins)", icon: Package, hint: "Conjuntos prontos que trazem várias receitas e conexões de uma vez. Desligar tira tudo o que eles trazem." },
+  { id: "skills", get label() { return tx("Receitas, atalhos e ajudantes"); }, icon: Puzzle, get hint() { return tx("Instruções extras que o Claude lê. Cada uma ocupa um pouco de toda conversa, mesmo sem uso: apagar as que você não usa deixa o Claude mais leve."); } },
+  { id: "mcp", get label() { return tx("Conexões (MCP)"); }, icon: Server, get hint() { return tx("Pontes para outros programas e sites (Figma, GitHub…). Cada conversa aberta liga a sua; com o Claude fechado, não rodam."); } },
+  { id: "plugins", get label() { return tx("Pacotes (plugins)"); }, icon: Package, get hint() { return tx("Conjuntos prontos que trazem várias receitas e conexões de uma vez. Desligar tira tudo o que eles trazem."); } },
 ];
 
 const base = (p: string) => p.split(/[\\/]/).filter(Boolean).pop() ?? p;
-const pct = (n: number) => `${n < 10 ? n.toFixed(1).replace(".", ",") : Math.round(n)}%`;
-const scopeLabel: Record<string, string> = { user: "conta", local: "conta, só nesta pasta", project: "arquivo do projeto", plugin: "plugin" };
+const pct = (n: number) => `${n < 10 ? dec(n) : Math.round(n)}%`;
+const scopeLabel: Record<string, string> = { get user() { return tx("conta"); }, get local() { return tx("conta, só nesta pasta"); }, get project() { return tx("arquivo do projeto"); }, plugin: "plugin" };
 
 /** Mesma pasta ou dentro dela (barra de Windows ou de macOS). */
 const inside = (path: string, root: string) => {
@@ -85,34 +86,34 @@ function pluginRow(p: PluginInfo): Row {
     cat: "plugins",
     name: p.name,
     tag: p.version ? `v${p.version}` : undefined,
-    sub: p.description || "Sem descrição",
+    sub: p.description || tx("Sem descrição"),
     accounts: [p.account],
     where: p.project ? { kind: "projeto", path: p.project } : { kind: "conta", accounts: [p.account] },
-    stored: storedPc(p.project ? "Foi baixado para o computador, mas só está ligado neste projeto." : "Baixado e ligado para todos os projetos desta conta."),
-    status: p.enabled ? { text: "ligado", tone: "on" } : { text: "desligado", tone: "off" },
-    weight: `${formatBytes(p.bytes)} · ~${fmtTokens(p.alwaysTokens)} tokens fixos`,
+    stored: storedPc(p.project ? tx("Foi baixado para o computador, mas só está ligado neste projeto.") : tx("Baixado e ligado para todos os projetos desta conta.")),
+    status: p.enabled ? { text: tx("ligado"), tone: "on" } : { text: tx("desligado"), tone: "off" },
+    weight: tx("{v} · ~{v2} tokens fixos", { v: formatBytes(p.bytes), v2: fmtTokens(p.alwaysTokens) }),
     details: [
-      ["Id", p.pluginId],
-      ["Instalado na", scopeLabel[p.scope] ?? p.scope],
-      ["Traz", `${p.skills} skills · ${p.mcp} MCP`],
-      ...(items.length ? ([["Itens", items.map((i) => i.name).slice(0, 14).join(", ") + (items.length > 14 ? `… (+${items.length - 14})` : "")]] as [string, string][]) : []),
-      ["Pasta", prettyPath(p.path)],
+      [tx("Id"), p.pluginId],
+      [tx("Instalado na"), scopeLabel[p.scope] ?? p.scope],
+      [tx("Traz"), `${p.skills} skills · ${p.mcp} MCP`],
+      ...(items.length ? ([[tx("Itens"), items.map((i) => i.name).slice(0, 14).join(", ") + (items.length > 14 ? `… (+${items.length - 14})` : "")]] as [string, string][]) : []),
+      [tx("Pasta"), prettyPath(p.path)],
     ],
     actions: [
       p.enabled
-        ? { label: "Desligar", icon: Power, run: () => pluginAction(p, "disable") }
-        : { label: "Ligar", icon: Play, run: () => pluginAction(p, "enable") },
+        ? { label: tx("Desligar"), icon: Power, run: () => pluginAction(p, "disable") }
+        : { label: tx("Ligar"), icon: Play, run: () => pluginAction(p, "enable") },
       {
-        label: "Remover",
+        label: tx("Remover"),
         icon: Trash2,
         danger: true,
         confirm: {
-          title: `Remover o plugin ${p.name}?`,
-          label: "Remover",
+          title: tx("Remover o plugin {name}?", { name: p.name }),
+          label: tx("Remover"),
           body: (
             <>
-              <p>O Claude Code desinstala o plugin desta conta ({accountById(p.account).label}) e tudo o que ele traz: {p.skills} skills e {p.mcp} MCP.</p>
-              <p class="muted">Dá para instalar de novo depois pelo <code>/plugin</code> do Claude. Se só quer parar de usar, "Desligar" é reversível na hora.</p>
+              <p>{tx("O Claude Code desinstala o plugin desta conta ({label}) e tudo o que ele traz: {skills} skills e {mcp} MCP.", { label: accountById(p.account).label, skills: p.skills, mcp: p.mcp })}</p>
+              <p class="muted">{tx("Dá para instalar de novo depois pelo")} <code>/plugin</code> {tx("do Claude. Se só quer parar de usar, \"Desligar\" é reversível na hora.")}</p>
             </>
           ),
         },
@@ -128,41 +129,41 @@ function itemRow(i: Item): Row {
   let note: string | undefined;
   if (i.manage === "trash" && i.path) {
     actions.push({
-      label: "Remover",
+      label: tx("Remover"),
       icon: Trash2,
       danger: true,
       confirm: {
-        title: `Mover ${i.name} para a Lixeira?`,
-        label: "Mover para a Lixeira",
+        title: tx("Mover {name} para a Lixeira?", { name: i.name }),
+        label: tx("Mover para a Lixeira"),
         body: (
           <>
-            <p>{kindLabel[i.kind]} em <code>{prettyPath(i.path)}</code> vai para a Lixeira{i.path.endsWith("SKILL.md") ? " (a pasta inteira da skill)" : ""}.</p>
+            <p>{tx("{v} em", { v: kindLabel[i.kind] })} <code>{prettyPath(i.path)}</code> {tx("vai para a Lixeira{v}.", { v: i.path.endsWith("SKILL.md") ? tx(" (a pasta inteira da skill)") : "" })}</p>
             <Show when={inRepo}>
-              <p class="warn-text">Fica dentro da pasta do projeto: se ela usa git, vai aparecer como arquivo apagado.</p>
+              <p class="warn-text">{tx("Fica dentro da pasta do projeto: se ela usa git, vai aparecer como arquivo apagado.")}</p>
             </Show>
-            <p class="muted">Para voltar, é só tirar da Lixeira.</p>
+            <p class="muted">{tx("Para voltar, é só tirar da Lixeira.")}</p>
           </>
         ),
       },
       run: () => trashItem(i),
     });
   } else if (i.manage === "synced") {
-    note = "Veio do claude.ai (sincronizado com a conta): tire por lá, em Ajustes → Capacidades.";
+    note = tx("Veio do claude.ai (sincronizado com a conta): tire por lá, em Ajustes → Capacidades.");
   }
   return {
     key: `item:${i.id}`,
     cat: "skills",
     name: i.name,
     tag: kindLabel[i.kind],
-    sub: i.description || "Sem descrição",
+    sub: i.description || tx("Sem descrição"),
     accounts: i.accounts,
     where: inRepo && i.project ? { kind: "projeto", path: i.project } : { kind: "conta", accounts: i.accounts },
-    stored: inRepo ? storedProject : i.manage === "synced" ? { kind: "nuvem", text: "na conta claude.ai", tip: "Veio da sua conta no claude.ai e é sincronizado sozinho. Para tirar, use o site." } : storedPc("Vale em todos os projetos desta conta."),
-    status: i.enabled ? { text: "ativa", tone: "on" } : { text: "desligada", tone: "off" },
-    weight: `~${fmtTokens(i.alwaysTokens)} fixos · ~${fmtTokens(i.invokeTokens)} ao usar`,
+    stored: inRepo ? storedProject : i.manage === "synced" ? { kind: "nuvem", text: tx("na conta claude.ai"), tip: tx("Veio da sua conta no claude.ai e é sincronizado sozinho. Para tirar, use o site.") } : storedPc(tx("Vale em todos os projetos desta conta.")),
+    status: i.enabled ? { text: tx("ativa"), tone: "on" } : { text: tx("desligada"), tone: "off" },
+    weight: tx("~{v} fixos · ~{v2} ao usar", { v: fmtTokens(i.alwaysTokens), v2: fmtTokens(i.invokeTokens) }),
     details: [
-      ["Arquivo", i.path ? prettyPath(i.path) : "—"],
-      ...(i.origin ? ([["Origem", i.origin]] as [string, string][]) : []),
+      [tx("Arquivo"), i.path ? prettyPath(i.path) : "—"],
+      ...(i.origin ? ([[tx("Origem"), i.origin]] as [string, string][]) : []),
     ],
     note,
     actions,
@@ -175,33 +176,33 @@ function mcpRow(i: Item, runs: McpRun[]): Row {
   const cpu = runs.reduce((s, r) => s + r.cpu, 0);
   const mem = runs.reduce((s, r) => s + r.mem, 0);
   const status: Row["status"] = runs.length
-    ? { text: runs.length > 1 ? `rodando ×${runs.length}` : "rodando", tone: "run" }
+    ? { text: runs.length > 1 ? tx("rodando ×{n}", { n: runs.length }) : tx("rodando"), tone: "run" }
     : m.found === false
-      ? { text: "falta programa", tone: "bad" }
+      ? { text: tx("falta programa"), tone: "bad" }
       : !i.enabled
-        ? { text: "desligado", tone: "off" }
+        ? { text: tx("desligado"), tone: "off" }
         : remote
-          ? { text: "remoto", tone: "on" }
-          : { text: "parado", tone: "off" };
+          ? { text: tx("remoto"), tone: "on" }
+          : { text: tx("parado"), tone: "off" };
   const actions: Action[] = [];
   let note: string | undefined;
   if (m.scope === "plugin" || i.layer === "plugin") {
-    note = `Vem do plugin ${i.plugin ?? ""}: desligue o plugin para tirar.`;
+    note = tx("Vem do plugin {v}: desligue o plugin para tirar.", { v: i.plugin ?? "" });
   } else if (i.manage === "cli") {
     actions.push({
-      label: "Remover",
+      label: tx("Remover"),
       icon: Trash2,
       danger: true,
       confirm: {
-        title: `Remover o servidor ${i.name}?`,
-        label: "Remover",
+        title: tx("Remover o servidor {name}?", { name: i.name }),
+        label: tx("Remover"),
         body: (
           <>
-            <p>O Veocode pede ao próprio Claude Code (<code>claude mcp remove</code>) para tirar este servidor{i.accounts.length > 1 ? ` das contas ${i.accounts.map((a) => accountById(a).label).join(", ")}` : ` da conta ${accountById(i.accounts[0]).label}`}.</p>
+            <p>{tx("O Veocode pede ao próprio Claude Code (")}<code>{tx("claude mcp remove")}</code>{tx(") para tirar este servidor")}{i.accounts.length > 1 ? tx(" das contas {v}", { v: i.accounts.map((a) => accountById(a).label).join(", ") }) : tx(" da conta {label}", { label: accountById(i.accounts[0]).label })}.</p>
             <Show when={m.scope === "project"}>
-              <p class="warn-text">Ele está no <code>.mcp.json</code> do projeto: o arquivo do projeto muda (e o git vai mostrar).</p>
+              <p class="warn-text">{tx("Ele está no")} <code>.mcp.json</code> {tx("do projeto: o arquivo do projeto muda (e o git vai mostrar).")}</p>
             </Show>
-            <p class="muted">As chaves e variáveis dele somem junto. Conversas já abertas seguem com ele até recomeçar.</p>
+            <p class="muted">{tx("As chaves e variáveis dele somem junto. Conversas já abertas seguem com ele até recomeçar.")}</p>
           </>
         ),
       },
@@ -216,16 +217,16 @@ function mcpRow(i: Item, runs: McpRun[]): Row {
     sub: i.description || (m.command ? [m.command, ...m.args].join(" ") : m.url ?? ""),
     accounts: i.accounts,
     where: i.project ? { kind: "projeto", path: i.project } : { kind: "conta", accounts: i.accounts },
-    stored: i.mcp?.scope === "project" ? storedProject : storedPc(i.project ? "A configuração fica guardada no computador, ligada só a esta pasta." : "Vale em todos os projetos desta conta."),
+    stored: i.mcp?.scope === "project" ? storedProject : storedPc(i.project ? tx("A configuração fica guardada no computador, ligada só a esta pasta.") : tx("Vale em todos os projetos desta conta.")),
     status,
-    weight: runs.length ? `${pct(cpu)} CPU · ${formatBytes(mem)}` : remote ? "roda fora deste computador" : "só roda com o Claude aberto",
+    weight: runs.length ? `${pct(cpu)} CPU · ${formatBytes(mem)}` : remote ? tx("roda fora deste computador") : tx("só roda com o Claude aberto"),
     load: runs.length ? { cpu, mem } : undefined,
     details: [
-      ["Guardado como", scopeLabel[m.scope] ?? m.scope],
-      [remote ? "Endereço" : "Comando", remote ? m.url ?? "—" : [m.command, ...m.args].filter(Boolean).join(" ")],
-      ["Definido em", prettyPath(m.definedIn)],
-      ...(m.envNames.length || m.headerNames.length ? ([["Segredos", [...m.envNames, ...m.headerNames].join(", ") + " (só os nomes)"]] as [string, string][]) : []),
-      ...runs.map((r, n): [string, string] => [`Cópia ${n + 1}`, `pid ${r.pid} · ${r.agent} em ${r.cwd ? base(r.cwd) : "?"} · ${pct(r.cpu)} · ${formatBytes(r.mem)}`]),
+      [tx("Guardado como"), scopeLabel[m.scope] ?? m.scope],
+      [remote ? tx("Endereço") : tx("Comando"), remote ? m.url ?? "—" : [m.command, ...m.args].filter(Boolean).join(" ")],
+      [tx("Definido em"), prettyPath(m.definedIn)],
+      ...(m.envNames.length || m.headerNames.length ? ([[tx("Segredos"), [...m.envNames, ...m.headerNames].join(", ") + tx(" (só os nomes)")]] as [string, string][]) : []),
+      ...runs.map((r, n): [string, string] => [tx("Cópia {v}", { v: n + 1 }), tx("pid {pid} · {agent} em {v} · {v2} · {v3}", { pid: r.pid, agent: r.agent, v: r.cwd ? base(r.cwd) : "?", v2: pct(r.cpu), v3: formatBytes(r.mem) })]),
     ],
     note,
     actions,
@@ -299,64 +300,64 @@ export default function Inventory() {
     <div class="page">
       <ComputerTabs />
       <PageHeader
-        title="Extras do Claude"
-        subtitle={isTauri ? "Habilidades a mais que o Claude ganhou, onde cada uma vale e quanto pesa. Daqui dá para desligar ou tirar." : "Modo navegador: exemplo. Abra pelo app para ver os seus."}
+        title={tx("Extras do Claude")}
+        subtitle={isTauri ? tx("Habilidades a mais que o Claude ganhou, onde cada uma vale e quanto pesa. Daqui dá para desligar ou tirar.") : tx("Modo navegador: exemplo. Abra pelo app para ver os seus.")}
         actions={
           <button class="ghost-btn" onClick={loadInventory}>
-            <RefreshCw size={14} classList={{ spinning: inv.loading }} /> Atualizar
+            <RefreshCw size={14} classList={{ spinning: inv.loading }} /> {tx("Atualizar")}
           </button>
         }
       />
 
       <Explainer
         id="skills"
-        title="O que é esta tela?"
-        intro="O Claude já sabe programar sozinho. Aqui aparecem os extras que alguém instalou para ele. São quatro tipos:"
+        title={tx("O que é esta tela?")}
+        intro={tx("O Claude já sabe programar sozinho. Aqui aparecem os extras que alguém instalou para ele. São quatro tipos:")}
         terms={[
-          { word: "Receitas (skills)", means: "Instruções prontas para um tipo de tarefa, como “fazer um PDF” ou “revisar código”. O Claude usa sozinho quando o pedido combina." },
-          { word: "Atalhos /", means: "Comandos que você digita no chat começando com barra, como /revisar. Cada um manda um pedido pronto." },
-          { word: "Ajudantes", means: "Mini-Claudes especializados que o Claude principal chama para uma parte do trabalho (pesquisar, testar…)." },
-          { word: "Conexões (MCP)", means: "Pontes para outros programas e sites, como Figma, GitHub ou um navegador. Deixam o Claude ler e mexer neles." },
+          { word: tx("Receitas (skills)"), means: tx("Instruções prontas para um tipo de tarefa, como “fazer um PDF” ou “revisar código”. O Claude usa sozinho quando o pedido combina.") },
+          { word: tx("Atalhos /"), means: tx("Comandos que você digita no chat começando com barra, como /revisar. Cada um manda um pedido pronto.") },
+          { word: tx("Ajudantes"), means: tx("Mini-Claudes especializados que o Claude principal chama para uma parte do trabalho (pesquisar, testar…).") },
+          { word: tx("Conexões (MCP)"), means: tx("Pontes para outros programas e sites, como Figma, GitHub ou um navegador. Deixam o Claude ler e mexer neles.") },
         ]}
-        calm={<>Você <strong>não precisa mexer em nada aqui</strong>. Clique numa linha para ver os detalhes. Antes de tirar algo, o Veocode pergunta, e o que sai vai para a <strong>Lixeira</strong>. Use o seletor de projeto para ver só o que vale numa pasta.</>}
+        calm={<>{tx("Você")} <strong>{tx("não precisa mexer em nada aqui")}</strong>{tx(". Clique numa linha para ver os detalhes. Antes de tirar algo, o Veocode pergunta, e o que sai vai para a")} <strong>{tx("Lixeira")}</strong>{tx(". Use o seletor de projeto para ver só o que vale numa pasta.")}</>}
       />
 
       <Explainer
         id="onde-fica"
         closed
-        openLabel="Instalei uma skill ou plugin (do GitHub, por exemplo): fica só no projeto ou no computador?"
-        title="Fica só no projeto ou no computador todo?"
-        intro={<>Depende de <strong>como</strong> foi instalado. São duas perguntas diferentes: <strong>onde os arquivos ficam guardados</strong> e <strong>em quais projetos valem</strong>. Cada linha da lista abaixo responde as duas (“vale em” e “guardado”).</>}
+        openLabel={tx("Instalei uma skill ou plugin (do GitHub, por exemplo): fica só no projeto ou no computador?")}
+        title={tx("Fica só no projeto ou no computador todo?")}
+        intro={<>{tx("Depende de")} <strong>{tx("como")}</strong> {tx("foi instalado. São duas perguntas diferentes:")} <strong>{tx("onde os arquivos ficam guardados")}</strong> e <strong>{tx("em quais projetos valem")}</strong>{tx(". Cada linha da lista abaixo responde as duas (“vale em” e “guardado”).")}</>}
         terms={[
-          { word: "Skill dentro do projeto", means: <>Pasta <code>.claude/skills</code> dentro do projeto, comum quando você baixa um repositório do GitHub que já vem com ela. <strong>Só vale naquele projeto</strong> e vai junto no git.</> },
-          { word: "Skill na conta", means: <>Pasta <code>~/.claude/skills</code>, fora dos projetos. <strong>Vale em todos os projetos</strong> daquela conta neste computador.</> },
-          { word: "Plugin (/plugin, do GitHub)", means: <><strong>Sempre é baixado para o computador</strong> (<code>~/.claude/plugins</code>). Na instalação você escolhe onde ele liga: <em>user</em> = todos os projetos; <em>project</em> ou <em>local</em> = só no projeto onde instalou.</> },
-          { word: "Conexão (claude mcp add)", means: <>Sem nada a mais, <strong>vale só na pasta</strong> onde você rodou o comando (guardada no computador). Com <code>--scope project</code> vai para <code>.mcp.json</code> no projeto; com <code>--scope user</code>, vale em todos.</> },
-          { word: "Programas que a skill instala", means: <>Coisas instaladas com npm, pip ou brew ficam <strong>no computador todo</strong>, para qualquer projeto. Veja em <em>Espaço e memória → Instalado pelas IAs</em>.</> },
+          { word: tx("Skill dentro do projeto"), means: <>{tx("Pasta")} <code>{tx(".claude/skills")}</code> {tx("dentro do projeto, comum quando você baixa um repositório do GitHub que já vem com ela.")} <strong>{tx("Só vale naquele projeto")}</strong> {tx("e vai junto no git.")}</> },
+          { word: tx("Skill na conta"), means: <>{tx("Pasta")} <code>~/.claude/skills</code>{tx(", fora dos projetos.")} <strong>{tx("Vale em todos os projetos")}</strong> {tx("daquela conta neste computador.")}</> },
+          { word: tx("Plugin (/plugin, do GitHub)"), means: <><strong>{tx("Sempre é baixado para o computador")}</strong> (<code>~/.claude/plugins</code>{tx("). Na instalação você escolhe onde ele liga:")} <em>user</em> {tx("= todos os projetos;")} <em>project</em> {tx("ou")} <em>local</em> {tx("= só no projeto onde instalou.")}</> },
+          { word: tx("Conexão (claude mcp add)"), means: <>{tx("Sem nada a mais,")} <strong>{tx("vale só na pasta")}</strong> {tx("onde você rodou o comando (guardada no computador). Com")} <code>--scope project</code> {tx("vai para")} <code>.mcp.json</code> {tx("no projeto; com")} <code>--scope user</code>{tx(", vale em todos.")}</> },
+          { word: tx("Programas que a skill instala"), means: <>{tx("Coisas instaladas com npm, pip ou brew ficam")} <strong>{tx("no computador todo")}</strong>{tx(", para qualquer projeto. Veja em")} <em>{tx("Espaço e memória → Instalado pelas IAs")}</em>.</> },
         ]}
-        calm={<>No Veocode, cada conta do Claude tem a sua pasta: o que foi instalado “no computador” por uma conta <strong>não aparece</strong> para outra. Quer ver só o que vale num projeto? Escolha ele no seletor logo abaixo.</>}
+        calm={<>{tx("No Veocode, cada conta do Claude tem a sua pasta: o que foi instalado “no computador” por uma conta")} <strong>{tx("não aparece")}</strong> {tx("para outra. Quer ver só o que vale num projeto? Escolha ele no seletor logo abaixo.")}</>}
       />
 
       <div class="inv-bar">
         <ProjectPicker value={proj()} onChange={setProj} />
         <label class="search-box">
           <Search size={13} />
-          <input placeholder="Buscar…" value={q()} onInput={(e) => setQ(e.currentTarget.value)} />
-          <Show when={q()}><button class="icon-btn tiny visible" title="Limpar a busca" onClick={() => setQ("")}><X size={11} /></button></Show>
+          <input placeholder={tx("Buscar…")} value={q()} onInput={(e) => setQ(e.currentTarget.value)} />
+          <Show when={q()}><button class="icon-btn tiny visible" title={tx("Limpar a busca")} onClick={() => setQ("")}><X size={11} /></button></Show>
         </label>
       </div>
 
       <div class="inv-tiles">
-        <Tile icon={<Package size={15} />} label="Extras" hint={selected() ? `que valem em ${selected()!.name}` : "em todos os projetos"}>
+        <Tile icon={<Package size={15} />} label={tx("Extras")} hint={selected() ? tx("que valem em {name}", { name: selected()!.name }) : tx("em todos os projetos")}>
           <CountUp value={scoped().length} />
         </Tile>
-        <Tile icon={<Zap size={15} />} label="Conexões abertas" hint={`${pct(runCpu())} CPU · ${formatBytes(runMem())}`} live={running().length > 0}>
+        <Tile icon={<Zap size={15} />} label={tx("Conexões abertas")} hint={`${pct(runCpu())} CPU · ${formatBytes(runMem())}`} live={running().length > 0}>
           <CountUp value={running().length} />
         </Tile>
-        <Tile icon={<HardDrive size={15} />} label="No disco" hint="pacotes instalados">
+        <Tile icon={<HardDrive size={15} />} label={tx("No disco")} hint={tx("pacotes instalados")}>
           <CountUp value={disk()} format={formatBytes} />
         </Tile>
-        <Tile icon={<Cpu size={15} />} label="Contexto fixo" hint={selected() ? "tokens em toda conversa, antes de você escrever" : "escolha um projeto para ver"}>
+        <Tile icon={<Cpu size={15} />} label={tx("Contexto fixo")} hint={selected() ? tx("tokens em toda conversa, antes de você escrever") : tx("escolha um projeto para ver")}>
           <Show when={fixed() !== null} fallback={<span class="muted">—</span>}>
             ~<CountUp value={fixed()!} format={fmtTokens} />
           </Show>
@@ -364,7 +365,7 @@ export default function Inventory() {
       </div>
 
       <div class="who-filter inv-cats">
-        <button classList={{ active: cat() === "tudo" }} onClick={() => setCat("tudo")}>Tudo <small class="count">{scoped().length}</small></button>
+        <button classList={{ active: cat() === "tudo" }} onClick={() => setCat("tudo")}>{tx("Tudo")} <small class="count">{scoped().length}</small></button>
         <For each={cats}>
           {(c) => (
             <button classList={{ active: cat() === c.id }} onClick={() => setCat(c.id)}>
@@ -374,7 +375,7 @@ export default function Inventory() {
         </For>
       </div>
       <Show when={selected()}>
-        <p class="foot-note inv-scope-note"><Info size={12} /> Mostrando o que vale em <strong>{selected()!.name}</strong>: o da conta {accountById(selected()!.accountId).label} e o que está dentro da pasta.</p>
+        <p class="foot-note inv-scope-note"><Info size={12} /> {tx("Mostrando o que vale em")} <strong>{selected()!.name}</strong>{tx(": o da conta {label} e o que está dentro da pasta.", { label: accountById(selected()!.accountId).label })}</p>
       </Show>
 
       <Show when={inv.loaded} fallback={<div class="loading-rows"><div /><div /><div /></div>}>
@@ -393,7 +394,7 @@ export default function Inventory() {
                   when={c.id === "skills" && keys(c.id).length > 0}
                   fallback={
                     <div class="inv-list">
-                      <For each={keys(c.id)} fallback={<div class="scope-empty">Nada aqui{q() ? " com essa busca" : ""}</div>}>
+                      <For each={keys(c.id)} fallback={<div class="scope-empty">{tx("Nada aqui{v}", { v: q() ? tx(" com essa busca") : "" })}</div>}>
                         {(k, n) => (
                           <Show when={byKey().get(k)}>
                             {(r) => <RowView r={r()} n={n()} open={!!open()[k]} onToggle={() => toggle(k)} onAction={runAction} onRead={setReading} />}
@@ -440,7 +441,7 @@ export default function Inventory() {
 /** Escolha do projeto: menu próprio (o select nativo destoa do tema escuro). */
 function ProjectPicker(props: { value: string; onChange: (id: string) => void }) {
   const [open, setOpen] = createSignal(false);
-  const label = () => realProjects().find((p) => p.id === props.value)?.name ?? "Todos os projetos";
+  const label = () => realProjects().find((p) => p.id === props.value)?.name ?? tx("Todos os projetos");
   const close = (e: MouseEvent) => !(e.target as HTMLElement).closest(".inv-picker") && setOpen(false);
   onMount(() => document.addEventListener("mousedown", close));
   onCleanup(() => document.removeEventListener("mousedown", close));
@@ -455,8 +456,8 @@ function ProjectPicker(props: { value: string; onChange: (id: string) => void })
       </button>
       <Show when={open()}>
         <div class="inv-menu" ref={(el) => dismissable(el, () => setOpen(false))}>
-          <button classList={{ on: props.value === "todos" }} onClick={() => pick("todos")}>Todos os projetos</button>
-          <For each={realProjects()} fallback={<small class="inv-menu-empty">Nenhum projeto adicionado ainda</small>}>
+          <button classList={{ on: props.value === "todos" }} onClick={() => pick("todos")}>{tx("Todos os projetos")}</button>
+          <For each={realProjects()} fallback={<small class="inv-menu-empty">{tx("Nenhum projeto adicionado ainda")}</small>}>
             {(p) => (
               <button classList={{ on: props.value === p.id }} onClick={() => pick(p.id)}>
                 <span class="account-dot" style={{ "--c": accountById(p.accountId).color }} /> {p.name}
@@ -484,34 +485,34 @@ function Tile(props: { icon: JSX.Element; label: string; hint: string; live?: bo
 function Linked(props: { where: Where; stored: Stored }) {
   return (
     <span class="inv-where">
-      <span class="inv-where-label">vale em</span>
+      <span class="inv-where-label">{tx("vale em")}</span>
       {(() => {
         const w = props.where;
-        if (w.kind === "pc") return <span class="inv-where-chip pc">computador todo</span>;
+        if (w.kind === "pc") return <span class="inv-where-chip pc">{tx("computador todo")}</span>;
         if (w.kind === "projeto") {
           const p = realProjects().find((x) => inside(w.path, x.abs));
           return (
             <span class="inv-where-chip proj" title={prettyPath(w.path)}>
               {p ? <ProjectIcon id={p.id} name={p.name} stack={p.stack} size={10} /> : <FolderIcon name={base(w.path)} size={10} />} {p ? p.name : base(w.path)}
-              <Show when={!p}><em> · fora do Veocode</em></Show>
+              <Show when={!p}><em> {tx("· fora do Veocode")}</em></Show>
             </span>
           );
         }
         const list = realProjects().filter((p) => w.accounts.includes(p.accountId));
         return (
-          <span class="inv-where-chip conta" title={list.length ? `Projetos desta conta: ${list.map((p) => p.name).join(", ")}` : "Nenhum projeto do Veocode usa esta conta"}>
-            todos os projetos da conta{list.length ? ` (${list.length})` : ""}
+          <span class="inv-where-chip conta" title={list.length ? tx("Projetos desta conta: {v}", { v: list.map((p) => p.name).join(", ") }) : tx("Nenhum projeto do Veocode usa esta conta")}>
+            {tx("todos os projetos da conta{v}", { v: list.length ? ` (${list.length})` : "" })}
           </span>
         );
       })()}
-      <span class="inv-where-label">guardado</span>
+      <span class="inv-where-label">{tx("guardado")}</span>
       <span class={`inv-where-chip stored-${props.stored.kind}`} title={props.stored.tip}>{props.stored.text}</span>
     </span>
   );
 }
 
 /** Nome bonito para um programa ou prefixo: "chatcut-desktop" → "ChatCut Desktop". */
-const known: Record<string, string> = { chatcut: "ChatCut", figma: "Figma", github: "GitHub", openai: "OpenAI", claude: "Claude" };
+const known: Record<string, string> = { chatcut: "ChatCut", get figma() { return tx("Figma"); }, github: "GitHub", openai: "OpenAI", claude: "Claude" };
 const pretty = (s: string) => s.split(/[-_]/).filter(Boolean).map((w) => known[w.toLowerCase()] ?? w[0].toUpperCase() + w.slice(1)).join(" ");
 
 interface Family {
@@ -543,11 +544,11 @@ function families(list: { key: string; item: Item }[]): Family[] {
   };
   for (const { key, item: i } of list) {
     const p = prefix(i);
-    if (i.group) add(`g:${i.group}`, pretty(i.group), `Instaladas juntas pelo programa ${pretty(i.group)}. Ficam na pasta da conta e valem em todos os projetos. Para tirar todas, desinstale ou reconfigure o ${pretty(i.group)}.`, key, i.alwaysTokens);
-    else if (i.layer === "projeto" && i.project) add(`p:${i.project}`, `Vieram com o projeto ${base(i.project)}`, `Estão dentro da pasta do projeto (.claude/). Só valem lá e vão junto no git.`, key, i.alwaysTokens);
-    else if (i.manage === "synced") add("claudeai", "Da sua conta claude.ai", "Sincronizadas do site claude.ai. Para tirar, use o site.", key, i.alwaysTokens);
-    else if (p && (count.get(p) ?? 0) >= 3) add(`x:${p}`, pretty(p), `Têm o mesmo começo de nome ("${p}-"), então provavelmente vieram juntas do mesmo lugar.`, key, i.alwaysTokens);
-    else add("soltas", "Instaladas uma a uma", "Cada uma foi colocada sozinha na pasta da conta. Valem em todos os projetos.", key, i.alwaysTokens);
+    if (i.group) add(`g:${i.group}`, pretty(i.group), tx("Instaladas juntas pelo programa {v}. Ficam na pasta da conta e valem em todos os projetos. Para tirar todas, desinstale ou reconfigure o {v}.", { v: pretty(i.group) }), key, i.alwaysTokens);
+    else if (i.layer === "projeto" && i.project) add(`p:${i.project}`, tx("Vieram com o projeto {v}", { v: base(i.project) }), tx("Estão dentro da pasta do projeto (.claude/). Só valem lá e vão junto no git."), key, i.alwaysTokens);
+    else if (i.manage === "synced") add("claudeai", tx("Da sua conta claude.ai"), tx("Sincronizadas do site claude.ai. Para tirar, use o site."), key, i.alwaysTokens);
+    else if (p && (count.get(p) ?? 0) >= 3) add(`x:${p}`, pretty(p), tx("Têm o mesmo começo de nome (\"{p}-\"), então provavelmente vieram juntas do mesmo lugar.", { p }), key, i.alwaysTokens);
+    else add("soltas", tx("Instaladas uma a uma"), tx("Cada uma foi colocada sozinha na pasta da conta. Valem em todos os projetos."), key, i.alwaysTokens);
   }
   return [...fams.values()].sort((a, b) => Number(a.id === "soltas") - Number(b.id === "soltas") || b.keys.length - a.keys.length);
 }
@@ -563,7 +564,7 @@ function FamilyView(props: { f: Family; open: boolean; onToggle: () => void; fir
           <small>{props.f.hint}</small>
           <Show when={props.first}>{(r) => <Linked where={r().where} stored={r().stored} />}</Show>
         </span>
-        <span class="inv-weight">~{fmtTokens(props.f.tokens)} tokens fixos</span>
+        <span class="inv-weight">{tx("~{v} tokens fixos", { v: fmtTokens(props.f.tokens) })}</span>
       </button>
       <Show when={props.open}>
         <div class="inv-family-body">{props.children}</div>
@@ -601,7 +602,7 @@ function RowView(props: { r: Row; n: number; open: boolean; onToggle: () => void
         <span class="inv-weight">{r().weight ?? ""}</span>
         <div class="inv-actions" onClick={(e) => e.stopPropagation()}>
           <Show when={busy()}><Loader2 size={13} class="spinning" /></Show>
-          <Show when={r().note && !r().actions.length}><button class="inv-how" onClick={props.onToggle}>como tirar?</button></Show>
+          <Show when={r().note && !r().actions.length}><button class="inv-how" onClick={props.onToggle}>{tx("como tirar?")}</button></Show>
           <For each={r().actions}>
             {(a) => (
               <button class={a.danger ? "inv-btn danger" : "inv-btn"} disabled={busy()} onClick={() => props.onAction(a)} title={a.label}>
@@ -632,9 +633,9 @@ function RowView(props: { r: Row; n: number; open: boolean; onToggle: () => void
                 <Show when={path}>
                   <div class="inv-detail-actions">
                     <Show when={item()?.path?.endsWith(".md")}>
-                      <button class="ghost-btn small" onClick={() => props.onRead(item()!)}><BookOpen size={12} /> Ler o que ela diz</button>
+                      <button class="ghost-btn small" onClick={() => props.onRead(item()!)}><BookOpen size={12} /> {tx("Ler o que ela diz")}</button>
                     </Show>
-                    <button class="ghost-btn small" onClick={() => api.reveal(path!).catch((e) => showToast(String(e)))}><FolderOpen size={12} /> Mostrar a pasta</button>
+                    <button class="ghost-btn small" onClick={() => api.reveal(path!).catch((e) => showToast(String(e)))}><FolderOpen size={12} /> {tx("Mostrar a pasta")}</button>
                   </div>
                 </Show>
               );

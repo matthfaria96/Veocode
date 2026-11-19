@@ -14,7 +14,7 @@ fn file(data: &Path, project: &str) -> PathBuf {
 
 fn valid(project: &str) -> Result<(), String> {
     let ok = !project.is_empty() && project.len() <= 80 && project.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
-    ok.then_some(()).ok_or_else(|| "projeto inválido".to_string())
+    ok.then_some(()).ok_or_else(|| crate::i18n::tr("projeto inválido", "invalid project").to_string())
 }
 
 pub fn get(data: &Path, project: &str) -> Result<String, String> {
@@ -63,8 +63,8 @@ fn trim(text: &str) -> String {
 pub fn prompt(data: &Path, project: &str) -> Option<String> {
     let m = get(data, project).ok()?;
     (!m.trim().is_empty()).then(|| {
-        format!(
-            "Memória deste projeto, mantida pelo Veocode (resumos de conversas anteriores, do mais antigo ao mais novo). Use como contexto; confira no código antes de afirmar algo que pode ter mudado:\n\n{}",
+        crate::trf!(
+            "Memória deste projeto, mantida pelo Veocode (resumos de conversas anteriores, do mais antigo ao mais novo). Use como contexto; confira no código antes de afirmar algo que pode ter mudado:\n\n{}", "This project's memory, kept by Veocode (summaries of previous conversations, oldest to newest). Use it as context; check the code before stating something that may have changed:\n\n{}",
             m.trim()
         )
     })

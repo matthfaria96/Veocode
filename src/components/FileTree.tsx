@@ -3,9 +3,10 @@ import { FileIcon, FolderIcon } from "./icons";
 import { createSignal, For, Show } from "solid-js";
 import { fileTree, type FileNode } from "../data/mock";
 import { openFile, ws, type FileMark } from "../store";
+import { tx } from "../i18n";
 
 const markLabel: Record<FileMark, string> = { read: "L", search: "B", edit: "M", new: "N", deleted: "A" };
-const markTitle: Record<FileMark, string> = { read: "Lido pelo agente", search: "Encontrado na busca", edit: "Modificado", new: "Criado agora", deleted: "Apagado" };
+const markTitle: Record<FileMark, string> = { get read() { return tx("Lido pelo agente"); }, get search() { return tx("Encontrado na busca"); }, get edit() { return tx("Modificado"); }, get new() { return tx("Criado agora"); }, get deleted() { return tx("Apagado"); } };
 
 // Pastas abertas (todas começam abertas para o agente sempre ter onde "clicar").
 const [closed, setClosed] = createSignal<Set<string>>(new Set());

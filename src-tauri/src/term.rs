@@ -206,7 +206,7 @@ impl Terms {
     pub fn open(&self, app: AppHandle, a: OpenArgs) -> Result<TermInfo, String> {
         let taken: Vec<String> = self.list(&a.project_id).into_iter().map(|t| t.name).collect();
         if taken.len() >= MAX_PER_PROJECT {
-            return Err(format!("Cada projeto abre até {MAX_PER_PROJECT} terminais. Feche um antes."));
+            return Err(crate::trf!("Cada projeto abre até {MAX_PER_PROJECT} terminais. Feche um antes.", "Each project opens up to {MAX_PER_PROJECT} terminals. Close one first."));
         }
         let (sh, args) = shell();
         let base = short_name(&sh);
@@ -214,9 +214,9 @@ impl Terms {
 
         let pty = native_pty_system()
             .openpty(PtySize { rows: a.rows.max(4), cols: a.cols.max(20), pixel_width: 0, pixel_height: 0 })
-            .map_err(|e| format!("não deu para abrir o terminal: {e}"))?;
+            .map_err(|e| crate::trf!("não deu para abrir o terminal: {e}", "couldn't open the terminal: {e}"))?;
         let cmd = self.command(&sh, &args, &base, &a);
-        let child = pty.slave.spawn_command(cmd).map_err(|e| format!("não deu para abrir {sh}: {e}"))?;
+        let child = pty.slave.spawn_command(cmd).map_err(|e| crate::trf!("não deu para abrir {sh}: {e}", "couldn't open {sh}: {e}"))?;
         drop(pty.slave);
         let mut reader = pty.master.try_clone_reader().map_err(|e| e.to_string())?;
         let writer = pty.master.take_writer().map_err(|e| e.to_string())?;

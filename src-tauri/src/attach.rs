@@ -86,10 +86,10 @@ pub const MAX_PREVIEW: u64 = 25 * 1024 * 1024;
 
 /// Imagem como data URL, para mostrar na tela.
 pub fn preview(p: &Path) -> Result<String, String> {
-    let mime = preview_mime(p).ok_or("não é uma imagem que dá para mostrar")?;
-    let m = fs::metadata(p).map_err(|_| "não achei a imagem".to_string())?;
+    let mime = preview_mime(p).ok_or(crate::i18n::tr("não é uma imagem que dá para mostrar", "not an image that can be shown"))?;
+    let m = fs::metadata(p).map_err(|_| crate::i18n::tr("não achei a imagem", "couldn't find the image").to_string())?;
     if m.len() > MAX_PREVIEW {
-        return Err("imagem grande demais para a prévia (mais de 25 MB)".into());
+        return Err(crate::i18n::tr("imagem grande demais para a prévia (mais de 25 MB)", "image too large for the preview (over 25 MB)").into());
     }
     let b = fs::read(p).map_err(|e| e.to_string())?;
     Ok(format!("data:{mime};base64,{}", B64.encode(b)))
@@ -99,14 +99,14 @@ pub fn preview(p: &Path) -> Result<String, String> {
 pub fn info(path: &str) -> Result<Staged, String> {
     let p = PathBuf::from(path);
     if !p.is_absolute() {
-        return Err(format!("caminho inválido: {path}"));
+        return Err(crate::trf!("caminho inválido: {path}", "invalid path: {path}"));
     }
-    let m = fs::metadata(&p).map_err(|_| format!("não achei {path}"))?;
+    let m = fs::metadata(&p).map_err(|_| crate::trf!("não achei {path}", "couldn't find {path}"))?;
     if !m.is_file() {
-        return Err(format!("{} é uma pasta: escolha arquivos", p.display()));
+        return Err(crate::trf!("{} é uma pasta: escolha arquivos", "{} is a folder: choose files", p.display()));
     }
     if m.len() > MAX_FILE {
-        return Err(format!("{} passa de 30 MB", p.file_name().map(|n| n.to_string_lossy()).unwrap_or_default()));
+        return Err(crate::trf!("{} passa de 30 MB", "{} is over 30 MB", p.file_name().map(|n| n.to_string_lossy()).unwrap_or_default()));
     }
     let kind = kind_of(&p);
     let thumb = (kind == "image" && m.len() <= MAX_THUMB)
@@ -117,9 +117,9 @@ pub fn info(path: &str) -> Result<Staged, String> {
 
 /// Guarda uma imagem/arquivo colado e devolve como anexo.
 pub fn stage(dir: &Path, name: &str, data_b64: &str) -> Result<Staged, String> {
-    let bytes = B64.decode(data_b64.split(',').next_back().unwrap_or("")).map_err(|_| "o arquivo colado veio estragado".to_string())?;
+    let bytes = B64.decode(data_b64.split(',').next_back().unwrap_or("")).map_err(|_| crate::i18n::tr("o arquivo colado veio estragado", "the pasted file came in broken").to_string())?;
     if bytes.len() as u64 > MAX_FILE {
-        return Err("o arquivo colado passa de 30 MB".into());
+        return Err(crate::i18n::tr("o arquivo colado passa de 30 MB", "the pasted file is over 30 MB").into());
     }
     fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     cleanup(dir);
@@ -152,7 +152,7 @@ fn cleanup(dir: &Path) {
 pub fn checked(files: Option<Vec<String>>) -> Result<Vec<PathBuf>, String> {
     let list = files.unwrap_or_default();
     if list.len() > 20 {
-        return Err("no máximo 20 anexos por mensagem".into());
+        return Err(crate::i18n::tr("no máximo 20 anexos por mensagem", "at most 20 attachments per message").into());
     }
     list.iter().map(|f| info(f).map(|s| PathBuf::from(s.path))).collect()
 }
@@ -181,20 +181,20 @@ pub fn claude_content(text: &str, files: &[PathBuf]) -> Value {
                     blocks.push(json!({"type":"image","source":{"type":"base64","media_type":image_mime(p).unwrap_or("image/png"),"data":B64.encode(b)}}));
                     notes.push(format!("- imagem anexada: {}", name(p)));
                 }
-                Err(_) => notes.push(format!("- imagem (não deu para ler): {}", p.display())),
+                Err(_) => notes.push(crate::trf!("- imagem (não deu para ler): {}", "- image (couldn't read it): {}", p.display())),
             },
             "pdf" if size <= MAX_PDF => match fs::read(p) {
                 Ok(b) => {
                     blocks.push(json!({"type":"document","source":{"type":"base64","media_type":"application/pdf","data":B64.encode(b)},"title":name(p)}));
                     notes.push(format!("- PDF anexado: {}", name(p)));
                 }
-                Err(_) => notes.push(format!("- PDF (não deu para ler): {}", p.display())),
+                Err(_) => notes.push(crate::trf!("- PDF (não deu para ler): {}", "- PDF (couldn't read it): {}", p.display())),
             },
             "text" => match read_text(p) {
-                Some(body) => notes.push(format!("- arquivo anexado `{}`:\n```\n{}\n```", p.display(), body)),
-                None => notes.push(format!("- arquivo anexado (grande, abra pelo caminho): {}", p.display())),
+                Some(body) => notes.push(crate::trf!("- arquivo anexado `{}`:\n```\n{}\n```", "- attached file `{}`:\n```\n{}\n```", p.display(), body)),
+                None => notes.push(crate::trf!("- arquivo anexado (grande, abra pelo caminho): {}", "- attached file (large, open it by its path): {}", p.display())),
             },
-            _ => notes.push(format!("- arquivo anexado (abra pelo caminho): {}", p.display())),
+            _ => notes.push(crate::trf!("- arquivo anexado (abra pelo caminho): {}", "- attached file (open it by its path): {}", p.display())),
         }
     }
     let full = format!("{text}\n\nAnexos:\n{}", notes.join("\n"));
@@ -211,9 +211,9 @@ pub fn api_text(text: &str, files: &[PathBuf]) -> String {
     let notes: Vec<String> = files
         .iter()
         .map(|p| match (kind_of(p), read_text(p)) {
-            ("text", Some(body)) => format!("Arquivo `{}`:\n```\n{}\n```", name(p), body),
-            ("image", _) => format!("(imagem anexada: {}. Este modelo não vê imagens; descreva o que importa nela.)", name(p)),
-            _ => format!("(arquivo anexado: {} — este modelo não abre este tipo de arquivo)", p.display()),
+            ("text", Some(body)) => crate::trf!("Arquivo `{}`:\n```\n{}\n```", "File `{}`:\n```\n{}\n```", name(p), body),
+            ("image", _) => crate::trf!("(imagem anexada: {}. Este modelo não vê imagens; descreva o que importa nela.)", "(attached image: {}. This model can't see images; describe what matters in it.)", name(p)),
+            _ => crate::trf!("(arquivo anexado: {} — este modelo não abre este tipo de arquivo)", "(attached file: {} — this model can't open this type of file)", p.display()),
         })
         .collect();
     format!("{text}\n\n{}", notes.join("\n\n"))

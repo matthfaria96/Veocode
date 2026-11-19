@@ -3,11 +3,12 @@
 // as mesmas coisas (Inventário, Raio-X e Skills e MCP).
 import { HardDrive, Puzzle } from "lucide-solid";
 import { setView, view } from "../store";
+import { tx } from "../i18n";
 
 export default function ComputerTabs() {
   const tabs = [
-    { id: "inventory" as const, label: "Extras do Claude", hint: "receitas, atalhos e conexões", icon: Puzzle },
-    { id: "system" as const, label: "Espaço e memória", hint: "o que ocupa disco e o que está aberto", icon: HardDrive },
+    { id: "inventory" as const, label: tx("Extras do Claude"), hint: tx("receitas, atalhos e conexões"), icon: Puzzle },
+    { id: "system" as const, label: tx("Espaço e memória"), hint: tx("o que ocupa disco e o que está aberto"), icon: HardDrive },
   ];
   return (
     <div class="computer-tabs" role="tablist">

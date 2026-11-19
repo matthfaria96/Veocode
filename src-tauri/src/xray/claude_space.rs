@@ -210,7 +210,7 @@ fn history_details(config: &Path) -> Vec<Detail> {
             let n = fs::read_dir(&p).map(|r| r.flatten().filter(|f| f.path().extension().is_some_and(|x| x == "jsonl")).count()).unwrap_or(0);
             let raw = e.file_name().to_string_lossy().to_string();
             let name = raw.rsplit('-').find(|s| !s.is_empty()).unwrap_or(&raw).to_string();
-            Detail { label: name, bytes: dir_size(&p), note: Some(format!("{n} {}", if n == 1 { "conversa" } else { "conversas" })) }
+            Detail { label: name, bytes: dir_size(&p), note: Some(format!("{n} {}", if n == 1 { crate::i18n::tr("conversa", "conversation") } else { crate::i18n::tr("conversas", "conversations") })) }
         })
         .collect();
     v.sort_by(|a, b| b.bytes.cmp(&a.bytes));
@@ -244,13 +244,13 @@ pub fn report(accounts: &[PathBuf], veocode_dirs: &[PathBuf]) -> Report {
         if rb > 0 {
             parts.push(Part {
                 id: "app-runtime".into(),
-                label: "Ambiente do Cowork".into(),
-                hint: "A máquina virtual onde o Cowork roda as tarefas. É o que mais pesa.".into(),
+                label: crate::i18n::tr("Ambiente do Cowork", "Cowork environment").into(),
+                hint: crate::i18n::tr("A máquina virtual onde o Cowork roda as tarefas. É o que mais pesa.", "The virtual machine where Cowork runs tasks. It's the heaviest part.").into(),
                 bytes: rb,
                 tone: "runtime",
                 paths: runtime.iter().map(|p| pretty(p)).collect(),
                 details: vec![],
-                fix: fix("app-runtime".into(), "Remover o ambiente", &runtime, Some("O app do Claude baixa de novo (vários GB) na próxima vez que você usar o Cowork."), true),
+                fix: fix("app-runtime".into(), "Remover o ambiente", &runtime, Some(crate::i18n::tr("O app do Claude baixa de novo (vários GB) na próxima vez que você usar o Cowork.", "The Claude app downloads it again (several GB) the next time you use Cowork.")), true),
             });
         }
         let code_dirs = existing(vec![a.join("claude-code"), a.join("claude-code-vm")]);
@@ -260,13 +260,13 @@ pub fn report(accounts: &[PathBuf], veocode_dirs: &[PathBuf]) -> Report {
             let versions = code_dirs.iter().flat_map(|d| fs::read_dir(d).into_iter().flatten().flatten()).filter(|e| !e.file_name().to_string_lossy().starts_with('.')).count();
             parts.push(Part {
                 id: "app-code".into(),
-                label: "Claude Code dentro do app".into(),
-                hint: format!("{versions} {} do Claude Code que o app usa.", if versions == 1 { "versão" } else { "versões" }),
+                label: crate::i18n::tr("Claude Code dentro do app", "Claude Code inside the app").into(),
+                hint: crate::trf!("{versions} {} do Claude Code que o app usa.", "{versions} {} of Claude Code that the app uses.", if versions == 1 { crate::i18n::tr("versão", "version") } else { crate::i18n::tr("versões", "versions") }),
                 bytes: cb,
                 tone: "runtime",
                 paths: code_dirs.iter().map(|p| pretty(p)).collect(),
                 details: vec![],
-                fix: fix("app-old-versions".into(), "Tirar versões antigas", &old, None, true),
+                fix: fix("app-old-versions".into(), crate::i18n::tr("Tirar versões antigas", "Remove old versions"), &old, None, true),
             });
         }
         let caches = app_cache_paths();
@@ -274,13 +274,13 @@ pub fn report(accounts: &[PathBuf], veocode_dirs: &[PathBuf]) -> Report {
         if kb > 0 {
             parts.push(Part {
                 id: "app-cache".into(),
-                label: "Caches e logs do app".into(),
-                hint: "Cache da web, desenhos da tela e registros. O app refaz sozinho.".into(),
+                label: crate::i18n::tr("Caches e logs do app", "App caches and logs").into(),
+                hint: crate::i18n::tr("Cache da web, desenhos da tela e registros. O app refaz sozinho.", "Web cache, screen drawings and logs. The app rebuilds them on its own.").into(),
                 bytes: kb,
                 tone: "cache",
                 paths: caches.iter().map(|p| pretty(p)).collect(),
                 details: vec![],
-                fix: fix("app-cache".into(), "Limpar caches e logs", &caches, None, true),
+                fix: fix("app-cache".into(), crate::i18n::tr("Limpar caches e logs", "Clear caches and logs"), &caches, None, true),
             });
         }
         let sessions = existing(APP_SESSIONS.iter().map(|d| a.join(d)).collect());
@@ -289,8 +289,8 @@ pub fn report(accounts: &[PathBuf], veocode_dirs: &[PathBuf]) -> Report {
             let n = existing(vec![a.join("claude-code-sessions"), a.join("local-agent-mode-sessions")]).iter().flat_map(|d| fs::read_dir(d).into_iter().flatten().flatten()).count();
             parts.push(Part {
                 id: "app-sessions".into(),
-                label: "Sessões e tarefas do app".into(),
-                hint: format!("{n} {} do Code e do Cowork. Apague pelo próprio app do Claude.", if n == 1 { "sessão" } else { "sessões" }),
+                label: crate::i18n::tr("Sessões e tarefas do app", "App sessions and tasks").into(),
+                hint: crate::trf!("{n} {} do Code e do Cowork. Apague pelo próprio app do Claude.", "{n} Code and Cowork {}. Delete them from the Claude app itself.", if n == 1 { crate::i18n::tr("sessão", "session") } else { crate::i18n::tr("sessões", "sessions") }),
                 bytes: sb,
                 tone: "sessions",
                 paths: sessions.iter().map(|p| pretty(p)).collect(),
@@ -305,8 +305,8 @@ pub fn report(accounts: &[PathBuf], veocode_dirs: &[PathBuf]) -> Report {
         if rest > 0 {
             parts.push(Part {
                 id: "app-data".into(),
-                label: "Login e ajustes do app".into(),
-                hint: "Dados que o app precisa para funcionar. Não mexa.".into(),
+                label: crate::i18n::tr("Login e ajustes do app", "App login and settings").into(),
+                hint: crate::i18n::tr("Dados que o app precisa para funcionar. Não mexa.", "Data the app needs to work. Don't touch it.").into(),
                 bytes: rest,
                 tone: "other",
                 paths: vec![pretty(&a)],
@@ -315,7 +315,7 @@ pub fn report(accounts: &[PathBuf], veocode_dirs: &[PathBuf]) -> Report {
             });
         }
         let bytes = parts.iter().map(|p| p.bytes).sum();
-        groups.push(Group { id: "app", label: "App do Claude".into(), hint: "O aplicativo do Claude (chat, Cowork e Code).".into(), bytes, parts });
+        groups.push(Group { id: "app", label: crate::i18n::tr("App do Claude", "Claude app").into(), hint: crate::i18n::tr("O aplicativo do Claude (chat, Cowork e Code).", "The Claude app (chat, Cowork and Code).").into(), bytes, parts });
     }
 
     // ---------------------------------------------------------------- Claude Code
@@ -328,14 +328,14 @@ pub fn report(accounts: &[PathBuf], veocode_dirs: &[PathBuf]) -> Report {
         if hb > 0 {
             let old = old_sessions(dir);
             let n_old = old.iter().filter(|p| p.extension().is_some_and(|x| x == "jsonl")).count();
-            let mut f = fix(format!("code-history:{i}"), &format!("Apagar as de mais de {OLD_DAYS} dias"), &old, Some("Essas conversas não dão mais para retomar (/resume). As recentes ficam."), false);
+            let mut f = fix(format!("code-history:{i}"), &crate::trf!("Apagar as de mais de {OLD_DAYS} dias", "Delete those older than {OLD_DAYS} days"), &old, Some(crate::i18n::tr("Essas conversas não dão mais para retomar (/resume). As recentes ficam.", "Those conversations can no longer be resumed (/resume). Recent ones stay.")), false);
             if let Some(f) = f.as_mut() {
                 f.items = n_old as u64;
             }
             parts.push(Part {
                 id: format!("code-history:{i}"),
                 label: format!("Conversas guardadas{suffix}"),
-                hint: "Todo o histórico das sessões, por projeto. Cresce a cada conversa.".into(),
+                hint: crate::i18n::tr("Todo o histórico das sessões, por projeto. Cresce a cada conversa.", "The full session history, per project. Grows with every conversation.").into(),
                 bytes: hb,
                 tone: "sessions",
                 paths: hist.iter().map(|p| pretty(p)).collect(),
@@ -348,13 +348,13 @@ pub fn report(accounts: &[PathBuf], veocode_dirs: &[PathBuf]) -> Report {
         if fb > 0 {
             parts.push(Part {
                 id: format!("code-file-history:{i}"),
-                label: format!("Pontos de restauração{suffix}"),
-                hint: "Cópias dos arquivos antes de cada edição, para desfazer.".into(),
+                label: crate::trf!("Pontos de restauração{suffix}", "Restore points{suffix}"),
+                hint: crate::i18n::tr("Cópias dos arquivos antes de cada edição, para desfazer.", "Copies of files before each edit, so they can be undone.").into(),
                 bytes: fb,
                 tone: "sessions",
                 paths: fh.iter().map(|p| pretty(p)).collect(),
                 details: vec![],
-                fix: fix(format!("code-file-history:{i}"), &format!("Apagar os de mais de {OLD_DAYS} dias"), &old_file_history(dir), Some("Edições antigas deixam de poder ser desfeitas pelo Claude."), false),
+                fix: fix(format!("code-file-history:{i}"), &crate::trf!("Apagar os de mais de {OLD_DAYS} dias", "Delete those older than {OLD_DAYS} days"), &old_file_history(dir), Some(crate::i18n::tr("Edições antigas deixam de poder ser desfeitas pelo Claude.", "Old edits can no longer be undone by Claude.")), false),
             });
         }
         let cache = code_cache_paths(dir);
@@ -362,7 +362,7 @@ pub fn report(accounts: &[PathBuf], veocode_dirs: &[PathBuf]) -> Report {
         if kb > 0 {
             parts.push(Part {
                 id: format!("code-cache:{i}"),
-                label: format!("Caches e logs{suffix}"),
+                label: crate::trf!("Caches e logs{suffix}", "Caches and logs{suffix}"),
                 hint: "Refeitos sozinhos quando precisa.".into(),
                 bytes: kb,
                 tone: "cache",
@@ -376,8 +376,8 @@ pub fn report(accounts: &[PathBuf], veocode_dirs: &[PathBuf]) -> Report {
         if eb > 0 {
             parts.push(Part {
                 id: format!("code-extras:{i}"),
-                label: format!("Receitas e plugins{suffix}"),
-                hint: "Gerencie em Computador → Extras do Claude.".into(),
+                label: crate::trf!("Receitas e plugins{suffix}", "Skills and plugins{suffix}"),
+                hint: crate::i18n::tr("Gerencie em Computador → Extras do Claude.", "Manage them in Computer → Claude extras.").into(),
                 bytes: eb,
                 tone: "other",
                 paths: extras.iter().map(|p| pretty(p)).collect(),
@@ -392,18 +392,18 @@ pub fn report(accounts: &[PathBuf], veocode_dirs: &[PathBuf]) -> Report {
         let n = fs::read_dir(cli_versions_dir()).map(|r| r.flatten().count()).unwrap_or(0);
         parts.push(Part {
             id: "code-versions".into(),
-            label: "Versões do Claude Code".into(),
-            hint: format!("{n} {} no computador.", if n == 1 { "versão instalada" } else { "versões instaladas" }),
+            label: crate::i18n::tr("Versões do Claude Code", "Claude Code versions").into(),
+            hint: crate::trf!("{n} {} no computador.", "{n} {} on the computer.", if n == 1 { crate::i18n::tr("versão instalada", "version installed") } else { crate::i18n::tr("versões instaladas", "versions installed") }),
             bytes: vb,
             tone: "runtime",
             paths: versions.iter().map(|p| pretty(p)).collect(),
             details: vec![],
-            fix: fix("code-old-versions".into(), "Tirar versões antigas", &old_versions(&cli_versions_dir()), Some("Fica só a versão mais nova."), false),
+            fix: fix("code-old-versions".into(), crate::i18n::tr("Tirar versões antigas", "Remove old versions"), &old_versions(&cli_versions_dir()), Some(crate::i18n::tr("Fica só a versão mais nova.", "Only the newest version stays.")), false),
         });
     }
     if !parts.is_empty() {
         let bytes = parts.iter().map(|p| p.bytes).sum();
-        groups.push(Group { id: "code", label: "Claude Code".into(), hint: "O Claude do terminal, que o Veocode usa nos chats.".into(), bytes, parts });
+        groups.push(Group { id: "code", label: "Claude Code".into(), hint: crate::i18n::tr("O Claude do terminal, que o Veocode usa nos chats.", "The terminal Claude, which Veocode uses in its chats.").into(), bytes, parts });
     }
 
     // ---------------------------------------------------------------- o próprio Veocode
@@ -412,12 +412,12 @@ pub fn report(accounts: &[PathBuf], veocode_dirs: &[PathBuf]) -> Report {
     groups.push(Group {
         id: "veocode",
         label: "Veocode".into(),
-        hint: "Só os ajustes e listas do Veocode. As conversas dos chats ficam no Claude Code, acima.".into(),
+        hint: crate::i18n::tr("Só os ajustes e listas do Veocode. As conversas dos chats ficam no Claude Code, acima.", "Only Veocode's settings and lists. Chat conversations live in Claude Code, above.").into(),
         bytes: vb,
         parts: vec![Part {
             id: "veocode".into(),
-            label: "Ajustes, cofre e listas".into(),
-            hint: "Projetos, contas, rastro e ajustes. Os segredos ficam no Chaveiro.".into(),
+            label: crate::i18n::tr("Ajustes, cofre e listas", "Settings, vault and lists").into(),
+            hint: crate::i18n::tr("Projetos, contas, rastro e ajustes. Os segredos ficam no Chaveiro.", "Projects, accounts, trail and settings. Secrets stay in the Keychain.").into(),
             bytes: vb,
             tone: "other",
             paths: vd.iter().map(|p| pretty(p)).collect(),
@@ -434,7 +434,7 @@ pub fn report(accounts: &[PathBuf], veocode_dirs: &[PathBuf]) -> Report {
 /// Caminhos de um conserto, recalculados agora (a interface só manda o id).
 fn fix_paths(id: &str, accounts: &[PathBuf]) -> Result<(Vec<PathBuf>, bool), String> {
     let configs = config_dirs(accounts);
-    let conf = |i: &str| -> Result<PathBuf, String> { i.parse::<usize>().ok().and_then(|i| configs.get(i).cloned()).ok_or_else(|| "pasta do Claude Code não encontrada".to_string()) };
+    let conf = |i: &str| -> Result<PathBuf, String> { i.parse::<usize>().ok().and_then(|i| configs.get(i).cloned()).ok_or_else(|| crate::i18n::tr("pasta do Claude Code não encontrada", "Claude Code folder not found").to_string()) };
     let (kind, idx) = id.split_once(':').unwrap_or((id, ""));
     Ok(match kind {
         "app-runtime" => (existing(vec![app_dir().join("vm_bundles")]), true),
@@ -468,7 +468,7 @@ pub fn apply(id: &str, accounts: &[PathBuf]) -> Result<u64, String> {
         return Ok(0);
     }
     if needs_closed && app_running() {
-        return Err("Feche o app do Claude primeiro (⌘Q nele) e tente de novo.".into());
+        return Err(crate::i18n::tr("Feche o app do Claude primeiro (⌘Q nele) e tente de novo.", "Quit the Claude app first (⌘Q in it) and try again.").into());
     }
     if let Some(bad) = paths.iter().find(|p| !allowed(p, accounts)) {
         return Err(format!("recusado: {}", bad.display()));

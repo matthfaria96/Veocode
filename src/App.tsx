@@ -13,6 +13,7 @@ import Workspace from "./views/Workspace";
 import Livre from "./views/Livre";
 import Board from "./views/Board";
 import { loadSettings } from "./settings";
+import { watchLanguage } from "./i18n";
 import { helpOpen, loadProjects, paletteOpen, projectId, setHelpOpen, setPaletteOpen, setView, showToast, toast, view } from "./store";
 import { loadSummaries } from "./git";
 import { api } from "./api";
@@ -27,6 +28,7 @@ import { every } from "./every";
 import { refreshLimits, startLimitWatch } from "./limits";
 import { SwitchAccountDialog } from "./components/Limits";
 import { accts } from "./accounts";
+import { tx } from "./i18n";
 
 // telas menos usadas chegam aos poucos: o app abre mais rápido e elas ficam prontas logo depois
 const loaders = {
@@ -75,13 +77,14 @@ export default function App() {
     void watchDrops().then((f) => (stopDrops = f));
     onCleanup(() => stopDrops?.());
     loadSettings();
+    watchLanguage();
     startChatEvents();
     startTermEvents();
     window.addEventListener("keydown", onKey);
     // erro que escapou: aparece na tela em vez de sumir no console (o app nativo não mostra console)
     const onErr = (e: ErrorEvent | PromiseRejectionEvent) => {
       const r = "reason" in e ? e.reason : e.error ?? e.message;
-      showToast(`Erro: ${r instanceof Error ? r.message : String(r)}`);
+      showToast(tx("Erro: {v}", { v: r instanceof Error ? r.message : String(r) }));
     };
     window.addEventListener("error", onErr);
     window.addEventListener("unhandledrejection", onErr);
