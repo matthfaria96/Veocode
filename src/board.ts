@@ -175,3 +175,14 @@ export const toneOrder: Record<Tone, number> = { ask: 0, error: 1, work: 2, idle
 
 // por último: o efeito usa toneOrder, definido logo acima
 createRoot(() => createEffect(settle));
+
+/** Arrastou um painel para cima de outro: os dois trocam de lugar. */
+export function swapPanes(a: string, b: string) {
+  const l = [...shown()];
+  const i = l.indexOf(a);
+  const j = l.indexOf(b);
+  if (i < 0 || j < 0 || i === j) return;
+  [l[i], l[j]] = [l[j], l[i]];
+  setShown(l);
+  save("veocode.board.shown", l);
+}

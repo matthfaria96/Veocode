@@ -1,22 +1,33 @@
-import { FolderPlus, PanelRightOpen, Pin } from "lucide-solid";
-import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from "solid-js";
+import { Activity, FolderPlus, GitBranch, GripVertical, Hand, Plus, Sparkles, Zap } from "lucide-solid";
+import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
+import { Portal } from "solid-js/web";
 import { accountById } from "../accounts";
 import { isTauri } from "../api";
 import { inGrid, layout, layouts, maximized, panes, projectState, replacePane, setLayout, setMaximized, toneOrder, type Layout } from "../board";
+import { drag, dropOver, startDrag } from "../drag";
 import { feedOf, watchFeeds } from "../feeds";
+import { found, foundLoaded, loadFound, type Found } from "../found";
 import { git, gitWords, loadSummaries, since } from "../git";
 import { needs } from "../attention";
-import { addProjectFromPicker, projects, setProjectId, setView } from "../store";
+import { addProjectFromPicker, addProjectPath, projects, setProjectId, setView } from "../store";
+import { every } from "../every";
+import { dismissable } from "../dismiss";
 import ChatPane from "../components/ChatPane";
 import { ProjectIcon } from "../components/icons";
-import { PageHeader, ProviderMark } from "../components/ui";
-import { every } from "../every";
+import { CountUp, ProviderMark } from "../components/ui";
 
-/** Visão geral: as conversas dos projetos rolando ao vivo, escolhidas sozinhas (quem precisa de você primeiro). */
+const greet = () => {
+  const h = new Date().getHours();
+  return h < 5 ? "Boa madrugada" : h < 12 ? "Bom dia" : h < 18 ? "Boa tarde" : "Boa noite";
+};
+const today = () => new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" });
+const ago = (secs: number) => since(secs);
+
+/** Visão geral: a tela de boas-vindas. Mostra o dia, os projetos ao vivo (arrastáveis) e o que dá para adicionar. */
 export default function Board() {
   const real = () => projects.filter((p) => !p.demo);
 
-  // a tela lê os seus rápido; os de fora, devagar
+  // os da tela leem rápido; os de fora, devagar
   createEffect(on(() => real().map((p) => p.id).join(","), (ids) => {
     const stop = watchFeeds("board-all", ids ? ids.split(",") : [], 2500);
     onCleanup(stop);
@@ -27,91 +38,219 @@ export default function Board() {
   }));
   void loadSummaries(true);
   onCleanup(every(() => void loadSummaries(), 15000));
+  onMount(() => void loadFound());
   const key = (e: KeyboardEvent) => e.key === "Escape" && maximized() && setMaximized(null);
   window.addEventListener("keydown", key);
   onCleanup(() => window.removeEventListener("keydown", key));
 
-  const asking = () => real().filter((p) => projectState(p.id).tone === "ask").length;
-  const working = () => real().filter((p) => projectState(p.id).tone === "work").length;
-  const others = createMemo(() =>
-    real()
-      .filter((p) => !inGrid(p.id))
-      .sort((a, b) => {
-        const sa = projectState(a.id);
-        const sb = projectState(b.id);
-        return toneOrder[sa.tone] - toneOrder[sb.tone] || sb.at - sa.at || a.name.localeCompare(b.name);
-      }),
-  );
   const shown = () => (maximized() && panes().includes(maximized()!) ? [maximized()!] : panes());
+  const shelf = createMemo(() =>
+    [...real()].sort((a, b) => {
+      const sa = projectState(a.id);
+      const sb = projectState(b.id);
+      return Number(inGrid(a.id)) - Number(inGrid(b.id)) || toneOrder[sa.tone] - toneOrder[sb.tone] || sb.at - sa.at || a.name.localeCompare(b.name);
+    }),
+  );
 
   return (
-    <div class="page board">
-      <PageHeader
-        title="Visão geral"
-        subtitle={
-          !real().length
-            ? "Seus projetos aparecem aqui sozinhos, com a conversa de cada IA rolando ao vivo."
-            : `${real().length} ${real().length === 1 ? "projeto" : "projetos"}${working() ? ` · ${working()} trabalhando` : ""}${asking() ? ` · ${asking()} esperando você` : ""}`
-        }
-        actions={
-          <div class="board-actions">
-            <Show when={real().length > 1}>
-              <div class="layout-picks" role="radiogroup" aria-label="Quantos projetos na tela">
-                <For each={layouts}>
-                  {(l) => (
-                    <button
-                      role="radio"
-                      aria-checked={layout() === l.id}
-                      classList={{ active: layout() === l.id }}
-                      disabled={l.slots > real().length}
-                      title={l.slots > real().length ? `${l.label} (precisa de ${l.slots} projetos)` : l.label}
-                      onClick={() => { setMaximized(null); setLayout(l.id); }}
-                    >
-                      <LayoutIcon id={l.id} />
-                    </button>
-                  )}
-                </For>
-              </div>
-            </Show>
-            <Show when={isTauri}>
-              <button class="ghost-btn" onClick={() => void addProjectFromPicker()}><FolderPlus size={14} /> Adicionar projeto</button>
-            </Show>
-          </div>
-        }
-      />
+    <div class="page board home">
+      <Welcome />
       <NeedsStrip />
-      <Show when={real().length} fallback={<Empty />}>
-        <Show when={others().length}>
-          <p class="board-hint">
-            Os projetos entram sozinhos: quem precisa de você e quem está trabalhando vem primeiro. O <Pin size={11} /> fixa um projeto no lugar.
-          </p>
-        </Show>
-        <div class={`board-grid lay-${maximized() ? "1" : layout()}`}>
+      <Show when={real().length} fallback={<Discover />}>
+        <div class="home-bar">
+          <div>
+            <h2>Na tela agora</h2>
+            <small><Hand size={12} /> Arraste pelo título para trocar de lugar · arraste um projeto lá de baixo para cima de um painel</small>
+          </div>
+          <Show when={real().length > 1}>
+            <div class="layout-picks" role="radiogroup" aria-label="Quantos projetos na tela">
+              <For each={layouts}>
+                {(l) => (
+                  <button
+                    role="radio"
+                    aria-checked={layout() === l.id}
+                    classList={{ active: layout() === l.id }}
+                    disabled={l.slots > real().length}
+                    title={l.slots > real().length ? `${l.label} (precisa de ${l.slots} projetos)` : l.label}
+                    onClick={() => { setMaximized(null); setLayout(l.id); }}
+                  >
+                    <LayoutIcon id={l.id} />
+                  </button>
+                )}
+              </For>
+            </div>
+          </Show>
+        </div>
+        <div class={`board-grid lay-${maximized() ? "1" : layout()}`} classList={{ "is-dragging": !!drag() }}>
           <For each={shown()}>{(id, i) => <ChatPane pid={id} index={i()} />}</For>
         </div>
-        <Show when={others().length && !maximized()}>
-          <div class="board-rail">
-            <div class="board-rail-head">
-              <strong>Fora da tela</strong>
-              <small>{others().length} {others().length === 1 ? "projeto" : "projetos"} · clique para trazer</small>
-            </div>
-            <div class="board-rail-list">
-              <For each={others()}>{(p, i) => <Mini id={p.id} i={i()} />}</For>
+
+        <div class="home-shelf">
+          <div class="home-bar">
+            <div>
+              <h2>Seus projetos</h2>
+              <small>{real().length} {real().length === 1 ? "projeto" : "projetos"} · clique para abrir, arraste para a tela</small>
             </div>
           </div>
-        </Show>
+          <div class="shelf-list">
+            <For each={shelf()}>{(p, i) => <ShelfCard id={p.id} i={i()} />}</For>
+            <AddCard />
+          </div>
+        </div>
+      </Show>
+
+      <Show when={drag()}>
+        {(d) => (
+          <Portal>
+            <div class="drag-ghost" classList={{ hit: !!dropOver() }} style={{ transform: `translate(${d().x + 14}px, ${d().y + 10}px)` }}>
+              <GripVertical size={13} /> {d().label}
+              <small>{dropOver() ? (d().kind === "pane" ? "solte para trocar de lugar" : "solte para pôr aqui") : "leve até um painel"}</small>
+            </div>
+          </Portal>
+        )}
       </Show>
     </div>
   );
 
-  /** Um projeto fora da tela: situação, última fala e o dia, num cartão pequeno. */
-  function Mini(props: { id: string; i: number }) {
+  /** Topo: saudação, números do dia e o gráfico das últimas 24 h de todos os projetos. */
+  function Welcome() {
+    const hours = createMemo(() => {
+      const now = Date.now();
+      const b = Array.from({ length: 24 }, () => 0);
+      for (const p of real()) {
+        for (const it of feedOf(p.id).items) {
+          const h = Math.floor((now - it.ts) / 3_600_000);
+          if (h >= 0 && h < 24) b[23 - h]++;
+        }
+      }
+      return b;
+    });
+    const steps = () => hours().reduce((a, b) => a + b, 0);
+    const working = () => real().filter((p) => projectState(p.id).tone === "work").length;
+    const asking = () => real().filter((p) => ["ask", "error"].includes(projectState(p.id).tone)).length;
+    const changed = () => real().reduce((t, p) => t + (git.summaries[p.id]?.changed ?? 0), 0);
+    const line = () => {
+      if (!real().length) return "Vamos começar: escolha abaixo as pastas em que você quer trabalhar com IA.";
+      if (asking()) return `${asking() === 1 ? "Um projeto precisa" : `${asking()} projetos precisam`} de você.`;
+      if (working()) return `${working() === 1 ? "Uma IA está" : `${working()} IAs estão`} trabalhando agora.`;
+      return steps() ? "Tudo em ordem. Veja abaixo como foi o dia." : "Tudo calmo por aqui. Peça algo em qualquer projeto abaixo.";
+    };
+    const W = 520;
+    const H = 86;
+    const path = (close: boolean) => {
+      const h = hours();
+      const max = Math.max(1, ...h);
+      const pts = h.map((v, i) => [(i / 23) * W, H - 6 - (v / max) * (H - 14)] as const);
+      let d = `M ${pts[0][0]} ${pts[0][1]}`;
+      for (let i = 1; i < pts.length; i++) {
+        const [x0, y0] = pts[i - 1];
+        const [x1, y1] = pts[i];
+        const cx = (x0 + x1) / 2;
+        d += ` C ${cx} ${y0}, ${cx} ${y1}, ${x1} ${y1}`;
+      }
+      return close ? `${d} L ${W} ${H} L 0 ${H} Z` : d;
+    };
+    const tiles = () => [
+      { label: "Projetos", value: real().length, icon: FolderPlus, color: "#8b7bff" },
+      { label: "Trabalhando agora", value: working(), icon: Zap, color: "#34d399", live: working() > 0 },
+      { label: "Esperando você", value: asking(), icon: Hand, color: "#fbbf24", live: asking() > 0 },
+      { label: "Passos da IA hoje", value: steps(), icon: Activity, color: "#38bdf8" },
+      { label: "Arquivos mudados", value: changed(), icon: GitBranch, color: "#f472b6" },
+    ];
+    return (
+      <section class="home-hero">
+        <span class="cx-orb a" />
+        <span class="cx-orb b" />
+        <div class="home-hero-top">
+          <div class="home-hello">
+            <small class="cx-eyebrow"><Sparkles size={12} /> {today()}</small>
+            <h1>{greet()}</h1>
+            <p>{line()}</p>
+          </div>
+          <div class="home-chart" title="Passos das IAs em todos os projetos, hora a hora, nas últimas 24 h">
+            <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
+              <defs>
+                <linearGradient id="home-area" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="var(--accent)" stop-opacity="0.45" />
+                  <stop offset="100%" stop-color="var(--accent)" stop-opacity="0" />
+                </linearGradient>
+                <linearGradient id="home-line" x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="0%" stop-color="#38bdf8" />
+                  <stop offset="100%" stop-color="#a78bfa" />
+                </linearGradient>
+              </defs>
+              <path d={path(true)} fill="url(#home-area)" class="home-area" />
+              <path d={path(false)} fill="none" stroke="url(#home-line)" stroke-width="2.2" class="home-line" vector-effect="non-scaling-stroke" />
+            </svg>
+            <div class="home-chart-axis"><span>24 h atrás</span><span>12 h</span><span>agora</span></div>
+          </div>
+        </div>
+        <div class="home-tiles">
+          <For each={tiles()}>
+            {(t, i) => (
+              <div class="home-tile" classList={{ live: !!t.live }} style={{ "--k": t.color, "--i": i() }}>
+                <span class="home-tile-icon"><t.icon size={15} /></span>
+                <div>
+                  <strong><CountUp value={t.value} /></strong>
+                  <small>{t.label}</small>
+                </div>
+              </div>
+            )}
+          </For>
+        </div>
+      </section>
+    );
+  }
+
+  /** Sem projetos: as pastas onde você já usou o Claude, para adicionar com um clique. */
+  function Discover() {
+    return (
+      <section class="discover">
+        <div class="home-bar">
+          <div>
+            <h2>Comece por aqui</h2>
+            <small>{found().length ? "Achamos estas pastas onde você já usou o Claude. Um clique e ela vira projeto." : "Escolha uma pasta do seu computador para trabalhar com a IA."}</small>
+          </div>
+          <Show when={isTauri}><button class="ghost-btn" onClick={() => void addProjectFromPicker()}><FolderPlus size={14} /> Escolher outra pasta</button></Show>
+        </div>
+        <Show when={foundLoaded()} fallback={<div class="loading-rows"><div /><div /></div>}>
+          <div class="found-grid">
+            <For each={found()}>{(f, i) => <FoundCard f={f} i={i()} />}</For>
+            <button class="found-card pick" style={{ "--i": found().length }} onClick={() => void addProjectFromPicker()}>
+              <span class="found-icon"><Plus size={20} /></span>
+              <strong>Outra pasta</strong>
+              <small>Escolher no Finder</small>
+            </button>
+          </div>
+        </Show>
+      </section>
+    );
+  }
+
+  function FoundCard(props: { f: Found; i: number }) {
+    const [busy, setBusy] = createSignal(false);
+    const add = async () => {
+      setBusy(true);
+      await addProjectPath(props.f.path, false);
+      setBusy(false);
+    };
+    return (
+      <button class="found-card" style={{ "--i": props.i }} disabled={busy()} onClick={() => void add()} title={props.f.path}>
+        <span class="found-icon"><ProjectIcon id={props.f.path} name={props.f.name} stack="" size={26} /></span>
+        <strong>{props.f.name}</strong>
+        <small>{props.f.sessions} {props.f.sessions === 1 ? "conversa" : "conversas"} · {ago(props.f.last)}</small>
+        <span class="found-add">{busy() ? <span class="spinner inline" /> : <><Plus size={12} /> Adicionar</>}</span>
+      </button>
+    );
+  }
+
+  /** Um projeto na lista de baixo: arraste para um painel ou clique para abrir. */
+  function ShelfCard(props: { id: string; i: number }) {
     const p = () => projects.find((x) => x.id === props.id)!;
     const a = () => accountById(p().accountId);
     const st = () => projectState(props.id);
     const g = () => git.summaries[props.id];
     const last = () => [...feedOf(props.id).items].reverse().find((x) => x.kind === "say" || x.kind === "user");
-    // vida só quando algo muda: brilho verde ao terminar, amarelo ao começar a esperar você
     const [flash, setFlash] = createSignal("");
     createEffect(on(() => st().tone, (t, prev) => {
       if (!prev || t === prev) return;
@@ -120,18 +259,18 @@ export default function Board() {
       setFlash(kind);
       setTimeout(() => setFlash(""), 1800);
     }));
-    const open = (e: MouseEvent) => {
-      e.stopPropagation();
+    const open = () => {
       setProjectId(props.id);
       setView("workspace");
     };
     return (
       <div
-        class={`board-card mini ${st().tone}`}
-        classList={{ [`flash-${flash()}`]: !!flash() }}
+        class={`board-card mini shelf ${st().tone}`}
+        classList={{ [`flash-${flash()}`]: !!flash(), onscreen: inGrid(props.id), lifted: drag()?.id === props.id }}
         style={{ "--c": a().color, "--i": props.i }}
-        onClick={() => replacePane(undefined, props.id)}
-        title="Trazer para a tela (fica fixado)"
+        onPointerDown={(e) => startDrag(e, props.id, "project", p().name, (target) => replacePane(target, props.id))}
+        onClick={open}
+        title="Clique para abrir · arraste para um painel da tela"
       >
         <div class="board-card-top">
           <ProjectIcon id={p().id} name={p().name} stack={p().stack} size={22} />
@@ -139,7 +278,9 @@ export default function Board() {
             <strong>{p().name}</strong>
             <span class={`board-state ${st().tone}`}><i /><span>{st().label}</span><small>{st().at ? since(st().at / 1000) : ""}</small></span>
           </div>
-          <button class="board-pin" onClick={open} title="Abrir o projeto completo"><PanelRightOpen size={13} /></button>
+          <Show when={inGrid(props.id)} fallback={<button class="board-pin" title="Pôr na tela" onPointerDown={(e) => e.stopPropagation()} onClick={(e) => (e.stopPropagation(), replacePane(undefined, props.id))}><Plus size={13} /></button>}>
+            <span class="shelf-on" title="Está na tela agora">na tela</span>
+          </Show>
         </div>
         <div class="board-last" classList={{ none: !last() }}>
           <Show when={last()} fallback={<span>Nenhuma conversa nas últimas 24 h</span>}>
@@ -156,17 +297,37 @@ export default function Board() {
       </div>
     );
   }
-}
 
-function Empty() {
-  return (
-    <div class="board-grid-empty">
-      <FolderPlus size={26} />
-      <strong>Nenhum projeto ainda</strong>
-      <p>{isTauri ? "Quando você adicionar uma pasta na tela Projetos, ela aparece aqui sozinha, com a conversa da IA rolando ao vivo. Até 4 ao mesmo tempo." : "No navegador não há projetos de verdade: abra pelo app."}</p>
-      <Show when={isTauri}><button class="primary-btn small" onClick={() => void addProjectFromPicker()}><FolderPlus size={13} /> Adicionar projeto</button></Show>
-    </div>
-  );
+  /** Último cartão da lista: adiciona uma pasta (sugestões do histórico do Claude ou o Finder). */
+  function AddCard() {
+    const [open, setOpen] = createSignal(false);
+    let btn!: HTMLButtonElement;
+    return (
+      <div class="shelf-add-wrap">
+        <button class="board-card mini shelf-add" ref={btn} onClick={() => setOpen(!open())} style={{ "--i": shelf().length }}>
+          <span class="found-icon"><Plus size={20} /></span>
+          <strong>Adicionar projeto</strong>
+          <small>{found().length ? `${found().length} ${found().length === 1 ? "pasta sugerida" : "pastas sugeridas"}` : "escolher uma pasta"}</small>
+        </button>
+        <Show when={open()}>
+          <div class="menu pop-in shelf-menu" ref={(el) => dismissable(el, () => setOpen(false), () => btn)}>
+            <small class="menu-title">Onde você já usou o Claude</small>
+            <For each={found().slice(0, 8)} fallback={<small class="menu-title">Nenhuma sugestão</small>}>
+              {(f) => (
+                <button class="menu-item" onClick={() => (setOpen(false), void addProjectPath(f.path, false))} title={f.path}>
+                  <ProjectIcon id={f.path} name={f.name} stack="" size={16} />
+                  <span>{f.name}</span>
+                  <small>{ago(f.last)}</small>
+                </button>
+              )}
+            </For>
+            <div class="menu-sep" />
+            <button class="menu-item" onClick={() => (setOpen(false), void addProjectFromPicker())}><FolderPlus size={16} /><span>Escolher outra pasta…</span></button>
+          </div>
+        </Show>
+      </div>
+    );
+  }
 }
 
 /** Desenho pequeno de cada divisão da tela. */

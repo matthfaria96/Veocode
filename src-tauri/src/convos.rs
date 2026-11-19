@@ -352,3 +352,67 @@ mod tests {
         let _ = fs::remove_dir_all(&d);
     }
 }
+
+/// Uma pasta onde o Claude Code já trabalhou (para sugerir como projeto com um clique).
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct Found {
+    pub path: String,
+    pub name: String,
+    /// última conversa (segundos desde 1970)
+    pub last: u64,
+    pub sessions: usize,
+}
+
+/// Lê as pastas de histórico do Claude Code e devolve as pastas de trabalho que ainda existem,
+/// da mais recente para a mais antiga. Só lê o começo de uma conversa por pasta (onde fica o `cwd`).
+pub fn recent_folders(config_dirs: &[PathBuf], limit: usize) -> Vec<Found> {
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    let mut by_path: std::collections::HashMap<String, Found> = std::collections::HashMap::new();
+    for cfg in config_dirs {
+        let Ok(rd) = fs::read_dir(cfg.join("projects")) else { continue };
+        for d in rd.flatten() {
+            let Ok(files) = fs::read_dir(d.path()) else { continue };
+            let mut sessions: Vec<(u64, PathBuf)> = files
+                .flatten()
+                .filter(|f| f.path().extension().is_some_and(|e| e == "jsonl"))
+                .map(|f| (f.metadata().and_then(|m| m.modified()).ok().and_then(|t| t.duration_since(UNIX_EPOCH).ok()).map(|d| d.as_secs()).unwrap_or(0), f.path()))
+                .collect();
+            if sessions.is_empty() {
+                continue;
+            }
+            sessions.sort_by(|a, b| b.0.cmp(&a.0));
+            let cwd = sessions.iter().take(3).find_map(|(_, f)| peek(f, false).iter().find_map(|v| v.get("cwd").and_then(|c| c.as_str()).map(String::from)));
+            let Some(cwd) = cwd else { continue };
+            let p = PathBuf::from(&cwd);
+            // pastas temporárias, do sistema ou de dados de apps (inclusive o Chat livre do Veocode) não são projetos
+            let noise = ["/tmp", "/private/", "/var/", "/Library/", "/AppData/", "/.claude"].iter().any(|n| cwd.contains(n) || cwd.starts_with(n.trim_end_matches('/')));
+            if noise || !p.is_dir() || home.as_deref() == Some(p.as_path()) || p.parent().is_none() {
+                continue;
+            }
+            let name = p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| cwd.clone());
+            let e = by_path.entry(cwd.clone()).or_insert(Found { path: cwd, name, last: 0, sessions: 0 });
+            e.last = e.last.max(sessions[0].0);
+            e.sessions += sessions.len();
+        }
+    }
+    let mut v: Vec<Found> = by_path.into_values().collect();
+    // subpasta de outra pasta da lista conta como a de cima
+    let all: Vec<String> = v.iter().map(|f| f.path.clone()).collect();
+    v.retain(|f| !all.iter().any(|o| o != &f.path && f.path.starts_with(&format!("{o}/"))));
+    v.sort_by(|a, b| b.last.cmp(&a.last));
+    v.truncate(limit);
+    v
+}
+
+#[cfg(test)]
+mod found_tests {
+    /// Diagnóstico manual (só leitura): `cargo test real_recent_folders -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn real_recent_folders() {
+        for f in super::recent_folders(&crate::xray::caches::claude_config_dirs(), 16) {
+            println!("{} · {} sessões · {}", f.name, f.sessions, f.last);
+        }
+    }
+}

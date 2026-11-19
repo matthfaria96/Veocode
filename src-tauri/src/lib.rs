@@ -14,6 +14,7 @@ mod settings;
 mod skills;
 mod tools;
 mod trail;
+mod vault;
 mod watch;
 mod xray;
 
@@ -724,6 +725,38 @@ async fn chat_open(state: State<'_, AppState>, project_id: String, kind: String,
 
 /// Apaga uma conversa anterior: o arquivo dela vai para a Lixeira (dá para recuperar lá).
 /// Se for a conversa aberta agora, o chat do projeto começa uma nova.
+/// Pastas onde o Claude Code já trabalhou, para a Visão geral sugerir como projeto.
+#[tauri::command]
+async fn recent_folders(state: State<'_, AppState>) -> Result<Vec<convos::Found>, String> {
+    let mut dirs: Vec<PathBuf> = state.claude_dirs()?.into_iter().map(|(_, d)| d).collect();
+    for d in xray::caches::claude_config_dirs() {
+        if !dirs.contains(&d) {
+            dirs.push(d);
+        }
+    }
+    blocking(move || convos::recent_folders(&dirs, 16)).await
+}
+
+#[tauri::command]
+async fn vault_list() -> Result<Vec<vault::Item>, String> {
+    blocking(vault::list).await
+}
+
+#[tauri::command]
+async fn vault_save(item: vault::Item, secret: Option<String>) -> Result<vault::Item, String> {
+    blocking(move || vault::save(item, secret)).await?
+}
+
+#[tauri::command]
+async fn vault_delete(id: String) -> Result<(), String> {
+    blocking(move || vault::delete(&id)).await?
+}
+
+#[tauri::command]
+async fn vault_reveal(id: String) -> Result<String, String> {
+    blocking(move || vault::reveal(&id)).await?
+}
+
 #[tauri::command]
 async fn chat_delete(state: State<'_, AppState>, project_id: String, kind: String, id: String, account: String) -> Result<(), String> {
     if !convos::valid_id(&id) {
@@ -962,6 +995,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let config_dir = app.path().app_config_dir()?;
+            vault::init(&config_dir);
             let mut store = ProjectStore::load(&config_dir);
             let account_store = AccountStore::load(&config_dir);
             if !config_dir.join("accounts.json").exists() && !account_store.accounts.is_empty() {
@@ -1028,6 +1062,11 @@ pub fn run() {
             chat_history,
             chat_conversations,
             chat_delete,
+            vault_list,
+            recent_folders,
+            vault_save,
+            vault_delete,
+            vault_reveal,
             chat_open,
             list_projects,
             add_project,

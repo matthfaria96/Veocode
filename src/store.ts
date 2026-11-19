@@ -60,13 +60,15 @@ export async function addProjectFromPicker() {
 }
 
 /** Põe uma pasta como projeto (ou só abre, se já é) e vai para a tela Projetos. */
-export async function addProjectPath(path: string) {
+export async function addProjectPath(path: string, go = true) {
   try {
     const info = await api.addProject(path);
     absPaths.set(info.id, info.path);
     if (!projects.some((p) => p.id === info.id)) setProjects((l) => [...l.filter((p) => !p.demo), fromInfo(info)]);
-    setProjectId(info.id);
-    setView("workspace");
+    if (go) {
+      setProjectId(info.id);
+      setView("workspace");
+    }
     showToast(`${info.name} adicionado em modo Leitura`);
   } catch (e) {
     showToast(String(e instanceof Error ? e.message : e));

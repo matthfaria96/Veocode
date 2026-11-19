@@ -1,8 +1,9 @@
 import { dismissable } from "../dismiss";
-import { AlertTriangle, ArrowLeft, ArrowRight, Ban, Check, ChevronDown, Maximize2, MessageSquarePlus, Minimize2, PanelRightOpen, Pin, SendHorizontal, ShieldCheck, Square, X } from "lucide-solid";
+import { AlertTriangle, ArrowLeft, ArrowRight, Ban, Check, ChevronDown, Maximize2, MessageSquarePlus, Minimize2, PanelRightOpen, Pin, GripVertical, GitBranch, Sparkles, SendHorizontal, ShieldCheck, Square, X } from "lucide-solid";
 import { createEffect, createMemo, createSignal, For, on, Show } from "solid-js";
 import { accountById } from "../accounts";
-import { isPinned, maximized, movePane, panes, projectState, replacePane, setMaximized, togglePin } from "../board";
+import { isPinned, maximized, movePane, panes, projectState, replacePane, setMaximized, swapPanes, togglePin } from "../board";
+import { drag, dropOver, startDrag } from "../drag";
 import { answerPermission, chatOf, clearError, newChat, sendChat, setInput, stopChat } from "../chat";
 import { clearFeed, feedOf, type FeedItem } from "../feeds";
 import { git, gitWords } from "../git";
@@ -61,8 +62,23 @@ export default function ChatPane(props: { pid: string; index: number }) {
   const others = () => projects.filter((x) => !x.demo && x.id !== props.pid);
 
   return (
-    <section class="pane" classList={{ ask: st().tone === "ask", work: st().tone === "work", max: maximized() === props.pid }} style={{ "--c": a().color }}>
-      <header class="pane-head">
+    <section
+      class="pane"
+      data-drop-pane={props.pid}
+      classList={{ ask: st().tone === "ask", work: st().tone === "work", max: maximized() === props.pid, "drop-on": dropOver() === props.pid, lifted: drag()?.kind === "pane" && drag()?.id === props.pid }}
+      style={{ "--c": a().color }}
+    >
+      <Show when={dropOver() === props.pid}>
+        <div class="pane-drop-hint">{drag()?.kind === "pane" ? "Trocar de lugar" : `Pôr ${drag()?.label} aqui`}</div>
+      </Show>
+      <header
+        class="pane-head"
+        onPointerDown={(e) => {
+          if ((e.target as Element).closest("button:not(.pane-title), input, textarea, .menu")) return;
+          startDrag(e, props.pid, "pane", p().name, (target) => swapPanes(props.pid, target));
+        }}
+      >
+        <span class="pane-grip" title="Arraste para trocar de lugar"><GripVertical size={13} /></span>
         <button class="pane-title" ref={titleBtn} onClick={() => setPick(!pick())} title="Trocar o projeto deste canto">
           <ProjectIcon id={p().id} name={p().name} stack={p().stack} size={18} />
           <strong>{p().name}</strong>
@@ -109,7 +125,7 @@ export default function ChatPane(props: { pid: string; index: number }) {
 
       <div class="pane-scroll" ref={scroller} onScroll={onScroll}>
         <Show when={feed().loaded || feed().items.length} fallback={<div class="pane-empty"><span class="spinner" /> Lendo a conversa…</div>}>
-          <Show when={list().length || chat().busy} fallback={<div class="pane-empty">Nenhuma conversa nas últimas 24 h. Peça algo abaixo para {a().label} trabalhar em {p().name}.</div>}>
+          <Show when={list().length || chat().busy} fallback={<PaneIdle pid={props.pid} />}>
             <For each={list()}>
               {(b) =>
                 b.kind === "steps" ? (
@@ -201,6 +217,39 @@ function Steps(props: { items: FeedItem[] }) {
           </div>
         )}
       </For>
+    </div>
+  );
+}
+
+/** Painel sem conversa recente: em vez de um vazio, o projeto e ideias para começar. */
+function PaneIdle(props: { pid: string }) {
+  const p = () => projects.find((x) => x.id === props.pid)!;
+  const a = () => accountById(p().accountId);
+  const g = () => git.summaries[props.pid];
+  const ideas = () => [
+    g()?.changed ? "Revise as mudanças que ainda não foram salvas no git e me diga se algo parece errado" : "Me explique como este projeto está organizado",
+    "Procure bugs ou pontos frágeis no código e liste os mais importantes",
+    "Rode os testes (ou o build) e me diga o que falhou",
+  ];
+  return (
+    <div class="pane-idle">
+      <div class="pane-idle-mark"><ProjectIcon id={p().id} name={p().name} stack={p().stack} size={40} /></div>
+      <strong>{p().name}</strong>
+      <small>
+        {p().stack || "Projeto"}
+        <Show when={g()?.repo}> · <GitBranch size={11} /> {g()!.branch ?? "git"}</Show>
+        <Show when={gitWords(g()).length}> · {gitWords(g()).map((w) => w.text).join(" · ")}</Show>
+      </small>
+      <p>Nenhuma conversa nas últimas 24 h. Que tal começar por uma destas?</p>
+      <div class="pane-ideas">
+        <For each={ideas()}>
+          {(t, i) => (
+            <button style={{ "--i": i(), "--c": a().color }} onClick={() => (setInput(props.pid, t), focusComposer(document.querySelector(`[data-drop-pane="${props.pid}"]`)))}>
+              <Sparkles size={12} /> {t}
+            </button>
+          )}
+        </For>
+      </div>
     </div>
   );
 }

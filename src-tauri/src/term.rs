@@ -172,6 +172,9 @@ impl Terms {
         cmd.env("COLORTERM", "truecolor");
         cmd.env("TERM_PROGRAM", "Veocode");
         cmd.env("VEOCODE_PROJECT", &a.project_name);
+        for (k, v) in crate::vault::env_for(&a.project_id) {
+            cmd.env(k, v);
+        }
         for k in ["CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "TERM_SESSION_ID"] {
             cmd.env_remove(k);
         }

@@ -4,7 +4,7 @@ import { helpOpen, setHelpOpen, setView, view, type View } from "../store";
 
 // "also": telas que acendem o mesmo ícone (abas da mesma área)
 const items: { id: View; label: string; icon: () => JSX.Element; also?: View[] }[] = [
-  { id: "board", label: "Visão geral (todos os projetos e ao vivo)", icon: () => <LayoutDashboard size={19} /> },
+  { id: "board", label: "Início: visão geral dos projetos", icon: () => <LayoutDashboard size={19} /> },
   { id: "workspace", label: "Projetos", icon: () => <FolderOpen size={19} /> },
   { id: "livre", label: "Chat livre", icon: () => <MessagesSquare size={19} /> },
   { id: "accounts", label: "Contas e IAs", icon: () => <Bot size={19} /> },

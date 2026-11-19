@@ -187,7 +187,12 @@ async function tick() {
   }
   const jobs: Promise<void>[] = [];
   for (const [pid, every] of due) {
-    if (now - (lastPoll.get(pid) ?? 0) < every || !isClaude(pid) || !isTauri) continue;
+    if (!isTauri) {
+      ensure(pid);
+      if (!feeds[pid].loaded) setFeeds(pid, "loaded", true);
+      continue;
+    }
+    if (now - (lastPoll.get(pid) ?? 0) < every || !isClaude(pid)) continue;
     lastPoll.set(pid, now);
     const reset = !lastPoll.has(`${pid}#started`);
     lastPoll.set(`${pid}#started`, now);

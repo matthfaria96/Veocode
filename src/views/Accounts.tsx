@@ -1,9 +1,10 @@
-import { Check, FolderOpen, KeyRound, LogIn, Pencil, Plus, RefreshCw, Trash2 } from "lucide-solid";
-import { ProjectIcon } from "../components/icons";
+import { Activity, ArrowRight, Check, FolderOpen, KeyRound, LogIn, Pencil, Plug, Plus, RefreshCw, Trash2 } from "lucide-solid";
+import Vault from "../components/Vault";
 import { createMemo, createSignal, For, Show } from "solid-js";
+import { vault } from "../vault";
+const vaultCount = () => vault.items.length;
 import { api, isTauri, prettyPath } from "../api";
-import { accessLevels } from "../data/mock";
-import { projects, setProjectAccount, showToast } from "../store";
+import { projects, setView, showToast } from "../store";
 import {
   accts, addAccount, checkAccount, fmtAgo, fmtTokens, loginAccount, palette, prettyModel, providers, refreshStatuses,
   removeAccount, setAccountKey, stateText, updateAccount, type Account, type ProviderId,
@@ -31,6 +32,53 @@ const weekday = (offset: number) => {
   return d.toLocaleDateString("pt-BR", { weekday: "short" }).replace(".", "");
 };
 
+/** Topo de Contas: a semana de todas as contas num gráfico só, uma cor por conta. */
+function WeekHero() {
+  const series = createMemo(() =>
+    accts.list.map((a) => ({ a, days: accts.status[a.id]?.usage?.days ?? [0, 0, 0, 0, 0, 0, 0] })).filter((x) => x.days.some((d) => d > 0)),
+  );
+  const totals = createMemo(() => Array.from({ length: 7 }, (_, i) => series().reduce((t, x) => t + (x.days[i] ?? 0), 0)));
+  const max = () => Math.max(1, ...totals());
+  const week = () => totals().reduce((a, b) => a + b, 0);
+  const active = () => accts.list.filter((a) => accts.status[a.id]?.active).length;
+  return (
+    <section class="acc-hero">
+      <span class="cx-orb a" />
+      <span class="cx-orb b" />
+      <div class="acc-hero-main">
+        <small class="cx-eyebrow"><Activity size={12} /> Últimos 7 dias, todas as contas</small>
+        <strong class="cx-big"><CountUp value={week()} format={fmtTokens} /> <span class="acc-hero-unit">tokens</span></strong>
+        <p>
+          {accts.list.length} {accts.list.length === 1 ? "conta" : "contas"}
+          {active() ? ` · ${active()} trabalhando agora` : " · nenhuma trabalhando agora"}
+          {vaultCount() ? ` · ${vaultCount()} ${vaultCount() === 1 ? "chave guardada" : "chaves guardadas"} no cofre` : ""}
+        </p>
+        <div class="cx-legend">
+          <For each={series()}>
+            {(x, i) => (
+              <span style={{ "--k": x.a.color, "--i": i() }}>
+                <i /> {x.a.label} <b>{fmtTokens(x.days.reduce((t, d) => t + d, 0))}</b>
+              </span>
+            )}
+          </For>
+        </div>
+      </div>
+      <div class="acc-week" aria-label="Tokens por dia">
+        <For each={totals()}>
+          {(_, i) => (
+            <div class="acc-week-col" style={{ "--i": i() }}>
+              <div class="acc-week-stack" style={{ height: `${Math.max(3, (totals()[i()] / max()) * 100)}%` }} title={`${weekday(6 - i())}: ${fmtTokens(totals()[i()])} tokens`}>
+                <For each={series()}>{(x) => <span style={{ flex: x.days[i()] || 0, background: x.a.color }} />}</For>
+              </div>
+              <small classList={{ today: i() === 6 }}>{i() === 6 ? "hoje" : weekday(6 - i())}</small>
+            </div>
+          )}
+        </For>
+      </div>
+    </section>
+  );
+}
+
 export default function Accounts() {
   const [adding, setAdding] = createSignal(false);
   const [removing, setRemoving] = createSignal<Account | null>(null);
@@ -40,7 +88,7 @@ export default function Accounts() {
     <div class="page">
       <PageHeader
         title="Contas e IAs"
-        subtitle={isTauri ? "Cada conta do Claude é uma pasta separada do Claude Code. Chaves de API ficam no chaveiro do sistema." : "Modo navegador: contas de exemplo. Abra pelo app para ver as suas."}
+        subtitle={isTauri ? "Suas IAs, quanto cada uma trabalhou e o cofre com as chaves e senhas que os projetos usam." : "Modo navegador: contas de exemplo. Abra pelo app para ver as suas."}
         actions={
           <>
             <button class="ghost-btn" onClick={() => refreshStatuses()}>
@@ -57,50 +105,25 @@ export default function Accounts() {
         <div class="empty-state">Nenhuma conta ainda. Adicione uma conta do Claude, uma chave da DeepSeek ou o Ollama.</div>
       </Show>
 
+      <WeekHero />
+
+      <h2 class="section-title acc-section">Suas contas de IA</h2>
       <div class="acc-grid">
         <Stagger each={accts.list} step={70}>
           {(a) => <AccountCard a={a} onRemove={setRemoving} onKey={setKeyFor} />}
         </Stagger>
       </div>
 
-      <Show when={accts.list.length > 0}>
-        <h2 class="section-title">Quem usa o quê</h2>
-        <p class="section-sub">Clique numa célula para trocar a conta do projeto.</p>
-        <div class="matrix" style={{ "--cols": accts.list.length }}>
-          <div class="mx-head mx-corner">Projeto</div>
-          <For each={accts.list}>
-            {(a) => (
-              <div class="mx-head" style={{ "--c": a.color }}>
-                <ProviderMark id={a.id} size={20} />
-                <span>{a.label}</span>
-              </div>
-            )}
-          </For>
-          <For each={projects}>
-            {(p) => (
-              <>
-                <div class="mx-proj">
-                  <strong><ProjectIcon id={p.id} name={p.name} stack={p.stack} size={14} /> {p.name}</strong>
-                  <small style={{ color: accessLevels[p.access].color }}>{accessLevels[p.access].name}</small>
-                </div>
-                <For each={accts.list}>
-                  {(a) => (
-                    <button
-                      class="mx-cell"
-                      classList={{ on: p.accountId === a.id }}
-                      style={{ "--c": a.color }}
-                      onClick={() => setProjectAccount(p.id, a.id)}
-                      title={`Usar ${a.label} em ${p.name}`}
-                    >
-                      <span class="mx-dot" />
-                    </button>
-                  )}
-                </For>
-              </>
-            )}
-          </For>
+      <Vault />
+
+      <section class="acc-integrations">
+        <span class="vault-badge alt"><Plug size={18} /></span>
+        <div>
+          <strong>Integrações</strong>
+          <p>Conexões do Claude com outros programas (Figma, GitHub, navegador…), receitas e atalhos ficam em <b>Computador → Extras do Claude</b>, com ligar, desligar e remover.</p>
         </div>
-      </Show>
+        <button class="ghost-btn" onClick={() => setView("inventory")}>Abrir Extras <ArrowRight size={13} /></button>
+      </section>
 
       <Show when={adding()}>
         <AddAccount onClose={() => setAdding(false)} />

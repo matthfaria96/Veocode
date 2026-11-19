@@ -557,8 +557,19 @@ fn spawn_claude(a: &SendArgs, resume: Option<&str>, level_key: String, proc_id: 
     if let Some(d) = &a.add_dir {
         cmd.arg("--add-dir").arg(d);
     }
-    if let Some(p) = a.prompt.as_deref().filter(|p| !p.is_empty()) {
+    // credenciais do cofre: os valores vão no ambiente; o Claude recebe só os nomes
+    let vault_note = crate::vault::prompt_for(&a.project_id);
+    let prompt = match (a.prompt.as_deref().filter(|p| !p.is_empty()), vault_note.as_deref()) {
+        (Some(p), Some(v)) => Some(format!("{p}\n\n{v}")),
+        (Some(p), None) => Some(p.to_string()),
+        (None, Some(v)) => Some(v.to_string()),
+        (None, None) => None,
+    };
+    if let Some(p) = prompt {
         cmd.arg("--append-system-prompt").arg(p);
+    }
+    for (k, v) in crate::vault::env_for(&a.project_id) {
+        cmd.env(k, v);
     }
     if let Some(m) = a.account.model.as_deref().filter(|m| !m.is_empty()) {
         cmd.args(["--model", m]);
