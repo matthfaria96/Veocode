@@ -28,7 +28,7 @@ cd src-tauri && cargo test   # testes do lado Rust
 | Tela | O que mostra |
 |---|---|
 | Visão geral | Tela de início: o dia em números e gráfico, até 4 conversas ao vivo (arraste para trocar de lugar) e a lista de projetos, com sugestões de pastas onde você já usou o Claude |
-| Projetos | Árvore de arquivos, editor, chat com o agente (o nível de acesso fica dentro dele), Rastro (pastas fora do projeto, sobras, instalações e sites que a IA usou), Git com desenho dos branches, atividade, terminal próprio e cursores; modo Simples/Avançado (coluna com todos os projetos) |
+| Projetos | Árvore de arquivos, editor, chat com o agente (o nível de acesso fica dentro dele), Git com desenho dos branches, Rastro (sobras para limpar, pastas fora do projeto, instalações e o que a IA consultou), atividade, terminal próprio e cursores; modo Simples/Avançado (coluna com todos os projetos) |
 | Contas e IAs | Uso de cada conta e matriz "quem usa o quê" (clique para trocar) |
 | Computador → Espaço e memória | (antigo Raio-X) Caches com limpeza, o que cada IA instalou, IAs locais (Ollama, LM Studio, Hugging Face), VMs/containers com o projeto de origem e IAs abertas com onde estão |
 | Computador → Extras do Claude | (antigos Inventário e Skills e MCP) Receitas, atalhos, ajudantes, conexões e pacotes: onde valem, quanto pesam, ligar, desligar e tirar, e ler cada receita |

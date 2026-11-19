@@ -1,5 +1,5 @@
 import { dismissable } from "../dismiss";
-import { AlertTriangle, ArrowLeft, Ban, Check, ChevronDown, FileCode2, History, MessageSquarePlus, Paperclip, SendHorizontal, ShieldCheck, Square, TerminalSquare, X } from "lucide-solid";
+import { AlertTriangle, ArrowLeft, Ban, Check, ChevronDown, FileCode2, History, MessageSquarePlus, Paperclip, Plus, SendHorizontal, ShieldCheck, Square, TerminalSquare, X } from "lucide-solid";
 import { createEffect, createMemo, createResource, createSignal, For, Match, on, Show, Switch } from "solid-js";
 import { accessLevels } from "../data/mock";
 import { accountById, accountSub, accts } from "../accounts";
@@ -13,6 +13,9 @@ import GitPanel from "./GitPanel";
 import TrailPanel from "./TrailPanel";
 import ConvoRow from "./ConvoRow";
 import { git, gitTab, setGitTab } from "../git";
+import { claudeModels, efforts, prefsLabel, prefsOf, setPref } from "../chatPrefs";
+import { attsOf, dropPid, pasteFiles, pickFiles } from "../attachments";
+import AttachBar from "./AttachBar";
 import ActivityIcon, { kindColor } from "./ActivityIcon";
 import { ProviderMark } from "./ui";
 import MsgTools, { focusComposer } from "./MsgTools";
@@ -302,19 +305,34 @@ function Composer(props: { onLevel: () => void }) {
   createEffect(on(() => p().id, () => requestAnimationFrame(() => box && fit())));
 
   return (
-    <div class="composer" classList={{ busy: chat().busy }}>
-      <Show when={chat().attach && canAttach()}>
-        <div class="attach-chip pop-in">
-          <FileCode2 size={12} />
-          <span title={ws.activeFile}>{fileName(ws.activeFile)}</span>
-          <button title="Não mandar o arquivo" onClick={() => setAttach(p().id, false)}><X size={11} /></button>
-        </div>
-      </Show>
+    <div class="composer" classList={{ busy: chat().busy, dropping: dropPid() === p().id }} data-attach-pid={demo() ? undefined : p().id}>
+      <AttachBar
+        pid={p().id}
+        extra={
+          <Show when={canAttach()}>
+            <Show
+              when={chat().attach}
+              fallback={
+                <button class="att-suggest" title="Mandar junto o arquivo aberto no editor" onClick={() => setAttach(p().id, true)}>
+                  <Plus size={11} /> {fileName(ws.activeFile)}
+                </button>
+              }
+            >
+              <div class="att text open-file" title={ws.activeFile}>
+                <span class="att-icon"><FileCode2 size={14} /></span>
+                <span class="att-text"><strong>{fileName(ws.activeFile)}</strong><small>aberto no editor</small></span>
+                <button class="att-x" title="Não mandar o arquivo aberto" onClick={() => setAttach(p().id, false)}><X size={11} /></button>
+              </div>
+            </Show>
+          </Show>
+        }
+      />
       <textarea
         ref={box}
         rows={2}
         value={chat().input}
-        placeholder={`Pedir algo a ${a().label}… (Enter envia)`}
+        placeholder={`Pedir algo a ${a().label}… (Enter envia, ⌘V cola imagens)`}
+        onPaste={(e) => !demo() && void pasteFiles(p().id, e)}
         onInput={(e) => {
           setInput(p().id, e.currentTarget.value);
           fit();
@@ -327,13 +345,7 @@ function Composer(props: { onLevel: () => void }) {
         }}
       />
       <div class="composer-bar">
-        <button
-          class="icon-btn"
-          classList={{ on: chat().attach && canAttach() }}
-          disabled={!canAttach()}
-          title={canAttach() ? `Mandar junto o arquivo aberto (${fileName(ws.activeFile)})` : "Abra um arquivo para mandar junto"}
-          onClick={() => setAttach(p().id, !chat().attach)}
-        >
+        <button class="icon-btn" classList={{ on: attsOf(p().id).length > 0 }} disabled={demo()} title="Anexar arquivos ou imagens (ou cole com ⌘V, ou arraste do Finder)" onClick={() => void pickFiles(p().id)}>
           <Paperclip size={14} />
         </button>
         <button class="composer-chip" style={{ "--lc": level().color }} title="Nível de acesso deste projeto" onClick={props.onLevel}>
@@ -342,7 +354,7 @@ function Composer(props: { onLevel: () => void }) {
         <Show
           when={chat().busy}
           fallback={
-            <button class="send-btn" disabled={!demo() && !chat().input.trim()} title="Enviar (Enter)" onClick={send}>
+            <button class="send-btn" disabled={!demo() && !chat().input.trim() && !attsOf(p().id).length} title="Enviar (Enter)" onClick={send}>
               <SendHorizontal size={14} />
             </button>
           }
@@ -384,7 +396,7 @@ export default function ChatPanel() {
           <ProviderMark id={account().id} size={26} />
           <div>
             <strong>{account().label}</strong>
-            <small>{accountSub(account())}</small>
+            <small>{account().provider === "claude" ? prefsLabel(project().id) ?? accountSub(account()) : accountSub(account())}</small>
           </div>
           <ChevronDown size={14} />
         </button>
@@ -405,34 +417,60 @@ export default function ChatPanel() {
           {level().short}
         </button>
         <Show when={pickAccount()}>
-          <div class="menu pop-in" ref={(el) => dismissable(el, () => setPickAccount(false))}>
-            <small class="menu-title">Usar neste projeto</small>
+          <div class="menu pop-in agent-menu" ref={(el) => dismissable(el, () => setPickAccount(false))}>
+            <small class="menu-title">Conta neste projeto</small>
             <For each={accts.list}>
               {(a) => (
                 <button
                   class="menu-item"
                   classList={{ sel: a.id === account().id }}
                   onClick={() => {
+                    if (a.id === account().id) return;
                     setProjectAccount(project().id, a.id);
-                    setPickAccount(false);
                     showToast(`${project().name} agora usa ${a.label}`);
                   }}
                 >
                   <ProviderMark id={a.id} size={20} />
                   <span>{a.label}</span>
                   <small>{accountSub(a)}</small>
+                  <Show when={a.id === account().id}><Check size={14} class="menu-check" /></Show>
                 </button>
               )}
             </For>
+            <Show when={account().provider === "claude"}>
+              <div class="menu-sep" />
+              <small class="menu-title">Modelo</small>
+              <div class="agent-chips">
+                <For each={claudeModels}>
+                  {(m) => (
+                    <button class="agent-chip" classList={{ on: (prefsOf(project().id).model ?? null) === m.id }} title={m.id ? `${m.label}: ${m.hint}` : `Usa o modelo da conta (${accountSub(account())})`} onClick={() => setPref(project().id, { model: m.id })}>
+                      {m.label}
+                    </button>
+                  )}
+                </For>
+              </div>
+              <small class="menu-title">Força do raciocínio</small>
+              <div class="agent-chips effort">
+                <For each={efforts}>
+                  {(e, i) => (
+                    <button class="agent-chip" classList={{ on: (prefsOf(project().id).effort ?? null) === e.id }} data-lvl={i()} title={e.id ? `Pensa ${e.label.toLowerCase()}: ${i() <= 2 ? "responde mais rápido e gasta menos" : "pensa mais antes de responder e gasta mais"}` : "Usa o padrão do Claude Code"} onClick={() => setPref(project().id, { effort: e.id })}>
+                      <Show when={e.id}><i class="effort-bars"><b /><b /><b /><b /><b /></i></Show>
+                      {e.label}
+                    </button>
+                  )}
+                </For>
+              </div>
+              <p class="agent-menu-note">Vale a partir da próxima mensagem; a conversa continua de onde parou.</p>
+            </Show>
           </div>
         </Show>
       </div>
 
       <div class="seg three">
         <button classList={{ active: tab() === "chat" || tab() === "access" }} onClick={() => setTab("chat")} title="Conversa com a IA e o que ela pode fazer">Agente</button>
-        <button classList={{ active: tab() === "trail" }} onClick={() => setTab("trail")} title="O que a IA deixou: pastas fora do projeto, sobras, sites consultados e o que instalou">Rastro</button>
         <button classList={{ active: tab() === "git" }} onClick={() => setTab("git")} title="Git e GitHub deste projeto">Git <GitBadge /></button>
-        <span class="seg-thumb" style={{ transform: `translateX(${(tab() === "access" ? 0 : ["chat", "trail", "git"].indexOf(tab())) * 100}%)` }} />
+        <button classList={{ active: tab() === "trail" }} onClick={() => setTab("trail")} title="O que a IA deixou: sobras para limpar, pastas fora do projeto e o que instalou">Rastro</button>
+        <span class="seg-thumb" style={{ transform: `translateX(${(tab() === "access" ? 0 : ["chat", "git", "trail"].indexOf(tab())) * 100}%)` }} />
       </div>
 
       <Switch>

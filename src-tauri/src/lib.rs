@@ -1,4 +1,5 @@
 mod access;
+mod attach;
 mod agent;
 mod apiagent;
 mod chat;
@@ -121,14 +122,26 @@ fn add_project(app: AppHandle, state: State<'_, AppState>, path: String) -> Resu
 }
 
 #[tauri::command(async)]
-fn remove_project(state: State<'_, AppState>, project_id: String) -> Result<(), String> {
-    let mut store = state.store.lock().map_err(|e| e.to_string())?;
-    store.remove(&project_id);
-    store.save()?;
+fn remove_project(state: State<'_, AppState>, project_id: String, trash_folder: Option<bool>) -> Result<(), String> {
+    let root = state.root_of(&project_id).ok();
+    // mandar a pasta para a Lixeira: confere antes de tirar da lista, para não sumir pela metade
+    let trash = trash_folder.unwrap_or(false);
+    if trash {
+        let r = root.as_ref().ok_or("projeto não encontrado")?;
+        projects::folder_trashable(r, &[state.config_dir.clone(), state.data_dir.clone()])?;
+    }
+    state.chats.reset(&project_id); // fecha o Claude deste projeto (a conversa continua guardada)
     if let Ok(mut ws) = state.watchers.lock() {
         ws.remove(&project_id); // soltar o Debouncer para de observar
     }
     state.terms.close_project(&project_id);
+    if trash {
+        let r = root.clone().unwrap();
+        inventory::to_trash(&[r]).map_err(|e| format!("não deu para mandar a pasta para a Lixeira: {e}"))?;
+    }
+    let mut store = state.store.lock().map_err(|e| e.to_string())?;
+    store.remove(&project_id);
+    store.save()?;
     Ok(())
 }
 
@@ -528,9 +541,23 @@ async fn agent_poll(state: State<'_, AppState>, project_id: String, reset: Optio
 /// Manda um pedido para o agente do projeto (Claude Code sem terminal, ou API). A resposta
 /// chega aos poucos pelo evento `chat-event`.
 #[tauri::command(async)]
-fn chat_send(app: AppHandle, state: State<'_, AppState>, project_id: String, text: String, attach: Option<String>) -> Result<(), String> {
+fn chat_send(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    project_id: String,
+    text: String,
+    attach: Option<String>,
+    model: Option<String>,
+    effort: Option<String>,
+    files: Option<Vec<String>>,
+) -> Result<(), String> {
+    let (model, effort) = chat::model_choice(model, effort)?;
+    let files = attach::checked(files)?;
     if project_id == livre::ID {
-        let account = state.free_account()?;
+        let mut account = state.free_account()?;
+        if account.provider == Provider::Claude && model.is_some() {
+            account.model = model.clone();
+        }
         let pc = state.settings.lock().map_err(|e| e.to_string())?.free_pc;
         let t = livre::target(&state.data_dir, &xray::util::home(), pc)?;
         let claude = account.provider == Provider::Claude;
@@ -551,11 +578,17 @@ fn chat_send(app: AppHandle, state: State<'_, AppState>, project_id: String, tex
                 prompt: Some(t.prompt),
                 tools: t.tools,
                 stream_steps: true,
+                effort: if claude { effort } else { None },
+                files,
             },
         );
     }
     let p = state.store.lock().map_err(|e| e.to_string())?.get(&project_id).cloned().ok_or("projeto não encontrado")?;
-    let account = state.accounts.lock().map_err(|e| e.to_string())?.get(&p.account_id).cloned().ok_or("conta não encontrada")?;
+    let mut account = state.accounts.lock().map_err(|e| e.to_string())?.get(&p.account_id).cloned().ok_or("conta não encontrada")?;
+    let claude = account.provider == Provider::Claude;
+    if claude && model.is_some() {
+        account.model = model;
+    }
     let root = PathBuf::from(&p.path);
     chat::project_root_ok(&root)?;
     // arquivo anexado: só dentro do projeto e até 60 KB
@@ -593,8 +626,23 @@ fn chat_send(app: AppHandle, state: State<'_, AppState>, project_id: String, tex
             prompt: None,
             tools: true,
             stream_steps: false,
+            effort: if claude { effort } else { None },
+            files,
         },
     )
+}
+
+/// Guarda um anexo colado (imagem do ⌘V) e devolve o que a interface mostra.
+#[tauri::command]
+async fn attach_stage(state: State<'_, AppState>, name: String, data: String) -> Result<attach::Staged, String> {
+    let dir = state.data_dir.join("anexos");
+    blocking(move || attach::stage(&dir, &name, &data)).await?
+}
+
+/// Confere arquivos escolhidos no Finder ou arrastados para o chat.
+#[tauri::command]
+async fn attach_info(paths: Vec<String>) -> Result<Vec<attach::Staged>, String> {
+    blocking(move || paths.iter().take(20).map(|p| attach::info(p)).collect()).await?
 }
 
 #[tauri::command(async)]
@@ -929,6 +977,21 @@ async fn xray_trash(state: State<'_, AppState>, id: String) -> Result<(), String
     blocking(move || xray::caches::move_to_trash(&spec, &roots)).await?
 }
 
+/// Quanto o Claude ocupa nesta máquina (app, Claude Code e o Veocode), com consertos.
+#[tauri::command]
+async fn claude_space(state: State<'_, AppState>) -> Result<xray::claude_space::Report, String> {
+    let accounts: Vec<PathBuf> = state.claude_dirs()?.into_iter().map(|(_, d)| d).collect();
+    let mine = vec![state.config_dir.clone(), state.data_dir.clone()];
+    blocking(move || xray::claude_space::report(&accounts, &mine)).await
+}
+
+/// Aplica um conserto do espaço do Claude (só por id; manda para a Lixeira).
+#[tauri::command]
+async fn claude_space_fix(state: State<'_, AppState>, id: String) -> Result<u64, String> {
+    let accounts: Vec<PathBuf> = state.claude_dirs()?.into_iter().map(|(_, d)| d).collect();
+    blocking(move || xray::claude_space::apply(&id, &accounts)).await?
+}
+
 #[tauri::command]
 async fn xray_installs() -> Result<xray::installs::InstallReport, String> {
     blocking(|| xray::installs::report(&xray::caches::claude_config_dirs())).await
@@ -1100,6 +1163,10 @@ pub fn run() {
             xray_caches,
             xray_measure,
             xray_trash,
+            claude_space,
+            attach_stage,
+            attach_info,
+            claude_space_fix,
             xray_installs,
             xray_machines,
             xray_models,

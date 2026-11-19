@@ -129,6 +129,10 @@ pub struct SendArgs {
     pub tools: bool,
     /// passos saem da saída do Claude (Chat livre)
     pub stream_steps: bool,
+    /// força do raciocínio do Claude (`--effort`): low, medium, high, xhigh, max
+    pub effort: Option<String>,
+    /// anexos (caminhos absolutos já conferidos)
+    pub files: Vec<PathBuf>,
 }
 
 impl Chats {
@@ -194,7 +198,8 @@ impl Chats {
         if chat.busy.load(Ordering::SeqCst) {
             return Err("O Claude ainda está respondendo. Espere ou pare a resposta.".into());
         }
-        let level_key = format!("{}:{}:{}:{:?}:{:?}", a.level, a.mode, a.settings, a.add_dir, a.prompt);
+        // modelo e força entram na chave: trocar um deles reabre o processo (a conversa continua)
+        let level_key = format!("{}:{}:{}:{:?}:{:?}:{:?}:{:?}", a.level, a.mode, a.settings, a.add_dir, a.prompt, a.account.model, a.effort);
         chat.stream_steps = a.stream_steps.then(|| a.root.clone());
         // processo de outra conta ou de outro nível: fecha e abre de novo (a sessão continua
         // se for a mesma conta)
@@ -231,7 +236,8 @@ impl Chats {
         }
         let p = chat.claude.as_mut().unwrap();
         chat.busy.store(true, Ordering::SeqCst);
-        let r = write_line(&mut p.stdin, &json!({"type":"user","message":{"role":"user","content":text},"parent_tool_use_id":null,"session_id":""}));
+        let content = crate::attach::claude_content(&text, &a.files);
+        let r = write_line(&mut p.stdin, &json!({"type":"user","message":{"role":"user","content":content},"parent_tool_use_id":null,"session_id":""}));
         if r.is_err() {
             chat.busy.store(false, Ordering::SeqCst);
         }
@@ -458,6 +464,7 @@ impl Chats {
             if let Some((path, body)) = &a.attach {
                 content = format!("{content}\n\nArquivo `{path}` (aberto no Veocode):\n```\n{body}\n```");
             }
+            let content = crate::attach::api_text(&content, &a.files);
             chat.history.push(json!({"role":"user","content":content}));
             chat.cancel = Arc::new(AtomicBool::new(false));
             chat.busy.store(true, Ordering::SeqCst);
@@ -545,6 +552,24 @@ fn explain(stderr: &str) -> String {
     }
 }
 
+/// Modelo e força escolhidos no chat. Só nomes simples (apelido como `opus` ou nome completo
+/// como `claude-opus-5-5`) e os níveis que o Claude aceita; vazio = o padrão da conta.
+pub fn model_choice(model: Option<String>, effort: Option<String>) -> Result<(Option<String>, Option<String>), String> {
+    let model = model.map(|m| m.trim().to_string()).filter(|m| !m.is_empty());
+    if let Some(m) = &model {
+        if m.len() > 64 || !m.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '.' | '_' | '[' | ']')) {
+            return Err(format!("modelo inválido: {m}"));
+        }
+    }
+    let effort = effort.map(|e| e.trim().to_string()).filter(|e| !e.is_empty());
+    if let Some(e) = &effort {
+        if !matches!(e.as_str(), "low" | "medium" | "high" | "xhigh" | "max") {
+            return Err(format!("força inválida: {e}"));
+        }
+    }
+    Ok((model, effort))
+}
+
 static NEXT_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 fn spawn_claude(a: &SendArgs, resume: Option<&str>, level_key: String, proc_id: u64) -> Result<ClaudeProc, String> {
@@ -573,6 +598,9 @@ fn spawn_claude(a: &SendArgs, resume: Option<&str>, level_key: String, proc_id: 
     }
     if let Some(m) = a.account.model.as_deref().filter(|m| !m.is_empty()) {
         cmd.args(["--model", m]);
+    }
+    if let Some(e) = a.effort.as_deref() {
+        cmd.args(["--effort", e]);
     }
     if let Some(s) = resume {
         cmd.arg(format!("--resume={s}"));
@@ -680,6 +708,14 @@ pub fn project_root_ok(root: &Path) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn model_and_effort_are_checked() {
+        assert_eq!(model_choice(Some("opus".into()), Some("high".into())).unwrap(), (Some("opus".into()), Some("high".into())));
+        assert_eq!(model_choice(Some(" ".into()), None).unwrap(), (None, None));
+        assert!(model_choice(Some("opus; rm -rf".into()), None).is_err());
+        assert!(model_choice(None, Some("turbo".into())).is_err());
+    }
 
     #[test]
     fn reads_claude_stream() {

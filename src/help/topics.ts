@@ -100,7 +100,9 @@ export const topics: Topic[] = [
           "Esquerda: a árvore de arquivos. Marcas coloridas mostram o que foi lido, editado, criado ou apagado.",
           "Meio: o editor. Clique no texto e escreva: ele grava sozinho (em cima aparece Salvando… e depois Salvo). ⌘S (Ctrl+S) grava na hora. As linhas que a IA mudou ficam destacadas.",
           "Embaixo: Atividade (cada passo da IA e cada mudança no disco), Comandos do agente (o que a IA rodou e a saída) e Terminal (um terminal seu, de verdade, nesta pasta). Arraste a borda de cima para deixar o painel mais alto.",
-          "Direita: o painel do agente, com três abas: Agente (a conversa; o nível de acesso abre clicando no selo do nível), Rastro (o que a IA deixou fora e dentro da pasta) e Git.",
+          "Direita: o painel do agente, com três abas: Agente (a conversa; o nível de acesso abre clicando no selo do nível), Git e Rastro (o que a IA deixou fora e dentro da pasta).",
+          "Clique no nome da conta, no topo do painel do agente, para trocar a conta, o modelo do Claude (Opus, Fable, Sonnet, Haiku) e a força do raciocínio. Vale a partir da próxima mensagem e a conversa continua.",
+          "Terminou um projeto? No menu do nome do projeto (em cima, à esquerda) ou no ⋯ do cartão na tela inicial, use \"Fechar projeto…\": dá para só tirar do Veocode (a pasta fica) ou também mandar a pasta para a Lixeira.",
           "Embaixo, o botão Simples/Avançado: no Avançado aparece à esquerda uma coluna com todos os projetos, um embaixo do outro, para trocar com um clique sem sair da tela.",
           "Em cima, \"IAs abertas\" conta cada Claude aberto agora no computador (no VS Code, no app do Claude, no Terminal…). Passe o mouse para ver onde estão.",
           "Cursores coloridos (um por conta, e um para cada subagente) mostram onde a IA está mexendo agora.",
@@ -130,11 +132,11 @@ export const topics: Topic[] = [
       {
         title: "Rastro: o que a IA deixou",
         items: [
-          "Pastas fora do projeto: lugares fora da pasta onde a IA criou ou copiou coisas (por exemplo, um editor do jogo gerado ao lado do jogo). Ficam ligadas ao projeto mesmo depois, e dá para abrir como projeto, mostrar no Finder ou esquecer.",
-          "Se uma pasta foi criada por fora, \"Ligar uma pasta\" junta ela ao projeto à mão.",
-          "Sobras dentro da pasta: arquivos de debug, logs, backups e cópias, e arquivos que a IA criou e o git ainda não acompanha. Dá para mandar para a Lixeira.",
-          "Instalado no computador: programas e IAs locais (Ollama, Hugging Face, LM Studio) que a IA instalou ou baixou a pedido deste projeto. Eles valem para o computador todo.",
-          "Sites, buscas e conexões: as páginas que a IA leu, o que ela pesquisou e as conexões (MCP) que usou.",
+          "No topo, quatro números: sobras para limpar, pastas fora do projeto, o que ficou instalado e o que a IA consultou. Só aparece embaixo o que tem algo.",
+          "Sobras para limpar: temporários, logs, cópias antigas e arquivos da IA fora do git, separados por tipo. \"Limpar\" manda o grupo todo para a Lixeira (dá para recuperar).",
+          "Pastas fora do projeto: onde a IA criou coisas fora da pasta. Dá para mostrar no Finder, abrir como projeto ou tirar da lista. Se faltar alguma, use \"Ligar uma pasta\" no fim da aba.",
+          "Instalado no computador: pacotes e IAs locais pedidos por este projeto, com o comando para remover.",
+          "O que a IA consultou: sites, buscas e conexões, dos mais recentes para os mais antigos.",
           "Tudo é lido dos históricos do Claude Code. Se os históricos forem apagados, o que já foi achado continua guardado no Veocode.",
         ],
       },
@@ -360,7 +362,8 @@ export const topics: Topic[] = [
       {
         title: "As cinco partes",
         items: [
-          "Espaço ocupado: arquivos temporários e históricos das IAs. Marque e mande para a Lixeira.",
+          "Claude no computador: quanto o app do Claude (ambiente do Cowork, caches), o Claude Code (conversas, pontos de restauração, versões) e o próprio Veocode ocupam, com um botão de conserto em cada item. Tudo vai para a Lixeira; esvazie a Lixeira para o espaço voltar.",
+          "Outros caches: arquivos temporários de pacotes e builds. Marque e mande para a Lixeira.",
           "Instalado pelas IAs: programas que o Claude instalou enquanto trabalhava, com o projeto que pediu e o comando para remover. Valem para o computador todo.",
           "IAs locais: modelos baixados para rodar no próprio computador (Ollama, LM Studio, Hugging Face), o tamanho e, quando dá, de qual projeto veio o pedido.",
           "Máquinas virtuais: Docker e afins. Os do Docker e do Lima dá para ligar e parar daqui. Containers criados pelo Docker Compose mostram a pasta do projeto que criou.",

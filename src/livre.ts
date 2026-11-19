@@ -3,6 +3,8 @@
 // espaço de trabalho de nenhum projeto.
 
 import { invoke } from "@tauri-apps/api/core";
+import { sendPrefs } from "./chatPrefs";
+import { attLabel, attsOf, clearAtts, setAttsOf } from "./attachments";
 import { createStore, produce } from "solid-js/store";
 import { accountById, accts } from "./accounts";
 import type { AgentEvent } from "./agentFeed";
@@ -117,7 +119,8 @@ export function handleLivre(e: Ev) {
 // ---------------------------------------------------------------- ações
 
 export async function sendLivre(text?: string) {
-  const t = (text ?? livre.input).trim();
+  const files = text === undefined ? attsOf(LIVRE) : [];
+  const t = (text ?? livre.input).trim() || (files.length ? "Veja os anexos." : "");
   if (!t || livre.busy) return;
   if (!freeAccountId()) return showToast("Adicione uma conta de IA em Contas para conversar");
   setLivre(produce((c) => {
@@ -126,10 +129,11 @@ export async function sendLivre(text?: string) {
     c.error = null;
     c.input = "";
   }));
-  push({ key: key("u"), t: "user", text: t });
+  clearAtts(LIVRE);
+  push({ key: key("u"), t: "user", text: [t, attLabel(files)].filter(Boolean).join("\n") });
   if (!isTauri) return demoReply(t);
   try {
-    await invoke("chat_send", { projectId: LIVRE, text: t, attach: null });
+    await invoke("chat_send", { projectId: LIVRE, text: t, attach: null, files: files.map((f) => f.path), ...sendPrefs(LIVRE) });
   } catch (e) {
     setLivre(produce((c) => {
       c.busy = false;
@@ -137,6 +141,7 @@ export async function sendLivre(text?: string) {
       c.input = t;
       c.items.pop(); // a mensagem não foi: volta para a caixa
     }));
+    setAttsOf(LIVRE, files);
   }
 }
 

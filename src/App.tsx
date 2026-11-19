@@ -3,6 +3,8 @@ import { acc, loadAccess } from "./access";
 import TitleBar from "./components/TitleBar";
 import Rail from "./components/Rail";
 import Dialogs from "./components/Dialogs";
+import CloseProjectHost from "./components/CloseProject";
+import { watchDrops } from "./attachments";
 import ContextMenu from "./components/ContextMenu";
 import CommandPalette from "./components/CommandPalette";
 import Workspace from "./views/Workspace";
@@ -63,6 +65,10 @@ export default function App() {
     }
   };
   onMount(() => {
+    // arrastar arquivos do Finder para a caixa de mensagem anexa
+    let stopDrops: (() => void) | undefined;
+    void watchDrops().then((f) => (stopDrops = f));
+    onCleanup(() => stopDrops?.());
     loadSettings();
     startChatEvents();
     startTermEvents();
@@ -145,6 +151,7 @@ export default function App() {
         <CommandPalette />
       </Show>
       <Dialogs />
+      <CloseProjectHost />
       <ContextMenu />
       <Show when={toast()}>
         <div class="toast">{toast()}</div>

@@ -48,7 +48,7 @@ const needsApp = () => Promise.reject(new Error("Abra pelo app (npm run tauri de
 export const api = {
   listProjects: (): Promise<ProjectInfo[]> => (isTauri ? invoke("list_projects") : Promise.resolve([])),
   addProject: (path: string): Promise<ProjectInfo> => (isTauri ? invoke("add_project", { path }) : needsApp()),
-  removeProject: (projectId: string): Promise<void> => (isTauri ? invoke("remove_project", { projectId }) : needsApp()),
+  removeProject: (projectId: string, trashFolder = false): Promise<void> => (isTauri ? invoke("remove_project", { projectId, trashFolder }) : needsApp()),
   updateProject: (projectId: string, change: { accountId?: string; access?: number }): Promise<ProjectInfo> =>
     isTauri ? invoke("update_project", { projectId, ...change }) : needsApp(),
   listDir: (projectId: string, path: string): Promise<DirListing> => (isTauri ? invoke("list_dir", { projectId, path }) : needsApp()),
@@ -195,6 +195,8 @@ export const xrayApi = {
   measure: (id: string): Promise<number> => invoke("xray_measure", { id }),
   trash: (id: string): Promise<void> => invoke("xray_trash", { id }),
   installs: (): Promise<InstallReport> => invoke("xray_installs"),
+  claudeSpace: (): Promise<ClaudeSpace> => invoke("claude_space"),
+  claudeSpaceFix: (id: string): Promise<number> => invoke("claude_space_fix", { id }),
   machines: (): Promise<MachineReport> => invoke("xray_machines"),
   models: (): Promise<ModelReport> => invoke("xray_models"),
   toggleMachine: (engine: string, id: string, start: boolean): Promise<void> => invoke("xray_toggle_machine", { engine, id, start }),
@@ -248,6 +250,30 @@ export interface TrailModel {
   tool: "ollama" | "huggingface" | "lmstudio";
   command: string;
   last: number;
+}
+export interface SpaceFix {
+  id: string;
+  label: string;
+  frees: number;
+  items: number;
+  warning: string | null;
+  needsAppClosed: boolean;
+}
+export interface SpacePart {
+  id: string;
+  label: string;
+  hint: string;
+  bytes: number;
+  tone: "runtime" | "sessions" | "cache" | "other";
+  paths: string[];
+  details: { label: string; bytes: number; note: string | null }[];
+  fix: SpaceFix | null;
+}
+export interface ClaudeSpace {
+  total: number;
+  groups: { id: "app" | "code" | "veocode"; label: string; hint: string; bytes: number; parts: SpacePart[] }[];
+  appRunning: boolean;
+  checkedAt: number;
 }
 export interface Trail {
   outside: TrailOutside[];

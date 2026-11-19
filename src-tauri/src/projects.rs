@@ -193,3 +193,35 @@ mod tests {
         assert!(proj.path().exists(), "remover da lista não pode apagar a pasta");
     }
 }
+
+/// A pasta de um projeto pode ir inteira para a Lixeira? Recusa a pasta pessoal, a raiz,
+/// pastas rasas demais (ex.: ~/Documents) e qualquer pasta que contenha os dados do Veocode.
+pub fn folder_trashable(root: &std::path::Path, keep: &[std::path::PathBuf]) -> Result<(), String> {
+    let home = crate::xray::util::home();
+    if !root.is_absolute() || !root.is_dir() {
+        return Err("a pasta do projeto não existe mais".into());
+    }
+    let shallow = root.components().count() < 4; // "/", "Users", nome, pasta
+    let inside_home = root.starts_with(&home) && root != home;
+    let holds_ours = keep.iter().any(|k| k.starts_with(root));
+    let system = ["Desktop", "Documents", "Downloads", "Library", "Applications", "Pictures", "Movies", "Music"].iter().any(|d| root == home.join(d));
+    if shallow || !inside_home || holds_ours || system {
+        return Err(format!("por segurança, o Veocode não manda {} inteira para a Lixeira. Use o Finder se quiser mesmo.", root.display()));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod trash_tests {
+    use super::folder_trashable;
+
+    #[test]
+    fn refuses_dangerous_folders() {
+        let home = crate::xray::util::home();
+        for bad in [home.clone(), home.join("Documents"), std::path::PathBuf::from("/"), std::path::PathBuf::from("/tmp")] {
+            assert!(folder_trashable(&bad, &[]).is_err(), "{} deveria ser recusada", bad.display());
+        }
+        let ours = home.join("Library/Application Support");
+        assert!(folder_trashable(&ours, &[ours.join("com.veocode.app")]).is_err());
+    }
+}

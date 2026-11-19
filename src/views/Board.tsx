@@ -1,15 +1,16 @@
-import { Activity, FolderPlus, GitBranch, GripVertical, Hand, Plus, Sparkles, Zap } from "lucide-solid";
+import { Activity, FolderMinus, FolderOpen, FolderPlus, GitBranch, GripVertical, Hand, LayoutGrid, MoreHorizontal, Plus, Sparkles, SquareArrowOutUpRight, Zap } from "lucide-solid";
+import { askCloseProject } from "../components/CloseProject";
 import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import { accountById } from "../accounts";
-import { isTauri } from "../api";
+import { api, isTauri } from "../api";
 import { inGrid, layout, layouts, maximized, panes, projectState, replacePane, setLayout, setMaximized, toneOrder, type Layout } from "../board";
 import { drag, dropOver, startDrag } from "../drag";
 import { feedOf, watchFeeds } from "../feeds";
 import { found, foundLoaded, loadFound, type Found } from "../found";
 import { git, gitWords, loadSummaries, since } from "../git";
 import { needs } from "../attention";
-import { addProjectFromPicker, addProjectPath, projects, setProjectId, setView } from "../store";
+import { absPathOf, addProjectFromPicker, addProjectPath, projects, projectsReady, setProjectId, setView, showToast } from "../store";
 import { every } from "../every";
 import { dismissable } from "../dismiss";
 import ChatPane from "../components/ChatPane";
@@ -56,7 +57,7 @@ export default function Board() {
     <div class="page board home">
       <Welcome />
       <NeedsStrip />
-      <Show when={real().length} fallback={<Discover />}>
+      <Show when={real().length} fallback={<Show when={projectsReady()} fallback={<div class="loading-rows"><div /><div /></div>}><Discover /></Show>}>
         <div class="home-bar">
           <div>
             <h2>Na tela agora</h2>
@@ -281,6 +282,7 @@ export default function Board() {
           <Show when={inGrid(props.id)} fallback={<button class="board-pin" title="Pôr na tela" onPointerDown={(e) => e.stopPropagation()} onClick={(e) => (e.stopPropagation(), replacePane(undefined, props.id))}><Plus size={13} /></button>}>
             <span class="shelf-on" title="Está na tela agora">na tela</span>
           </Show>
+          <CardMenu id={props.id} open={open} />
         </div>
         <div class="board-last" classList={{ none: !last() }}>
           <Show when={last()} fallback={<span>Nenhuma conversa nas últimas 24 h</span>}>
@@ -298,32 +300,91 @@ export default function Board() {
     );
   }
 
+  /** Menu "⋯" do cartão: abrir, pôr na tela, mostrar no Finder e fechar o projeto. */
+  function CardMenu(props: { id: string; open: () => void }) {
+    const [pos, setPos] = createSignal<{ left: number; top: number } | null>(null);
+    let btn!: HTMLButtonElement;
+    const toggle = (e: MouseEvent) => {
+      e.stopPropagation();
+      if (pos()) return setPos(null);
+      const r = btn.getBoundingClientRect();
+      const h = 190;
+      setPos({ left: Math.max(12, Math.min(r.right - 220, window.innerWidth - 232)), top: r.bottom + h + 12 > window.innerHeight ? r.top - h - 6 : r.bottom + 6 });
+    };
+    const close = () => setPos(null);
+    const act = (f: () => void) => (e: MouseEvent) => (e.stopPropagation(), close(), f());
+    return (
+      <>
+        <button class="board-more" ref={btn} title="Mais opções" aria-haspopup="menu" aria-expanded={!!pos()} onPointerDown={(e) => e.stopPropagation()} onClick={toggle}><MoreHorizontal size={15} /></button>
+        <Show when={pos()}>
+          {(p) => (
+            <Portal>
+              <div class="menu pop-in card-menu" role="menu" ref={(el) => dismissable(el, close, () => btn)} style={{ left: `${p().left}px`, top: `${p().top}px` }} onPointerDown={(e) => e.stopPropagation()}>
+                <button class="menu-item" onClick={act(props.open)}><SquareArrowOutUpRight size={15} /><span>Abrir</span></button>
+                <Show when={!inGrid(props.id)}>
+                  <button class="menu-item" onClick={act(() => replacePane(undefined, props.id))}><LayoutGrid size={15} /><span>Pôr na tela</span></button>
+                </Show>
+                <button class="menu-item" onClick={act(() => { const a = absPathOf(props.id); if (a) api.reveal(a).catch((e) => showToast(String(e))); })}><FolderOpen size={15} /><span>Mostrar no Finder</span></button>
+                <div class="menu-sep" />
+                <button class="menu-item danger" onClick={act(() => askCloseProject(props.id))}><FolderMinus size={15} /><span>Fechar projeto…</span></button>
+              </div>
+            </Portal>
+          )}
+        </Show>
+      </>
+    );
+  }
+
   /** Último cartão da lista: adiciona uma pasta (sugestões do histórico do Claude ou o Finder). */
   function AddCard() {
-    const [open, setOpen] = createSignal(false);
+    const [pos, setPos] = createSignal<{ left: number; top?: number; bottom?: number; max: number } | null>(null);
     let btn!: HTMLButtonElement;
+    const toggle = () => {
+      if (pos()) return setPos(null);
+      const r = btn.getBoundingClientRect();
+      const below = window.innerHeight - r.bottom - 12;
+      const above = r.top - 12;
+      const left = Math.max(12, Math.min(r.left, window.innerWidth - 320));
+      // abre para o lado com mais espaço; nunca sai da janela
+      setPos(below >= 260 || below >= above ? { left, top: r.bottom + 6, max: Math.min(380, below) } : { left, bottom: window.innerHeight - r.top + 6, max: Math.min(380, above) });
+    };
+    const close = () => setPos(null);
+    onMount(() => {
+      const off = () => close();
+      window.addEventListener("resize", off);
+      document.addEventListener("scroll", off, true);
+      onCleanup(() => (window.removeEventListener("resize", off), document.removeEventListener("scroll", off, true)));
+    });
     return (
       <div class="shelf-add-wrap">
-        <button class="board-card mini shelf-add" ref={btn} onClick={() => setOpen(!open())} style={{ "--i": shelf().length }}>
+        <button class="board-card mini shelf-add" classList={{ open: !!pos() }} ref={btn} onClick={toggle} style={{ "--i": shelf().length }}>
           <span class="found-icon"><Plus size={20} /></span>
           <strong>Adicionar projeto</strong>
           <small>{found().length ? `${found().length} ${found().length === 1 ? "pasta sugerida" : "pastas sugeridas"}` : "escolher uma pasta"}</small>
         </button>
-        <Show when={open()}>
-          <div class="menu pop-in shelf-menu" ref={(el) => dismissable(el, () => setOpen(false), () => btn)}>
-            <small class="menu-title">Onde você já usou o Claude</small>
-            <For each={found().slice(0, 8)} fallback={<small class="menu-title">Nenhuma sugestão</small>}>
-              {(f) => (
-                <button class="menu-item" onClick={() => (setOpen(false), void addProjectPath(f.path, false))} title={f.path}>
-                  <ProjectIcon id={f.path} name={f.name} stack="" size={16} />
-                  <span>{f.name}</span>
-                  <small>{ago(f.last)}</small>
-                </button>
-              )}
-            </For>
-            <div class="menu-sep" />
-            <button class="menu-item" onClick={() => (setOpen(false), void addProjectFromPicker())}><FolderPlus size={16} /><span>Escolher outra pasta…</span></button>
-          </div>
+        <Show when={pos()}>
+          {(p) => (
+            <Portal>
+              <div
+                class="menu pop-in shelf-menu"
+                ref={(el) => dismissable(el, close, () => btn)}
+                style={{ left: `${p().left}px`, top: p().top != null ? `${p().top}px` : "auto", bottom: p().bottom != null ? `${p().bottom}px` : "auto", "max-height": `${p().max}px` }}
+              >
+                <small class="menu-title">Onde você já usou o Claude</small>
+                <For each={found().slice(0, 8)} fallback={<small class="menu-title">Nenhuma sugestão por aqui</small>}>
+                  {(f) => (
+                    <button class="menu-item" onClick={() => (close(), void addProjectPath(f.path, false))} title={f.path}>
+                      <ProjectIcon id={f.path} name={f.name} stack="" size={16} />
+                      <span>{f.name}</span>
+                      <small>{ago(f.last)}</small>
+                    </button>
+                  )}
+                </For>
+                <div class="menu-sep" />
+                <button class="menu-item" onClick={() => (close(), void addProjectFromPicker())}><FolderPlus size={16} /><span>Escolher outra pasta…</span></button>
+              </div>
+            </Portal>
+          )}
         </Show>
       </div>
     );

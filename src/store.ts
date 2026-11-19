@@ -1,7 +1,7 @@
 import { createSignal } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { demoProject, type Project } from "./data/mock";
-import { api, prettyPath, type FileContent, type DirListing, type ProjectInfo } from "./api";
+import { api, isTauri, prettyPath, type FileContent, type DirListing, type ProjectInfo } from "./api";
 
 export type View = "board" | "workspace" | "accounts" | "system" | "inventory" | "settings" | "livre";
 
@@ -41,6 +41,9 @@ const fromInfo = (i: ProjectInfo): Project => ({
 const absPaths = new Map<string, string>();
 export const absPathOf = (id: string) => absPaths.get(id);
 
+/** A lista de projetos já veio do disco? (até lá a tela inicial não diz "nenhum projeto") */
+export const [projectsReady, setProjectsReady] = createSignal(!isTauri);
+
 export async function loadProjects() {
   try {
     const list = await api.listProjects();
@@ -50,6 +53,8 @@ export async function loadProjects() {
     if (list.length > 0) setProjectId(list[0].id);
   } catch (e) {
     showToast(`Não deu para abrir a lista de projetos: ${e}`);
+  } finally {
+    setProjectsReady(true);
   }
 }
 
@@ -75,15 +80,19 @@ export async function addProjectPath(path: string, go = true) {
   }
 }
 
-export async function removeProject(id: string) {
+export async function removeProject(id: string, trashFolder = false): Promise<boolean> {
+  const name = projects.find((p) => p.id === id)?.name ?? "Projeto";
   try {
-    await api.removeProject(id);
+    await api.removeProject(id, trashFolder);
     const rest = projects.filter((p) => p.id !== id && !p.demo);
     setProjects(rest.length ? rest : [structuredClone(demoProject)]);
     if (projectId() === id) setProjectId(rest[0]?.id ?? "demo");
-    showToast("Removido da lista (a pasta continua no disco)");
+    if (!rest.length && view() === "workspace") setView("board");
+    showToast(trashFolder ? `${name} fechado e a pasta foi para a Lixeira` : `${name} saiu do Veocode (a pasta continua no disco)`);
+    return true;
   } catch (e) {
     showToast(String(e));
+    return false;
   }
 }
 

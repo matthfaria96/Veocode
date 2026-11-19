@@ -8,10 +8,11 @@ import { CountUp, PageHeader, Sparkline, Stagger } from "../components/ui";
 import ConfirmDialog from "../components/ConfirmDialog";
 import Explainer from "../components/Explainer";
 import ComputerTabs from "../components/ComputerTabs";
+import ClaudeSpace, { claudeSpaceTotal, loadClaudeSpace } from "../components/ClaudeSpace";
 import { every } from "../every";
 
-type Tab = "caches" | "installed" | "models" | "machines" | "processes";
-const [tab, setTab] = createSignal<Tab>("caches");
+type Tab = "claude" | "caches" | "installed" | "models" | "machines" | "processes";
+const [tab, setTab] = createSignal<Tab>("claude");
 
 const base = (p: string) => p.split(/[\\/]/).filter(Boolean).pop() ?? p;
 const when = (iso: string) => {
@@ -40,6 +41,7 @@ export default function System() {
   });
 
   const refreshAll = () => {
+    void loadClaudeSpace();
     loadCaches();
     loadInstalls();
     loadMachines();
@@ -66,7 +68,8 @@ export default function System() {
         : `O que mais ocupa é ${biggest()?.label ?? "—"} (${formatBytes(biggest()?.size ?? 0)}). Marque abaixo o que não quer e mande para a Lixeira.`;
 
   const tabs: { id: Tab; label: string; icon: (p: { size: number }) => JSX.Element; color: string; count: () => string }[] = [
-    { id: "caches", label: "Espaço ocupado", icon: HardDrive, color: "#8b7bff", count: () => (xray.cachesLoaded ? formatBytes(total()) + (measuring() ? "…" : "") : "…") },
+    { id: "claude", label: "Claude no computador", icon: Sparkles, color: "#fb923c", count: () => (claudeSpaceTotal() !== null ? formatBytes(claudeSpaceTotal()!) : "…") },
+    { id: "caches", label: "Outros caches", icon: HardDrive, color: "#8b7bff", count: () => (xray.cachesLoaded ? formatBytes(total()) + (measuring() ? "…" : "") : "…") },
     { id: "installed", label: "Instalado pelas IAs", icon: Package, color: "#38bdf8", count: () => (xray.installs ? String(xray.installs.aiInstalls.length) : "…") },
     { id: "models", label: "IAs locais", icon: Brain, color: "#f472b6", count: () => (xray.models ? (xray.models.models.length ? formatBytes(xray.models.models.reduce((s, m) => s + m.size, 0)) : "nenhuma") : "…") },
     { id: "machines", label: "Máquinas virtuais", icon: Box, color: "#34d399", count: () => (xray.machines ? (xray.machines.machines.length ? `${running()} rodando` : "nenhum") : "…") },
@@ -137,6 +140,11 @@ export default function System() {
       </div>
 
       <Switch>
+        <Match when={tab() === "claude"}>
+          <div class="cx-pane">
+            <ClaudeSpace />
+          </div>
+        </Match>
         {/* ------------------------------------------------ caches */}
         <Match when={tab() === "caches"}>
           <div class="cx-pane">

@@ -22,6 +22,7 @@ tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
+base64 = "0.22"
 ignore = "0.4.34"
 notify-debouncer-mini = "0.7.0"
 tauri-plugin-dialog = "2.8.4"

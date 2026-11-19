@@ -1,11 +1,13 @@
 import { dismissable } from "../dismiss";
-import { AlertTriangle, ArrowLeft, Ban, Check, ChevronDown, Eye, History, HardDrive, MessageSquarePlus, MessagesSquare, SendHorizontal, ShieldCheck, Square, X } from "lucide-solid";
+import { AlertTriangle, ArrowLeft, Ban, Check, ChevronDown, Eye, History, HardDrive, MessageSquarePlus, MessagesSquare, Paperclip, SendHorizontal, ShieldCheck, Square, X } from "lucide-solid";
 import { createEffect, createResource, createSignal, For, Match, on, onCleanup, onMount, Show, Switch } from "solid-js";
 import { accountById, accountSub, accts } from "../accounts";
 import type { ActivityEvent } from "../store";
 import { isTauri } from "../api";
 import { settings } from "../settings";
 import { answerLivre, freeAccount, freeAccountId, listLivre, livre, newLivre, openLivre, sendLivre, setFreeAccount, setFreePc, setLivre, stopLivre, type Item } from "../livre";
+import { attsOf, dropPid, pasteFiles, pickFiles } from "../attachments";
+import AttachBar from "../components/AttachBar";
 import { deleteConvos, type Convo } from "../chat";
 import { LIVRE } from "../livre";
 import ConvoRow from "../components/ConvoRow";
@@ -309,12 +311,17 @@ export default function Livre() {
 
       <div class="livre-bottom">
         <div class="livre-col">
-          <div class="composer livre-composer" classList={{ busy: livre.busy }} style={{ "--c": a().color }}>
+          <div class="composer livre-composer" classList={{ busy: livre.busy, dropping: dropPid() === LIVRE, "has-atts": attsOf(LIVRE).length > 0 }} style={{ "--c": a().color }} data-attach-pid={LIVRE}>
+            <AttachBar pid={LIVRE} />
+            <button class="icon-btn livre-clip" classList={{ on: attsOf(LIVRE).length > 0 }} title="Anexar arquivos ou imagens (ou cole com ⌘V, ou arraste do Finder)" onClick={() => void pickFiles(LIVRE)}>
+              <Paperclip size={15} />
+            </button>
             <textarea
+              onPaste={(e) => void pasteFiles(LIVRE, e)}
               ref={box}
               rows={1}
               value={livre.input}
-              placeholder={settings.freePc ? `Pergunte a ${a().label} sobre seus arquivos… (Enter envia)` : `Converse com ${a().label}… (Enter envia, Shift+Enter quebra a linha)`}
+              placeholder={settings.freePc ? `Pergunte a ${a().label} sobre seus arquivos… (Enter envia, ⌘V cola imagens)` : `Converse com ${a().label}… (Enter envia, ⌘V cola imagens)`}
               onInput={(e) => {
                 setLivre("input", e.currentTarget.value);
                 fit();
@@ -329,7 +336,7 @@ export default function Livre() {
             <Show
               when={livre.busy}
               fallback={
-                <button class="send-btn" title="Enviar (Enter)" disabled={!livre.input.trim()} onClick={send}>
+                <button class="send-btn" title="Enviar (Enter)" disabled={!livre.input.trim() && !attsOf(LIVRE).length} onClick={send}>
                   <SendHorizontal size={15} />
                 </button>
               }

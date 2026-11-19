@@ -1,15 +1,12 @@
 // Aba "Rastro" do projeto: o que a IA deixou por causa dele, dentro e fora da pasta.
-// - Pastas fora do projeto (ex.: um "studio" do jogo criado ao lado), guardadas pelo Veocode
-//   para o vínculo não sumir quando o Claude apagar conversas antigas;
-// - sobras dentro da pasta (depuração, cópias, temporários, arquivos da IA fora do git);
-// - o que foi instalado no computador por causa do projeto (pacotes e modelos de IA locais);
-// - sites, buscas e conexões que a IA consultou.
-import { Box, ChevronDown, ChevronRight, Copy, ExternalLink, EyeOff, FileWarning, FolderInput, FolderOpen, FolderPlus, Globe, HardDrive, Link2, Plug, RefreshCw, Search, Trash2 } from "lucide-solid";
-import { createEffect, createMemo, createResource, createSignal, For, on, Show, type JSX } from "solid-js";
-import { api, copyText, isTauri, prettyPath, type TrailLeftover } from "../api";
+// Mostra só o que tem coisa para ver ou fazer: sobras para limpar, pastas fora do projeto,
+// o que ficou instalado no computador e o que a IA consultou.
+import { Box, ChevronDown, ChevronRight, Copy, ExternalLink, EyeOff, FileWarning, FolderInput, FolderOpen, FolderPlus, Globe, HardDrive, Link2, Plug, RefreshCw, Search, ShieldCheck, Trash2 } from "lucide-solid";
+import { createEffect, createMemo, createResource, createSignal, For, on, Show, Suspense, type JSX } from "solid-js";
+import { api, copyText, isTauri, prettyPath, type Trail, type TrailLeftover, type TrailSource } from "../api";
 import { since } from "../git";
 import { formatBytes } from "../data/mock";
-import { absPathOf, addProjectPath, currentProject, showToast } from "../store";
+import { absPathOf, addProjectPath, currentProject, setView, showToast } from "../store";
 import { loadInstalls, xray } from "../xray";
 import { confirmAction } from "../dialogs";
 import { markOwn } from "../editing";
@@ -23,20 +20,38 @@ const inside = (path: string, root: string | null | undefined) => {
 };
 
 const kindInfo: Record<TrailLeftover["kind"], { label: string; hint: string }> = {
-  depuracao: { label: "Registros de depuração", hint: "Arquivos de log e de erro. Servem para investigar um problema; depois podem sair." },
-  copia: { label: "Cópias e versões antigas", hint: "Arquivos .bak, .old, “cópia”… Confira se não precisa mais antes de tirar." },
-  temporario: { label: "Temporários", hint: "São refeitos sozinhos quando precisa. Pode tirar sem medo." },
-  ia: { label: "Criados pela IA e fora do git", hint: "A IA criou e ninguém guardou no git ainda. Podem ser úteis (guarde) ou rascunhos (tire)." },
+  temporario: { label: "Temporários", hint: "Refeitos sozinhos quando precisa. Pode tirar sem medo." },
+  depuracao: { label: "Logs de depuração", hint: "Serviram para investigar um erro; depois podem sair." },
+  copia: { label: "Cópias e versões antigas", hint: ".bak, .old, “cópia”… confira antes de tirar." },
+  ia: { label: "Criados pela IA, fora do git", hint: "Guarde no git o que for útil; o resto pode sair." },
 };
+const kindOrder = ["temporario", "depuracao", "copia", "ia"] as const;
+const sourceIcon = (k: TrailSource["kind"]) => (k === "pagina" ? <Globe size={13} /> : k === "busca" ? <Search size={13} /> : <Plug size={13} />);
 
 export default function TrailPanel() {
   const p = currentProject;
   const real = () => isTauri && !p().demo;
-  const [trail, { refetch }] = createResource(() => (real() ? p().id : null), (id) => api.projectTrail(id));
-  createEffect(on(() => p().id, () => real() && !xray.installs && void loadInstalls()));
+  return (
+    <div class="trail">
+      <Show when={real()} fallback={<p class="trail-empty-box">{p().demo ? "O projeto de exemplo não tem rastro. Adicione uma pasta sua para ver o que as IAs deixaram nela." : "Abra pelo app para ver o rastro do projeto."}</p>}>
+        {/* fronteira própria: carregar o rastro não pode recarregar a tela do projeto inteira */}
+        <Suspense fallback={<div class="loading-rows"><div /><div /><div /></div>}>
+          <TrailBody />
+        </Suspense>
+      </Show>
+    </div>
+  );
+}
 
+function TrailBody() {
+  const p = currentProject;
+  const [trail, { refetch }] = createResource(() => p().id, (id) => api.projectTrail(id));
+  createEffect(on(() => p().id, () => !xray.installs && void loadInstalls()));
   const root = () => absPathOf(p().id);
-  const installs = createMemo(() => (xray.installs?.aiInstalls ?? []).filter((i) => inside(i.project, root())));
+  const installs = createMemo(() => (xray.installs?.aiInstalls ?? []).filter((i) => inside(i.project, root()) && i.status === "instalado"));
+  const t = () => trail.latest as Trail | undefined;
+  const [allSources, setAllSources] = createSignal(false);
+  const sources = () => [...(t()?.sources ?? [])].sort((a, b) => b.last - a.last);
 
   const link = async () => {
     const path = await api.pickFolder();
@@ -51,120 +66,160 @@ export default function TrailPanel() {
     await api.trailForget(p().id, path).catch((e) => showToast(String(e)));
     void refetch();
   };
-  const openAsProject = (path: string) => void addProjectPath(path);
-  const trashLeftover = async (l: TrailLeftover) => {
-    const ok = await confirmAction(`Mover ${l.path} para a Lixeira?`, `${l.why}. ${formatBytes(l.bytes)}. Dá para recuperar pela Lixeira.`, "Mover para a Lixeira", true);
+  const trash = async (items: TrailLeftover[]) => {
+    const size = formatBytes(items.reduce((s, l) => s + l.bytes, 0));
+    const ok = await confirmAction(
+      items.length === 1 ? `Mover ${items[0].path} para a Lixeira?` : `Mover ${items.length} itens para a Lixeira?`,
+      `${size} no total. Dá para recuperar pela Lixeira.`,
+      "Mover para a Lixeira",
+      true,
+    );
     if (!ok) return;
-    markOwn(p().id, l.path);
-    await api.trashEntry(p().id, l.path).then(() => showToast("Pronto, foi para a Lixeira. Dá para recuperar lá.")).catch((e) => showToast(String(e)));
+    let fail = 0;
+    for (const l of items) {
+      markOwn(p().id, l.path);
+      await api.trashEntry(p().id, l.path).catch(() => fail++);
+    }
+    showToast(fail ? `${items.length - fail} foram para a Lixeira; ${fail} não deu.` : `Pronto: ${size} foram para a Lixeira.`);
     void refetch();
   };
 
+  const nothing = () => {
+    const x = t();
+    return !!x && !x.outside.length && !x.leftovers.length && !x.models.length && !installs().length && !x.sources.length;
+  };
+
   return (
-    <div class="trail">
-      <Show when={real()} fallback={<p class="trail-intro">{p().demo ? "O projeto de exemplo não tem rastro: adicione uma pasta sua para ver o que as IAs deixaram nela." : "Abra pelo app para ver o rastro do projeto."}</p>}>
-        <div class="trail-top">
-          <p class="trail-intro">O que a IA deixou por causa deste projeto: <strong>fora da pasta</strong>, <strong>dentro dela</strong> e <strong>no computador</strong>. Nada aqui é apagado sem você confirmar.</p>
-          <button class="icon-btn small" title="Ler de novo" onClick={() => void refetch()}><RefreshCw size={13} classList={{ spinning: trail.loading }} /></button>
-        </div>
+    <Show when={t()}>
+      {(x) => (
+        <>
+          <div class="trail-head">
+            <span>O que a IA deixou por causa deste projeto</span>
+            <button class="icon-btn small" title="Ler de novo" onClick={() => void refetch()}><RefreshCw size={13} classList={{ spinning: trail.loading }} /></button>
+          </div>
+          <div class="trail-sum">
+            <Stat icon={<FileWarning size={14} />} n={x().leftovers.length} label="sobras" sub={x().leftovers.length ? formatBytes(x().leftoversBytes) : "pasta limpa"} tone={x().leftovers.length ? "warn" : "ok"} />
+            <Stat icon={<FolderInput size={14} />} n={x().outside.length} label="pastas fora" sub="ligadas ao projeto" />
+            <Stat icon={<HardDrive size={14} />} n={installs().length + x().models.length} label="instalados" sub="no computador" />
+            <Stat icon={<Globe size={14} />} n={x().sources.length} label="consultas" sub="sites e conexões" />
+          </div>
 
-        <Show when={trail()} fallback={<Show when={trail.error} fallback={<div class="loading-rows"><div /><div /></div>}><p class="trail-empty">Não deu para ler: {String(trail.error)}</p></Show>}>
-          {(t) => (
-            <>
-              <Show when={t().sessions === 0}>
-                <p class="trail-note">Nenhuma conversa do Claude guardada para esta pasta (ele apaga as antigas sozinho). O que o Veocode já achou antes continua aqui; o que vier daqui em diante também fica guardado.</p>
-              </Show>
+          <Show when={nothing()}>
+            <div class="trail-empty-box">
+              <ShieldCheck size={22} />
+              <strong>Nada para cuidar aqui</strong>
+              <span>A IA não deixou sobras nem mexeu fora da pasta deste projeto.</span>
+            </div>
+          </Show>
 
-              {/* ---------------- fora da pasta */}
-              <Block icon={<FolderInput size={14} />} title="Pastas fora do projeto" count={t().outside.length} hint="Criadas ou mexidas pela IA por causa deste projeto, mas fora da pasta dele. O Veocode guarda o vínculo." right={<button class="git-link" onClick={() => void link()}><Link2 size={11} /> Ligar uma pasta</button>}>
-                <For each={t().outside} fallback={<p class="trail-empty">Nada fora da pasta. Se a IA criou algo em outro lugar (como um editor do jogo), use “Ligar uma pasta” para não perder de vista.</p>}>
-                  {(o) => (
-                    <div class="trail-row" classList={{ gone: !o.exists }}>
-                      <FolderOpen size={14} class="trail-row-icon" />
-                      <div class="trail-row-text">
-                        <strong title={o.path}>{prettyPath(o.path)}</strong>
-                        <small>{o.exists ? `${formatBytes(o.bytes)}${o.isDir ? ` · ${o.files.toLocaleString("pt-BR")} arquivos` : ""}` : "não existe mais"}{o.last ? ` · ${ago(o.last)}` : ""}</small>
-                        <small class="trail-how" title={o.how}>{o.how}</small>
-                      </div>
-                      <div class="trail-actions">
-                        <Show when={o.exists}>
-                          <button class="icon-btn small" title="Mostrar no Finder/Explorer" onClick={() => api.reveal(o.path).catch((e) => showToast(String(e)))}><FolderOpen size={12} /></button>
-                          <Show when={o.isDir}><button class="icon-btn small" title="Abrir como projeto no Veocode" onClick={() => openAsProject(o.path)}><FolderPlus size={12} /></button></Show>
-                        </Show>
-                        <button class="icon-btn small" title="Tirar do Rastro (não apaga nada)" onClick={() => void forget(o.path)}><EyeOff size={12} /></button>
-                      </div>
+          {/* ---------------- sobras: o que dá para limpar já */}
+          <Show when={x().leftovers.length}>
+            <Block icon={<FileWarning size={14} />} title="Sobras para limpar" count={x().leftovers.length} right={<span class="trail-size">{formatBytes(x().leftoversBytes)}</span>}>
+              <For each={kindOrder.filter((k) => x().leftovers.some((l) => l.kind === k))}>
+                {(k) => <LeftoverGroup kind={k} items={x().leftovers.filter((l) => l.kind === k)} onTrash={(items) => void trash(items)} />}
+              </For>
+            </Block>
+          </Show>
+
+          {/* ---------------- fora da pasta */}
+          <Show when={x().outside.length}>
+            <Block icon={<FolderInput size={14} />} title="Pastas fora do projeto" count={x().outside.length}>
+              <For each={x().outside}>
+                {(o) => (
+                  <div class="trail-row" classList={{ gone: !o.exists }}>
+                    <FolderOpen size={14} class="trail-row-icon" />
+                    <div class="trail-row-text">
+                      <strong title={o.path}>{prettyPath(o.path)}</strong>
+                      <small title={o.how}>{o.exists ? `${formatBytes(o.bytes)}${o.isDir ? ` · ${o.files.toLocaleString("pt-BR")} arquivos` : ""}` : "não existe mais"}{o.last ? ` · ${ago(o.last)}` : ""}</small>
                     </div>
-                  )}
-                </For>
-              </Block>
-
-              {/* ---------------- sobras */}
-              <Block icon={<FileWarning size={14} />} title="Sobras dentro da pasta" count={t().leftovers.length} hint={t().leftovers.length ? `${formatBytes(t().leftoversBytes)} em depuração, cópias, temporários e arquivos soltos da IA.` : "Depuração, cópias antigas, temporários e arquivos que a IA criou e ninguém guardou."}>
-                <Show when={t().leftovers.length} fallback={<p class="trail-empty">Pasta limpa: nenhuma sobra encontrada.</p>}>
-                  <For each={(["ia", "depuracao", "copia", "temporario"] as const).filter((k) => t().leftovers.some((l) => l.kind === k))}>
-                    {(k) => <LeftoverGroup kind={k} items={t().leftovers.filter((l) => l.kind === k)} onTrash={trashLeftover} />}
-                  </For>
-                </Show>
-              </Block>
-
-              {/* ---------------- no computador */}
-              <Block icon={<HardDrive size={14} />} title="Instalado no computador" count={installs().length + t().models.length} hint="Programas e modelos de IA que ficaram no computador todo, mas foram pedidos por este projeto.">
-                <Show when={installs().length || t().models.length} fallback={<p class="trail-empty">Nada instalado por este projeto (pelo que os históricos mostram).</p>}>
-                  <For each={t().models}>
-                    {(m) => (
-                      <div class="trail-row">
-                        <Box size={14} class="trail-row-icon" />
-                        <div class="trail-row-text">
-                          <strong>{m.name}</strong>
-                          <small>modelo de IA local ({m.tool === "ollama" ? "Ollama" : m.tool === "huggingface" ? "Hugging Face" : "LM Studio"}){m.last ? ` · ${ago(m.last)}` : ""}</small>
-                        </div>
-                      </div>
-                    )}
-                  </For>
-                  <For each={installs()}>
-                    {(i) => (
-                      <div class="trail-row">
-                        <Box size={14} class="trail-row-icon" />
-                        <div class="trail-row-text">
-                          <strong>{i.package}</strong>
-                          <small>{i.manager} · {i.status === "instalado" ? `instalado${i.version ? " " + i.version : ""}` : i.status === "falhou" ? "tentou e falhou" : "não está mais"}</small>
-                        </div>
-                        <Show when={i.status === "instalado"}>
-                          <button class="icon-btn small" title={`Copiar o comando para remover: ${i.removeCmd}`} onClick={() => copyText(i.removeCmd).then(() => showToast("Comando copiado: cole no Terminal se quiser remover"))}><Copy size={12} /></button>
-                        </Show>
-                      </div>
-                    )}
-                  </For>
-                </Show>
-                <p class="trail-foot">Máquinas virtuais, containers e o espaço de tudo isso: Computador → Espaço e memória.</p>
-              </Block>
-
-              {/* ---------------- fontes */}
-              <Block icon={<Globe size={14} />} title="Sites, buscas e conexões" count={t().sources.length} hint="Lugares de fora que a IA consultou trabalhando aqui.">
-                <For each={t().sources} fallback={<p class="trail-empty">Nenhuma consulta de fora.</p>}>
-                  {(s) => (
-                    <div class="trail-row">
-                      <span class="trail-row-icon">{s.kind === "pagina" ? <Globe size={14} /> : s.kind === "busca" ? <Search size={14} /> : <Plug size={14} />}</span>
-                      <div class="trail-row-text">
-                        <strong title={s.label}>{s.kind === "busca" ? `“${s.label}”` : s.label}</strong>
-                        <small>{s.kind === "pagina" ? "site" : s.kind === "busca" ? "busca na internet" : `conexão (${s.examples.slice(0, 3).join(", ")})`} · {s.count}× {s.last ? `· ${ago(s.last)}` : ""}</small>
-                      </div>
-                      <Show when={s.kind === "pagina" && s.examples[0]}>
-                        <button class="icon-btn small" title={`Abrir ${s.examples[0]}`} onClick={() => void api.openUrl(s.examples[0])}><ExternalLink size={12} /></button>
+                    <div class="trail-actions">
+                      <Show when={o.exists}>
+                        <button class="icon-btn small" title="Mostrar no Finder" onClick={() => api.reveal(o.path).catch((e) => showToast(String(e)))}><FolderOpen size={12} /></button>
+                        <Show when={o.isDir}><button class="icon-btn small" title="Abrir como projeto" onClick={() => void addProjectPath(o.path)}><FolderPlus size={12} /></button></Show>
                       </Show>
+                      <button class="icon-btn small" title="Tirar do Rastro (não apaga nada)" onClick={() => void forget(o.path)}><EyeOff size={12} /></button>
                     </div>
-                  )}
-                </For>
-              </Block>
-            </>
-          )}
-        </Show>
-      </Show>
+                  </div>
+                )}
+              </For>
+            </Block>
+          </Show>
+
+          {/* ---------------- no computador */}
+          <Show when={installs().length || x().models.length}>
+            <Block icon={<HardDrive size={14} />} title="Instalado no computador" count={installs().length + x().models.length} right={<button class="git-link" onClick={() => setView("system")}>Ver no Computador</button>}>
+              <For each={x().models}>
+                {(m) => (
+                  <div class="trail-row">
+                    <Box size={14} class="trail-row-icon" />
+                    <div class="trail-row-text">
+                      <strong>{m.name}</strong>
+                      <small>modelo de IA ({m.tool === "ollama" ? "Ollama" : m.tool === "huggingface" ? "Hugging Face" : "LM Studio"}){m.last ? ` · ${ago(m.last)}` : ""}</small>
+                    </div>
+                  </div>
+                )}
+              </For>
+              <For each={installs()}>
+                {(i) => (
+                  <div class="trail-row">
+                    <Box size={14} class="trail-row-icon" />
+                    <div class="trail-row-text">
+                      <strong>{i.package}</strong>
+                      <small>{i.manager}{i.version ? ` · ${i.version}` : ""}</small>
+                    </div>
+                    <button class="icon-btn small" title={`Copiar o comando para remover: ${i.removeCmd}`} onClick={() => copyText(i.removeCmd).then(() => showToast("Comando copiado: cole no Terminal para remover"))}><Copy size={12} /></button>
+                  </div>
+                )}
+              </For>
+            </Block>
+          </Show>
+
+          {/* ---------------- consultas */}
+          <Show when={x().sources.length}>
+            <Block icon={<Globe size={14} />} title="O que a IA consultou" count={x().sources.length}>
+              <For each={allSources() ? sources() : sources().slice(0, 6)}>
+                {(s) => (
+                  <div class="trail-row trail-src">
+                    <span class="trail-row-icon">{sourceIcon(s.kind)}</span>
+                    <div class="trail-row-text">
+                      <strong title={s.examples.join("\n") || s.label}>{s.kind === "busca" ? `“${s.label}”` : s.label}</strong>
+                      <small>{s.kind === "pagina" ? "site" : s.kind === "busca" ? "busca" : "conexão"}{s.last ? ` · ${ago(s.last)}` : ""}</small>
+                    </div>
+                    <span class="trail-times">{s.count}×</span>
+                    <Show when={s.kind === "pagina" && s.examples[0]}>
+                      <button class="icon-btn small" title={`Abrir ${s.examples[0]}`} onClick={() => void api.openUrl(s.examples[0])}><ExternalLink size={12} /></button>
+                    </Show>
+                  </div>
+                )}
+              </For>
+              <Show when={sources().length > 6}>
+                <button class="git-link trail-more" onClick={() => setAllSources(!allSources())}>{allSources() ? "Mostrar menos" : `Mostrar todas (${sources().length})`}</button>
+              </Show>
+            </Block>
+          </Show>
+
+          <button class="trail-link" onClick={() => void link()}>
+            <Link2 size={13} /> A IA criou algo em outra pasta? <strong>Ligar uma pasta</strong>
+          </button>
+        </>
+      )}
+    </Show>
+  );
+}
+
+function Stat(props: { icon: JSX.Element; n: number; label: string; sub: string; tone?: "ok" | "warn" }) {
+  return (
+    <div class="trail-stat" classList={{ zero: !props.n, [props.tone ?? ""]: !!props.tone }}>
+      <span class="trail-stat-icon">{props.icon}</span>
+      <span class="trail-stat-text">
+        <span><strong>{props.n}</strong> {props.label}</span>
+        <small>{props.sub}</small>
+      </span>
     </div>
   );
 }
 
-function Block(props: { icon: JSX.Element; title: string; count: number; hint: string; right?: JSX.Element; children: JSX.Element }) {
+function Block(props: { icon: JSX.Element; title: string; count: number; right?: JSX.Element; children: JSX.Element }) {
   return (
     <section class="trail-block">
       <header>
@@ -173,13 +228,12 @@ function Block(props: { icon: JSX.Element; title: string; count: number; hint: s
         <small class="count">{props.count}</small>
         <span class="trail-block-right">{props.right}</span>
       </header>
-      <p class="trail-hint">{props.hint}</p>
       {props.children}
     </section>
   );
 }
 
-function LeftoverGroup(props: { kind: TrailLeftover["kind"]; items: TrailLeftover[]; onTrash: (l: TrailLeftover) => void }) {
+function LeftoverGroup(props: { kind: TrailLeftover["kind"]; items: TrailLeftover[]; onTrash: (items: TrailLeftover[]) => void }) {
   const [open, setOpen] = createSignal(false);
   const [all, setAll] = createSignal(false);
   const total = () => props.items.reduce((s, l) => s + l.bytes, 0);
@@ -187,12 +241,15 @@ function LeftoverGroup(props: { kind: TrailLeftover["kind"]; items: TrailLeftove
   const pid = () => currentProject().id;
   return (
     <div class="trail-group">
-      <button class="trail-group-head" onClick={() => setOpen(!open())}>
-        {open() ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-        <strong>{kindInfo[props.kind].label}</strong>
-        <small class="count">{props.items.length}</small>
-        <span class="trail-group-size">{formatBytes(total())}</span>
-      </button>
+      <div class="trail-group-head">
+        <button class="trail-group-toggle" onClick={() => setOpen(!open())} title={kindInfo[props.kind].hint}>
+          {open() ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+          <strong>{kindInfo[props.kind].label}</strong>
+          <small class="count">{props.items.length}</small>
+          <span class="trail-group-size">{formatBytes(total())}</span>
+        </button>
+        <button class="trail-trash-all" title={`Mover os ${props.items.length} para a Lixeira`} onClick={() => props.onTrash(props.items)}><Trash2 size={12} /> Limpar</button>
+      </div>
       <Show when={open()}>
         <p class="trail-hint">{kindInfo[props.kind].hint}</p>
         <For each={shown()}>
@@ -203,8 +260,8 @@ function LeftoverGroup(props: { kind: TrailLeftover["kind"]; items: TrailLeftove
                 <small>{formatBytes(l.bytes)}{l.modified ? ` · ${ago(l.modified)}` : ""}</small>
               </div>
               <div class="trail-actions">
-                <button class="icon-btn small" title="Mostrar no Finder/Explorer" onClick={() => { const r = absPathOf(pid()); if (r) api.reveal(`${r}/${l.path}`).catch((e) => showToast(String(e))); }}><FolderOpen size={12} /></button>
-                <button class="icon-btn small danger" title="Mover para a Lixeira" onClick={() => props.onTrash(l)}><Trash2 size={12} /></button>
+                <button class="icon-btn small" title="Mostrar no Finder" onClick={() => { const r = absPathOf(pid()); if (r) api.reveal(`${r}/${l.path}`).catch((e) => showToast(String(e))); }}><FolderOpen size={12} /></button>
+                <button class="icon-btn small danger" title="Mover para a Lixeira" onClick={() => props.onTrash([l])}><Trash2 size={12} /></button>
               </div>
             </div>
           )}
@@ -216,4 +273,3 @@ function LeftoverGroup(props: { kind: TrailLeftover["kind"]; items: TrailLeftove
     </div>
   );
 }
-

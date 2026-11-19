@@ -1,16 +1,13 @@
-import { ChevronDown, FilePlus, FlaskConical, FolderPlus, FolderSearch, GitBranch, Pause, Play, Plus, RefreshCw, X } from "lucide-solid";
+import { ChevronDown, FilePlus, FlaskConical, FolderMinus, FolderPlus, FolderSearch, GitBranch, Pause, Play, Plus, RefreshCw } from "lucide-solid";
+import { askCloseProject } from "../components/CloseProject";
 import { ProjectIcon } from "../components/icons";
 import { createEffect, createSignal, For, on, onCleanup, Show } from "solid-js";
 import { accessLevels } from "../data/mock";
 import { accountById } from "../accounts";
-import { forgetProject } from "../terminal";
-import { forgetGit, git, gitWords, loadSummaries, setGitTab } from "../git";
-import { forgetFeed } from "../feeds";
-import { absPathOf, addProjectFromPicker, currentProject, projectId, projects, removeProject, resetWorkspace, setProjectId, setWs, showToast, ws } from "../store";
+import { git, gitWords, loadSummaries, setGitTab } from "../git";
+import { absPathOf, addProjectFromPicker, currentProject, projectId, projects, resetWorkspace, setProjectId, setWs, showToast, ws } from "../store";
 import { startAgentSim } from "../sim/agentSim";
-import { confirmAction } from "../dialogs";
 import { dismissable } from "../dismiss";
-import { saveAll } from "../editing";
 import { newEntry } from "../fileActions";
 import { startAgentFeed } from "../agentFeed";
 import { chatOf, restoreChat } from "../chat";
@@ -92,20 +89,7 @@ export default function Workspace() {
     }),
   );
 
-  const removeFromList = async () => {
-    const pr = p();
-    const ok = await confirmAction(
-      `Tirar ${pr.name} da lista?`,
-      "Só sai do Veocode: a pasta e os arquivos continuam no seu computador. Dá para adicionar de novo quando quiser.",
-      "Tirar da lista",
-    );
-    if (!ok) return;
-    await saveAll();
-    await removeProject(pr.id);
-    forgetProject(pr.id);
-    forgetGit(pr.id);
-    forgetFeed(pr.id);
-  };
+  const removeFromList = () => askCloseProject(p().id);
 
   const reveal = () => {
     const abs = absPathOf(p().id);
@@ -158,6 +142,18 @@ export default function Workspace() {
                 <FolderPlus size={16} />
                 <span>Adicionar pasta…</span>
               </button>
+              <Show when={!p().demo}>
+                <button
+                  class="menu-item danger"
+                  onClick={() => {
+                    setPick(false);
+                    removeFromList();
+                  }}
+                >
+                  <FolderMinus size={16} />
+                  <span>Fechar {p().name}…</span>
+                </button>
+              </Show>
             </div>
           </Show>
         </div>
@@ -179,7 +175,7 @@ export default function Workspace() {
               <button class="icon-btn small" title="Nova pasta" onClick={() => void newEntry("", true)}><FolderPlus size={12} /></button>
               <button class="icon-btn small" title="Recarregar a lista de arquivos" onClick={() => loadDir("")}><RefreshCw size={12} /></button>
               <button class="icon-btn small" title="Mostrar no Finder/Explorer" onClick={reveal}><FolderSearch size={12} /></button>
-              <button class="icon-btn small" title="Tirar este projeto da lista (a pasta continua no disco)" onClick={() => void removeFromList()}><X size={12} /></button>
+              <button class="icon-btn small" title="Fechar este projeto (tirar do Veocode)" onClick={removeFromList}><FolderMinus size={12} /></button>
             </span>
           </Show>
         </div>

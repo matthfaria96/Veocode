@@ -1,6 +1,7 @@
 //! Raio-X: tudo o que as IAs deixaram ou estão rodando na máquina.
 
 pub mod caches;
+pub mod claude_space;
 pub mod installs;
 pub mod machines;
 pub mod models;

@@ -4,6 +4,8 @@
 // aqui ficam o texto sendo escrito, os pedidos de permissão e o estado da conversa.
 
 import { invoke } from "@tauri-apps/api/core";
+import { sendPrefs } from "./chatPrefs";
+import { attLabel, attsOf, clearAtts, setAttsOf } from "./attachments";
 import { listen } from "@tauri-apps/api/event";
 import { createStore, produce } from "solid-js/store";
 import { accountById } from "./accounts";
@@ -170,7 +172,8 @@ export const clearError = (pid: string) => chats[pid] && setChats(pid, "error", 
 export async function sendChat(pid: string) {
   ensure(pid);
   const c = chats[pid];
-  const text = c.input.trim();
+  const files = attsOf(pid);
+  const text = c.input.trim() || (files.length ? "Veja os anexos." : "");
   if (!text || c.busy) return;
   // pode vir do Painel, de um projeto que não é o aberto na tela Projetos
   const here = projectId() === pid;
@@ -181,21 +184,24 @@ export async function sendChat(pid: string) {
     x.error = null;
     x.input = "";
   }));
+  clearAtts(pid);
   echoes.push({ text: norm(text), at: Date.now() });
-  feedUser(pid, attach ? `${text}\n📎 ${attach}` : text);
+  const shown = [text, attach ? `📎 ${attach}` : "", attLabel(files)].filter(Boolean).join("\n");
+  feedUser(pid, shown);
   if (here) {
-    pushEvent({ kind: "user", title: attach ? `${text}\n📎 ${attach}` : text, agent: "Você", status: "ok" });
+    pushEvent({ kind: "user", title: shown, agent: "Você", status: "ok" });
     setSeenAgent(true);
     setWs("running", true);
   }
   try {
-    await invoke("chat_send", { projectId: pid, text, attach });
+    await invoke("chat_send", { projectId: pid, text, attach, files: files.map((f) => f.path), ...sendPrefs(pid) });
   } catch (e) {
     setChats(pid, produce((x) => {
       x.busy = false;
       x.error = errMsg(e);
       x.input = text; // devolve o texto para tentar de novo
     }));
+    setAttsOf(pid, files);
     if (projectId() === pid) setWs("running", false);
   }
 }
