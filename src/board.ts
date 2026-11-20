@@ -1,4 +1,5 @@
-// Visão geral: até 4 conversas ao vivo, escolhidas sozinhas a partir dos projetos, e a situação de cada projeto.
+// Visão geral: os projetos ao vivo numa grade que se ajusta sozinha (até 9), escolhidos a partir dos
+// projetos, e a situação de cada um.
 
 import { createEffect, createRoot, createSignal, untrack } from "solid-js";
 import { projectChat } from "./chat";
@@ -43,27 +44,9 @@ export function togglePin(id: string) {
   setPins(isPinned(id) ? pinsRaw().filter((x) => x !== id) : [...pinsRaw(), id]);
 }
 
-/** Como a tela se divide: 1 grande, 2 lado a lado, 2 um em cima do outro, 3 (um grande e dois menores) ou 4. */
-export type Layout = "1" | "2c" | "2r" | "3" | "4";
-export const layouts: { id: Layout; slots: number; label: string }[] = [
-  { id: "1", slots: 1, get label() { return tx("Um projeto, tela inteira"); } },
-  { id: "2c", slots: 2, get label() { return tx("Dois lado a lado"); } },
-  { id: "2r", slots: 2, get label() { return tx("Dois, um em cima do outro"); } },
-  { id: "3", slots: 3, get label() { return tx("Três: um grande e dois menores"); } },
-  { id: "4", slots: 4, get label() { return tx("Quatro, um em cada canto"); } },
-];
-const [layoutRaw, setLayoutRaw] = createSignal<Layout>(load("veocode.board.layout", "2c"));
-const slots = () => layouts.find((l) => l.id === layoutRaw())?.slots ?? 2;
-export const setLayout = (l: Layout) => {
-  setLayoutRaw(l);
-  save("veocode.board.layout", l);
-};
-/** A divisão que de fato aparece: com menos projetos do que lugares, usa a divisão do tamanho certo. */
-export const layout = (): Layout => {
-  const n = panes().length;
-  if (n >= slots()) return layoutRaw();
-  return n <= 1 ? "1" : n === 2 ? (layoutRaw() === "2r" ? "2r" : "2c") : "3";
-};
+/** Quantos projetos cabem na tela Início ao mesmo tempo: a grade se ajusta sozinha (2, 3, 4, 6, 8, 9). */
+const MAX_ON_SCREEN = 9;
+const slots = () => Math.min(MAX_ON_SCREEN, realIds().filter((id) => !closed().includes(id)).length);
 
 // ---------------------------------------------------------------- quem aparece na tela
 // Os projetos entram sozinhos: primeiro os fixados, depois quem precisa de você, quem está trabalhando

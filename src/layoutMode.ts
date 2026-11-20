@@ -61,3 +61,11 @@ export const setFilesW = (w: number, save = false) => {
 };
 export const resetFilesW = () => setFilesW(FILES_W, true);
 export const [filesMax, setFilesMax] = createSignal(false);
+
+/** Modo foco (tela Projetos): todas as conversas do projeto lado a lado, numa grade. Lembrado neste computador. */
+const [focusMode, setFocusRaw] = createSignal(recall("veocode.ws.focus") === "1");
+export { focusMode };
+export function setFocusMode(v: boolean) {
+  setFocusRaw(v);
+  remember("veocode.ws.focus", v ? "1" : "0");
+}

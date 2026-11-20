@@ -1,11 +1,12 @@
 import { dismissable } from "../dismiss";
-import { AlertTriangle, ArrowLeftRight, Ban, Check, ChevronDown, Maximize2, MessageSquarePlus, Minimize2, MoreHorizontal, PanelRightOpen, Paperclip, Pin, GripVertical, GitBranch, Sparkles, SendHorizontal, ShieldCheck, Square, X } from "lucide-solid";
+import { AlertTriangle, ArrowLeftRight, Ban, Check, ChevronDown, Layers, Maximize2, MessageSquarePlus, Minimize2, MoreHorizontal, PanelRightOpen, Paperclip, Pin, GripVertical, GitBranch, Sparkles, SendHorizontal, ShieldCheck, Square, X } from "lucide-solid";
 import { createEffect, createMemo, createSignal, For, on, Show } from "solid-js";
 import { accountById } from "../accounts";
 import { closePane, isPinned, maximized, panes, projectState, replacePane, setMaximized, swapPanes, togglePin } from "../board";
 import { attsOf, dropPid, pasteFiles, pickFiles } from "../attachments";
 import AttachBar from "./AttachBar";
-import { activeKey, nameFromPrompt } from "../convTabs";
+import { activeKey, nameFromPrompt, tabsOf } from "../convTabs";
+import { setFocusMode } from "../layoutMode";
 import { MicButton } from "./Mic";
 import { listeningTo, voiceKey } from "../voice";
 import { MediaStrip, SentThumbs } from "./Media";
@@ -22,7 +23,7 @@ import { ProjectIcon } from "./icons";
 import Markdown from "./Markdown";
 import { ProviderMark } from "./ui";
 import MsgTools, { focusComposer } from "./MsgTools";
-import { tx } from "../i18n";
+import { tx, txn } from "../i18n";
 
 type Block = { kind: "msg"; item: FeedItem } | { kind: "steps"; items: FeedItem[] };
 
@@ -43,7 +44,7 @@ const STEP_KINDS = new Set(["think", "read", "search", "swarm", "edit", "create"
 const stepKind = (k?: string) => (k && STEP_KINDS.has(k) ? k : "tool") as keyof typeof kindColor;
 
 /** Um canto da grade: a conversa de um projeto rolando ao vivo, com a caixa para pedir. */
-export default function ChatPane(props: { pid: string; index: number }) {
+export default function ChatPane(props: { pid: string; index: number; span?: number }) {
   const p = () => projects.find((x) => x.id === props.pid)!;
   // conversa da frente deste projeto (a mesma aba aberta na tela Projetos)
   const ck = () => activeKey(props.pid);
@@ -74,13 +75,24 @@ export default function ChatPane(props: { pid: string; index: number }) {
   };
   const send = () => (nameFromPrompt(ck(), chat().input), void sendChat(ck()));
   const others = () => projects.filter((x) => !x.demo && x.id !== props.pid);
+  // resumo das outras conversas (abas) do projeto: esta janela mostra a principal
+  const convs = () => tabsOf(props.pid);
+  const working = () => convs().filter((t) => chatOf(t.key).busy).length;
+  const asking = () => convs().some((t) => t.key !== ck() && chatOf(t.key).perms.length > 0);
+  const convTip = () =>
+    [...convs().map((t) => `${t.key === ck() ? "▸ " : "· "}${tx(t.title)}${chatOf(t.key).perms.length ? tx(" · esperando você") : chatOf(t.key).busy ? tx(" · trabalhando") : ""}`), "", tx("Clique para ver todas lado a lado (modo foco)")].join("\n");
+  const openFocus = () => {
+    setProjectId(props.pid);
+    setFocusMode(true);
+    setView("workspace");
+  };
 
   return (
     <section
       class="pane"
       data-drop-pane={props.pid}
       classList={{ ask: st().tone === "ask", work: st().tone === "work", max: maximized() === props.pid, "drop-on": dropOver() === props.pid, lifted: drag()?.kind === "pane" && drag()?.id === props.pid }}
-      style={{ "--c": a().color }}
+      style={{ "--c": a().color, "grid-column": props.span ? `span ${props.span}` : undefined }}
     >
       <Show when={dropOver() === props.pid}>
         <div class="pane-drop-hint">{drag()?.kind === "pane" ? tx("Trocar de lugar") : tx("Pôr {label} aqui", { label: drag()?.label })}</div>
@@ -98,7 +110,15 @@ export default function ChatPane(props: { pid: string; index: number }) {
           <strong>{p().name}</strong>
           <ChevronDown size={12} />
         </button>
-        <span class={`pane-state ${st().tone}`}><i />{st().label}</span>
+        <span class={`pane-state ${st().tone}`} title={st().label}><i />{st().label}</span>
+        <Show when={convs().length > 1}>
+          <button class="pane-convs" classList={{ work: working() > 0, ask: asking() }} title={convTip()} onClick={openFocus}>
+            <Layers size={11} />
+            <span class="pc-full">{txn(convs().length, "{n} conversa", "{n} conversas")}</span>
+            <b class="pc-short">{convs().length}</b>
+            <Show when={working() > 0}><span class="pc-work"> · {tx("{n} trabalhando", { n: working() })}</span></Show>
+          </button>
+        </Show>
         <Show when={g()?.repo && (g()!.ahead || g()!.behind || g()!.changed)}>
           <span class="pane-git" title={gitWords(g()).map((w) => w.text).join(" · ")}>
             <Show when={g()!.ahead}><b class="warn">↑{g()!.ahead}</b></Show>

@@ -4,7 +4,8 @@ import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Sh
 import { Portal } from "solid-js/web";
 import { accountById } from "../accounts";
 import { api, isTauri } from "../api";
-import { homeFocus, inGrid, layout, layouts, maximized, panes, projectState, replacePane, setHomeFocus, setLayout, setMaximized, toneOrder, type Layout } from "../board";
+import { homeFocus, inGrid, maximized, panes, projectState, replacePane, setHomeFocus, setMaximized, toneOrder } from "../board";
+import { gridFit, spanOf, useWidth } from "../gridFit";
 import { drag, dropOver, startDrag } from "../drag";
 import { feedOf, watchFeeds } from "../feeds";
 import { found, foundLoaded, loadFound, type Found } from "../found";
@@ -54,6 +55,10 @@ export default function Board() {
   onCleanup(() => window.removeEventListener("keydown", key));
 
   const shown = () => (maximized() && panes().includes(maximized()!) ? [maximized()!] : panes());
+  // grade que se ajusta ao número de projetos na tela (2, 3, 4, 6, 8, 9)
+  let page!: HTMLDivElement;
+  const width = useWidth(() => page);
+  const fit = createMemo(() => gridFit(shown().length, width()));
   const shelf = createMemo(() =>
     [...real()].sort((a, b) => {
       const sa = projectState(a.id);
@@ -63,7 +68,7 @@ export default function Board() {
   );
 
   return (
-    <div class="page board home" classList={{ focus: homeFocus() && real().length > 0 }}>
+    <div class="page board home" ref={page} classList={{ focus: homeFocus() && real().length > 0 }}>
       <Show when={!homeFocus() || !real().length}>
         <Welcome />
         <NeedsStrip />
@@ -79,24 +84,6 @@ export default function Board() {
             <span>{tx("Foco")}</span>
             <Toggle on={homeFocus()} onChange={setHomeFocus} />
           </label>
-          <Show when={real().length > 1}>
-            <div class="layout-picks" role="radiogroup" aria-label={tx("Quantos projetos na tela")}>
-              <For each={layouts}>
-                {(l) => (
-                  <button
-                    role="radio"
-                    aria-checked={layout() === l.id}
-                    classList={{ active: layout() === l.id }}
-                    disabled={l.slots > real().length}
-                    title={l.slots > real().length ? tx("{label} (precisa de {slots} projetos)", { label: l.label, slots: l.slots }) : l.label}
-                    onClick={() => { setMaximized(null); setLayout(l.id); }}
-                  >
-                    <LayoutIcon id={l.id} />
-                  </button>
-                )}
-              </For>
-            </div>
-          </Show>
         </div>
         <Show
           when={shown().length}
@@ -108,8 +95,12 @@ export default function Board() {
             </div>
           }
         >
-          <div class={`board-grid lay-${maximized() ? "1" : layout()}`} classList={{ "is-dragging": !!drag() }}>
-            <For each={shown()}>{(id, i) => <ChatPane pid={id} index={i()} />}</For>
+          <div
+            class="board-grid"
+            classList={{ "is-dragging": !!drag(), single: shown().length === 1 }}
+            style={{ "grid-template-columns": `repeat(${fit().units}, minmax(0, 1fr))`, "grid-template-rows": `repeat(${fit().rows}, minmax(${fit().rows > 2 ? 260 : 220}px, 1fr))`, "--rows": fit().rows }}
+          >
+            <For each={shown()}>{(id, i) => <ChatPane pid={id} index={i()} span={spanOf(fit(), i())} />}</For>
           </div>
         </Show>
 
@@ -469,20 +460,6 @@ export default function Board() {
       </div>
     );
   }
-}
-
-/** Desenho pequeno de cada divisão da tela. */
-function LayoutIcon(props: { id: Layout }) {
-  const r = (x: number, y: number, w: number, h: number) => <rect x={x} y={y} width={w} height={h} rx="1.5" />;
-  return (
-    <svg width="26" height="18" viewBox="0 0 26 18" class="layout-icon" aria-hidden="true">
-      {props.id === "1" && r(1, 1, 24, 16)}
-      {props.id === "2c" && [r(1, 1, 11.5, 16), r(13.5, 1, 11.5, 16)]}
-      {props.id === "2r" && [r(1, 1, 24, 7.5), r(1, 9.5, 24, 7.5)]}
-      {props.id === "3" && [r(1, 1, 13, 16), r(15, 1, 10, 7.5), r(15, 9.5, 10, 7.5)]}
-      {props.id === "4" && [r(1, 1, 11.5, 7.5), r(13.5, 1, 11.5, 7.5), r(1, 9.5, 11.5, 7.5), r(13.5, 9.5, 11.5, 7.5)]}
-    </svg>
-  );
 }
 
 /** No topo da Visão geral: o que espera você agora (o resto fica no sininho). */

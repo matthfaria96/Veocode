@@ -56,6 +56,9 @@ onChatSession((key, session) => {
   save();
 });
 
+/** Carrega a conversa de uma aba sem trocar a aba da frente (modo foco mostra todas). */
+export const wakeTab = (pid: string, key: string) => void wake(pid, key);
+
 export function selectTab(pid: string, key: string) {
   ensure(pid);
   setTabs(pid, "active", key);

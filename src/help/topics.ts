@@ -42,7 +42,7 @@ export const topics: Topic[] = [
           "Chaves de API ficam no chaveiro do sistema, nunca num arquivo.",
           "O projeto \"demo · simulação\" só aparece enquanto você não tem nenhuma pasta: é uma demonstração parada (aperte Assistir), com um aviso em cima, e nada ali é gravado.",
           "\"Seguir o agente\" (embaixo, ao lado da Atividade) vem desligado: a tela não troca sozinha de arquivo. Ligue se quiser que a árvore e o editor acompanhem o que a IA está mexendo.",
-          "Com vários projetos rodando, a Visão geral mostra todos de uma vez e até 4 conversas ao vivo, na divisão de tela que você escolher.",
+          "Com vários projetos rodando, a Visão geral mostra todos de uma vez, cada um com a conversa ao vivo, numa grade que se ajusta sozinha.",
           "⌘K (Ctrl+K no Windows) abre a busca de projetos, arquivos e ações. F1 abre esta ajuda.",
           "⌘1 a ⌘5 trocam de tela (Visão geral, Projetos, Chat livre, Contas, Computador). ⌘N começa uma conversa nova no projeto ou no Chat livre.",
           "Passe o mouse numa mensagem para copiar o texto; nos seus pedidos, a seta volta o texto para a caixa para você ajustar e mandar de novo. Blocos de código têm o botão Copiar.",
@@ -69,7 +69,8 @@ export const topics: Topic[] = [
         title: "Na tela agora",
         items: [
           "Os projetos entram sozinhos: quem pede sua permissão ou deu erro vem primeiro, depois quem está trabalhando e quem mexeu por último.",
-          "Escolha quantos aparecem nos desenhos à direita: um, dois lado a lado, dois um em cima do outro, três ou quatro.",
+          "A grade se ajusta sozinha ao número de projetos: dois lado a lado, três em linha, quatro em 2×2, seis em 3×2, até nove de uma vez. O ✕ tira um projeto da tela.",
+          "Cada janela mostra a conversa principal do projeto. Se ele tem mais de uma, o selo \"3 conversas · 1 trabalhando\" resume todas; clique nele para ver todas lado a lado no modo foco.",
           "Arraste um painel pelo título até outro para os dois trocarem de lugar.",
           "Arraste um projeto da lista de baixo para cima de um painel: ele entra no lugar e fica fixado.",
           "O alfinete fixa um projeto na tela; sem fixar, um projeto parado pode dar lugar a outro que passou a pedir você.",
@@ -218,6 +219,8 @@ export const topics: Topic[] = [
         items: [
           "O botão de relógio lista as conversas desta pasta (as do chat, as do Terminal e as do editor). Clique para continuar de onde parou.",
           "\"Nova conversa\" começa do zero.",
+          "Várias conversas ao mesmo tempo: o + na barra de cima abre outra aba; as outras continuam trabalhando.",
+          "Modo foco (o botão de grade na barra de cima): todas as conversas do projeto lado a lado, cada uma com a sua caixa. A grade se ajusta sozinha a 2, 3, 4, 6 ou 8 conversas. Clique de novo para voltar.",
           "Conversas de outra conta aparecem com cadeado: troque a conta do projeto antes.",
           "O botão de terminal abre o Claude no Terminal do sistema, na pasta e com a conta do projeto.",
         ],

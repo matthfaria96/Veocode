@@ -1,4 +1,4 @@
-import { AlertTriangle, Eye, ArrowLeft, Ban, Check, ChevronDown, FileCode2, History, MessageSquarePlus, Pencil, Paperclip, Plus, SendHorizontal, ShieldCheck, Square, TerminalSquare, X } from "lucide-solid";
+import { AlertTriangle, Eye, ArrowLeft, Ban, Check, ChevronDown, FileCode2, History, Maximize2, MessageSquarePlus, Pencil, Paperclip, Plus, SendHorizontal, ShieldCheck, Square, TerminalSquare, X } from "lucide-solid";
 import { createEffect, createMemo, createResource, createSignal, For, Match, on, Show, Switch } from "solid-js";
 import { accessLevels } from "../data/mock";
 import { accountById } from "../accounts";
@@ -6,14 +6,14 @@ import { currentProject, showToast, ws, type ActivityEvent } from "../store";
 import { seenAgent } from "../agentFeed";
 import { acc, loadAccess, openClaude } from "../access";
 import { answerPermission, chatOf, clearError, deleteConvos, listConversations, ofChat, resendEdited, sendChat, setAttach, setInput, stopChat, type Convo } from "../chat";
-import { activeKey, nameFromPrompt, newTab, openInTab, syncRunning, tabsOf, wakeActive } from "../convTabs";
+import { activeKey, closeTab, nameFromPrompt, newTab, openInTab, selectTab, syncRunning, tabsOf, wakeActive, wakeTab, type ConvTab } from "../convTabs";
 import { ConvTabsBar, EconomyHint } from "./ConvBar";
 import { MemoryPanel } from "./Memory";
 import { isTauri } from "../api";
 import AccessLevel from "./AccessLevel";
 import ConvoRow from "./ConvoRow";
 import { gitTab, setChatTab } from "../git";
-import { panelAt, setPanelAt } from "../layoutMode";
+import { focusMode, panelAt, setFocusMode, setPanelAt } from "../layoutMode";
 import BottomPanel from "./BottomPanel";
 import { MicButton } from "./Mic";
 import { stepsSummary } from "../steps";
@@ -28,6 +28,7 @@ import { AgentChipButton, AgentMenu } from "./AgentMenu";
 import MsgTools, { focusComposer } from "./MsgTools";
 import Markdown from "./Markdown";
 import { tx, txn } from "../i18n";
+import { gridFit, spanOf, useWidth } from "../gridFit";
 
 /** Projeto real sem conversa ainda. */
 function RealIdle(props: { onAccess: () => void; onConvos: () => void }) {
@@ -87,9 +88,9 @@ const fileName = (p: string) => p.slice(p.lastIndexOf("/") + 1);
 type Block = { t: "user" | "say" | "done"; e: ActivityEvent } | { t: "work"; items: ActivityEvent[] };
 
 /** Conversa real: pedidos, respostas e os passos do Claude (lidos do histórico dele). */
-function RealConversation(props: { events: () => ActivityEvent[]; tail?: boolean }) {
+function RealConversation(props: { events: () => ActivityEvent[]; tail?: boolean; k?: string }) {
   // editar um pedido já mandado (como no Claude): o texto volta na própria bolha
-  const key = () => activeKey(currentProject().id);
+  const key = () => props.k ?? activeKey(currentProject().id);
   const [editing, setEditing] = createSignal<number | null>(null);
   const [draft, setDraft] = createSignal("");
   const clean = (t: string) => t.replace(/\n📎[^\n]*/g, "").trim();
@@ -139,7 +140,7 @@ function RealConversation(props: { events: () => ActivityEvent[]; tail?: boolean
                         <MsgTools
                           text={e().title}
                           onEdit={props.tail && e().anchor !== undefined ? () => startEdit(e()) : undefined}
-                          onReuse={() => (setInput(key(), e().title), focusComposer(document.querySelector(".chat-panel")))}
+                          onReuse={() => (setInput(key(), e().title), focusComposer(props.k ? document.querySelector(`[data-chat-key="${props.k}"]`) : document.querySelector(".chat-panel")))}
                         />
                       </div>
                     }
@@ -229,7 +230,7 @@ function RealConversation(props: { events: () => ActivityEvent[]; tail?: boolean
           );
         }}
       </For>
-      <Show when={props.tail !== false}><ChatTail /></Show>
+      <Show when={props.tail !== false}><ChatTail k={props.k} /></Show>
     </>
   );
 }
@@ -302,9 +303,10 @@ function Conversations(props: { onClose: () => void }) {
 }
 
 /** Texto chegando, pedidos de permissão e erro da conversa. */
-function ChatTail() {
+function ChatTail(props: { k?: string }) {
   const p = currentProject;
-  const chat = () => chatOf(activeKey(p().id));
+  const ck = () => props.k ?? activeKey(p().id);
+  const chat = () => chatOf(ck());
   const a = () => accountById(p().accountId);
   return (
     <>
@@ -324,10 +326,10 @@ function ChatTail() {
             <strong>{q.title}</strong>
             <Show when={q.detail}><pre>{q.detail}</pre></Show>
             <div class="perm-ask-actions">
-              <button class="ghost-btn" disabled={q.answering} onClick={() => answerPermission(activeKey(p().id), q.requestId, false)}>
+              <button class="ghost-btn" disabled={q.answering} onClick={() => answerPermission(ck(), q.requestId, false)}>
                 <Ban size={13} /> {tx("Recusar")}
               </button>
-              <button class="primary-btn small" disabled={q.answering} onClick={() => answerPermission(activeKey(p().id), q.requestId, true)}>
+              <button class="primary-btn small" disabled={q.answering} onClick={() => answerPermission(ck(), q.requestId, true)}>
                 <Check size={13} /> {tx("Permitir")}
               </button>
             </div>
@@ -338,7 +340,7 @@ function ChatTail() {
         <div class="bubble chat-error pop-in">
           <AlertTriangle size={14} />
           <span>{chat().error}</span>
-          <button class="icon-btn small" title={tx("Fechar")} onClick={() => clearError(activeKey(p().id))}><X size={12} /></button>
+          <button class="icon-btn small" title={tx("Fechar")} onClick={() => clearError(ck())}><X size={12} /></button>
         </div>
       </Show>
     </>
@@ -346,9 +348,9 @@ function ChatTail() {
 }
 
 /** Caixa de mensagem: Enter envia, Shift+Enter quebra linha. */
-function Composer(props: { onLevel: () => void; levelOn?: boolean }) {
+function Composer(props: { onLevel: () => void; levelOn?: boolean; k?: string; compact?: boolean }) {
   const p = currentProject;
-  const k = () => activeKey(p().id);
+  const k = () => props.k ?? activeKey(p().id);
   const chat = () => chatOf(k());
   const a = () => accountById(p().accountId);
   const level = () => accessLevels[p().access];
@@ -374,8 +376,8 @@ function Composer(props: { onLevel: () => void; levelOn?: boolean }) {
 
   return (
     <>
-    <Show when={!demo()}><MediaStrip pid={p().id} /></Show>
-    <Show when={!demo()}><EconomyHint pid={p().id} /></Show>
+    <Show when={!demo() && !props.compact}><MediaStrip pid={p().id} /></Show>
+    <Show when={!demo() && !props.compact}><EconomyHint pid={p().id} /></Show>
     <div class="composer" classList={{ busy: chat().busy, dropping: dropPid() === k(), listening: listeningTo(k()) }} data-attach-pid={demo() ? undefined : k()}>
       <AttachBar
         pid={k()}
@@ -400,10 +402,10 @@ function Composer(props: { onLevel: () => void; levelOn?: boolean }) {
       />
       <textarea
         ref={box}
-        rows={2}
+        rows={props.compact ? 1 : 2}
         value={chat().input}
         readOnly={listeningTo(k())}
-        placeholder={listeningTo(k()) ? tx("Pode falar… (Enter para, Esc cancela)") : tx("Pedir algo a {label}… (Enter envia, ⌥ Espaço para falar)", { label: a().label })}
+        placeholder={listeningTo(k()) ? tx("Pode falar… (Enter para, Esc cancela)") : props.compact ? tx("Pedir algo… (Enter envia)") : tx("Pedir algo a {label}… (Enter envia, ⌥ Espaço para falar)", { label: a().label })}
         onPaste={(e) => !demo() && void pasteFiles(k(), e)}
         onInput={(e) => {
           setInput(k(), e.currentTarget.value);
@@ -451,6 +453,63 @@ function Composer(props: { onLevel: () => void; levelOn?: boolean }) {
   );
 }
 
+/** Modo foco: todas as conversas (abas) do projeto ao mesmo tempo, cada uma com a sua caixa. */
+function FocusGrid(props: { pid: string; onLevel: () => void }) {
+  const list = () => tabsOf(props.pid);
+  let grid!: HTMLDivElement;
+  const width = useWidth(() => grid);
+  // cada aba carrega a sua conversa (a da frente já está carregada)
+  createEffect(on(() => list().map((t) => t.key).join(","), () => list().forEach((t) => wakeTab(props.pid, t.key))));
+  // a aba escolhida na barra vem para a vista
+  createEffect(on(() => activeKey(props.pid), (k) => requestAnimationFrame(() => grid?.querySelector(`[data-chat-key="${k}"]`)?.scrollIntoView({ block: "nearest", behavior: "smooth" })), { defer: true }));
+  const layout = createMemo(() => gridFit(list().length, width()));
+  return (
+    <div
+      class="focus-grid"
+      ref={grid}
+      style={{ "grid-template-columns": `repeat(${layout().units}, minmax(0, 1fr))`, "grid-template-rows": `repeat(${layout().rows}, minmax(${layout().rows > 2 ? 280 : 240}px, 1fr))` }}
+    >
+      <For each={list()}>
+        {(t, i) => <FocusTile pid={props.pid} tab={t} span={spanOf(layout(), i())} onLevel={props.onLevel} />}
+      </For>
+    </div>
+  );
+}
+
+function FocusTile(props: { pid: string; tab: ConvTab; span: number; onLevel: () => void }) {
+  const k = () => props.tab.key;
+  const c = () => chatOf(k());
+  const events = createMemo(() => ws.events.filter((e) => ofChat(k(), e)));
+  const active = () => activeKey(props.pid) === k();
+  const state = () => (c().perms.length ? tx("esperando você") : c().busy ? tx("trabalhando") : c().error ? tx("com erro") : events().length ? "" : tx("vazia"));
+  let scroller!: HTMLDivElement;
+  createEffect(on(() => [events().length, c().draft.length >> 6, c().perms.length, c().error], () => setTimeout(() => scroller?.scrollTo({ top: scroller.scrollHeight, behavior: "smooth" }), 30)));
+  return (
+    <section
+      class="focus-tile pop-in"
+      classList={{ on: active(), busy: c().busy, ask: c().perms.length > 0, err: !!c().error }}
+      style={{ "grid-column": `span ${props.span}` }}
+      data-chat-key={k()}
+      onFocusIn={() => !active() && selectTab(props.pid, k())}
+    >
+      <header class="focus-head">
+        <i class="conv-dot" />
+        <strong title={tx(props.tab.title)}>{tx(props.tab.title)}</strong>
+        <small>{state()}</small>
+        <span class="composer-gap" />
+        <button class="icon-btn small" title={tx("Abrir só esta conversa (sai do modo foco)")} onClick={() => (selectTab(props.pid, k()), setFocusMode(false))}><Maximize2 size={13} /></button>
+        <button class="icon-btn small" title={tx("Fechar a aba (a conversa fica no histórico)")} onClick={() => void closeTab(props.pid, k())}><X size={13} /></button>
+      </header>
+      <div class="chat-scroll focus-scroll" ref={scroller}>
+        <Show when={events().length > 0 || c().busy || c().error} fallback={<div class="focus-empty"><MessageSquarePlus size={18} /><span>{tx("Conversa nova: peça algo aqui embaixo.")}</span></div>}>
+          <RealConversation events={events} tail k={k()} />
+        </Show>
+      </div>
+      <Composer k={k()} compact onLevel={props.onLevel} />
+    </section>
+  );
+}
+
 type Pane = "chat" | "ext" | "mem" | "hist";
 export type View = Pane | "act";
 
@@ -484,6 +543,7 @@ export default function ChatPanel() {
     }
   }));
   const real = () => isTauri && !project().demo;
+  const focusOn = () => focusMode() && real() && view() === "chat";
   const key = () => activeKey(project().id);
   const tabEvents = createMemo(() => ws.events.filter((e) => ofChat(key(), e)));
   // sessões do Claude nesta pasta que não são de nenhuma aba (Terminal, editor, app do Claude)
@@ -525,7 +585,10 @@ export default function ChatPanel() {
               <BottomPanel asTab />
             </div>
           </Show>
-          <div class="chat-scroll" ref={scroller} data-target="chat" classList={{ hidden: ((convos() || mem()) && real()) || view() === "act" }}>
+          <Show when={focusOn()}>
+            <FocusGrid pid={project().id} onLevel={() => setTab("access")} />
+          </Show>
+          <div class="chat-scroll" ref={scroller} data-target="chat" classList={{ hidden: ((convos() || mem()) && real()) || view() === "act" || focusOn() }}>
             <Show when={ext() && real()}>
               <div class="ext-head pop-in">
                 <span class="ext-head-icon"><Eye size={15} /></span>
@@ -579,7 +642,7 @@ export default function ChatPanel() {
               </Show>
             </Show>
           </div>
-          <Show when={view() === "chat" || view() === "hist"} fallback={<Show when={ext()}><p class="ext-note">{tx("Sessões do Claude abertas fora do Veocode nesta pasta (Terminal, editor, app do Claude). Aqui é só para acompanhar: para conversar, use uma aba sua.")}</p></Show>}>
+          <Show when={!focusOn() && (view() === "chat" || view() === "hist")} fallback={<Show when={ext()}><p class="ext-note">{tx("Sessões do Claude abertas fora do Veocode nesta pasta (Terminal, editor, app do Claude). Aqui é só para acompanhar: para conversar, use uma aba sua.")}</p></Show>}>
             <Composer onLevel={() => setTab("access")} />
           </Show>
         </Match>

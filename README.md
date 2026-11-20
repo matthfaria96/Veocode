@@ -64,6 +64,8 @@ AI coding agents are great, and they are also a black box running with your user
 ### Projects
 A real folder per project: live file tree, editor, Git panel and terminals. The agent's chat runs inside the app (Claude Code headless with `claude -p`, or DeepSeek / OpenAI-compatible / Ollama with a small set of file tools). Every step the agent takes — reading, searching, editing, running a command — is animated on the tree with a cursor in the account's color, so you *see* the work instead of scrolling logs. Permission requests show up as cards with **Allow** / **Deny**.
 
+Run several conversations in the same project at once (one tab each), and turn on **focus mode** to see them all side by side, each with its own message box. The grid adjusts itself to 2, 3, 4, 6 or 8 conversations.
+
 ![Projects](docs/screenshots/projects.jpg)
 
 ### Accounts and AIs
@@ -95,7 +97,7 @@ Press <kbd>F1</kbd> anywhere: one illustrated page per screen, plus a glossary o
 
 ![Help](docs/screenshots/help.jpg)
 
-Other screens: **Overview**, the start screen (today's work across projects in numbers, up to four live chats you can drag around, and folders where you already used Claude), and **Settings** (light/dark theme, icon and animation styles). <kbd>⌘K</kbd> opens the command palette, <kbd>⌘1</kbd>–<kbd>⌘5</kbd> switch screens.
+Other screens: **Overview**, the start screen (today's work across projects in numbers, every project's live chat in a grid that adjusts itself to how many you have (drag to reorder), and folders where you already used Claude), and **Settings** (light/dark theme, icon and animation styles). <kbd>⌘K</kbd> opens the command palette, <kbd>⌘1</kbd>–<kbd>⌘5</kbd> switch screens.
 
 ## How it works
 

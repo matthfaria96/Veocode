@@ -15,7 +15,7 @@ import { newEntry } from "../fileActions";
 import { startAgentFeed } from "../agentFeed";
 import { anyBusy, restoreChat } from "../chat";
 import { loadDir, openRealProject } from "../realProject";
-import { api } from "../api";
+import { api, isTauri } from "../api";
 import FileTree from "../components/FileTree";
 import RealFileTree from "../components/RealFileTree";
 import Editor from "../components/Editor";
@@ -25,7 +25,8 @@ import AgentCursors from "../components/AgentCursors";
 import { ProviderMark } from "../components/ui";
 import { projectState } from "../board";
 import { watchFeeds } from "../feeds";
-import { bottomOpen, filesMax, filesW, resetFilesW, setFilesMax, setFilesW, setWsMode, wsMode } from "../layoutMode";
+import { bottomOpen, filesMax, filesW, focusMode, resetFilesW, setFilesMax, setFilesW, setWsMode, wsMode } from "../layoutMode";
+
 import { tx, txn } from "../i18n";
 
 const [dragging, setDragging] = createSignal(false);
@@ -91,7 +92,7 @@ export default function Workspace() {
   };
 
   return (
-    <div class="workspace" classList={{ adv: wsMode() === "avancado", "has-files": ws.openTabs.length > 0, "files-max": filesMax() && ws.openTabs.length > 0, resizing: dragging() }} style={{ "--files-w": `${filesW()}px` }} ref={root}>
+    <div class="workspace" classList={{ focus: focusMode() && isTauri && !p().demo, adv: wsMode() === "avancado", "has-files": ws.openTabs.length > 0, "files-max": filesMax() && ws.openTabs.length > 0, resizing: dragging() }} style={{ "--files-w": `${filesW()}px` }} ref={root}>
       <Show when={wsMode() === "avancado"}>
         <ProjectsColumn />
       </Show>

@@ -1,9 +1,9 @@
 // Barra de conversas do projeto (abas), medidor de contexto, aviso de conversa pesada e
 // memória do projeto.
-import { Activity, Brain, Check, Eye, Gauge, History, PanelBottom, Plus, Sparkles, X } from "lucide-solid";
+import { Activity, Brain, Check, Eye, Gauge, History, LayoutGrid, PanelBottom, Plus, Sparkles, X } from "lucide-solid";
 import { createSignal, For, Show, type Component, type JSX } from "solid-js";
 import { Dynamic } from "solid-js/web";
-import { bottomOpen, setBottomOpen } from "../layoutMode";
+import { bottomOpen, focusMode, setBottomOpen, setFocusMode } from "../layoutMode";
 import { chatOf } from "../chat";
 import { activeKey, CACHE_TTL, closeTab, concludeTab, continueFresh, fmtTokens, newTab, renameTab, selectTab, tabsOf, weightOf } from "../convTabs";
 import { ws } from "../store";
@@ -94,12 +94,25 @@ export function ConvTabsBar(props: { pid: string; view: View; onView: (v: View) 
         </span>
       </Show>
       <div class="conv-tools">
+        <Tool
+          icon={LayoutGrid}
+          name={focusMode() ? tx("Sair do modo foco") : tx("Modo foco")}
+          hint={tx("Todas as conversas deste projeto lado a lado, cada uma com a sua caixa. Abra mais com o +.")}
+          on={focusMode()}
+          onClick={() => {
+            if (props.view !== "chat") props.onView("chat");
+            setFocusMode(!focusMode());
+          }}
+        >
+          <Show when={focusMode() && tabsOf(props.pid).length > 1}><i class="ctool-badge">{tabsOf(props.pid).length}</i></Show>
+        </Tool>
+        <i class="conv-sep" />
         <Tool icon={Eye} name={tx("Fora do Veocode")} hint={tx("Claude rodando nesta pasta pelo Terminal, editor ou app do Claude. Só para acompanhar.")} on={props.view === "ext"} onClick={() => props.onView("ext")}>
           <Show when={props.extCount > 0}><i class="ctool-badge">{props.extCount > 9 ? "9+" : props.extCount}</i></Show>
         </Tool>
         <i class="conv-sep" />
         <div class="ctool-pair" classList={{ on: props.view === "act" || bottomOpen() }}>
-          <Tool icon={Activity} name="Atividade" hint={tx("Atividade, comandos do agente e terminal numa aba, no lugar da conversa")} on={props.view === "act"} onClick={() => props.onView("act")}>
+          <Tool icon={Activity} name={tx("Atividade")} hint={tx("Atividade, comandos do agente e terminal numa aba, no lugar da conversa")} on={props.view === "act"} onClick={() => props.onView("act")}>
             <Show when={ws.running}><i class="ctool-live" /></Show>
           </Tool>
           <Tool icon={PanelBottom} name={bottomOpen() ? tx("Esconder o painel de baixo") : tx("Painel embaixo")} hint={tx("Mostra a atividade embaixo da conversa, para ver as duas juntas")} on={bottomOpen()} onClick={() => setBottomOpen(!bottomOpen())} />
