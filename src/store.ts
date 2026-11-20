@@ -199,6 +199,9 @@ export const DIFF = "diff:";
 export const isDiffTab = (t: string) => t.startsWith(DIFF);
 export const diffPathOf = (t: string) => t.slice(DIFF.length);
 export const openDiff = (path: string) => openFile(DIFF + path);
+/** A aba que junta todas as mudanças da pasta, um arquivo embaixo do outro. */
+export const ALL_CHANGES = DIFF + "*";
+export const openAllChanges = () => openFile(ALL_CHANGES);
 
 export function openFile(path: string) {
   if (!ws.openTabs.includes(path)) setWs("openTabs", (t) => [...t, path]);

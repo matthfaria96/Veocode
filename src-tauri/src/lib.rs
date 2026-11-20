@@ -374,6 +374,12 @@ async fn git_file_diff(state: State<'_, AppState>, project_id: String, path: Str
 }
 
 #[tauri::command]
+async fn git_diff_all(state: State<'_, AppState>, project_id: String) -> Result<String, String> {
+    let root = state.root_of(&project_id)?;
+    blocking(move || git::diff_all(&root)).await?
+}
+
+#[tauri::command]
 async fn git_github(state: State<'_, AppState>, project_id: String, branch: Option<String>) -> Result<git::GitHub, String> {
     let root = state.root_of(&project_id)?;
     blocking(move || git::github(&root, branch.as_deref())).await?
@@ -1423,6 +1429,7 @@ pub fn run() {
             git_commit_diff,
             chat_fork,
             git_file_diff,
+            git_diff_all,
             settings_get,
             i18n_set,
             settings_set,

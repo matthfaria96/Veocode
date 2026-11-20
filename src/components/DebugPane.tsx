@@ -1,6 +1,6 @@
 // Modo IA, à direita: o que a IA está fazendo por baixo da conversa. O app rodando no navegador
 // (ou num tamanho de celular), os comandos e servidores do projeto, os subagentes e a atividade.
-import { Activity, Bot, ChevronRight, Crosshair, ExternalLink, Eye, FileText, Footprints, Globe, Monitor, RotateCw, Smartphone, Square, SquareTerminal, X } from "lucide-solid";
+import { Activity, Bot, ChevronRight, Crosshair, ExternalLink, Eye, FileText, Footprints, Globe, Monitor, Plus, RotateCw, Smartphone, Square, SquareTerminal, X } from "lucide-solid";
 import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch } from "solid-js";
 import { api, formatSize } from "../api";
 import { follow, setFollow } from "../agentFeed";
@@ -203,9 +203,20 @@ function ProcRow(props: { p: ProjProc; onOpenPort: (port: number) => void; portT
 
 // ------------------------------------------------------------------ navegador
 
-// endereço escolhido em cada projeto (some ao fechar o app)
-const [urls, setUrls] = createSignal<Record<string, string>>({});
+// abas do navegador em cada projeto (somem ao fechar o app). Cada aba guarda o endereço e um
+// contador de "recarregar"; as que não estão à frente continuam vivas, só escondidas.
+type BrTab = { id: number; url: string; n: number };
+type BrState = { list: BrTab[]; at: number };
+let nextTab = 1;
+const blankTab = (): BrTab => ({ id: nextTab++, url: "", n: 0 });
+const [brs, setBrs] = createSignal<Record<string, BrState>>({});
+// toda pasta começa com uma aba vazia (id 0; as novas contam a partir de 1)
+const FIRST: BrState = { list: [{ id: 0, url: "", n: 0 }], at: 0 };
 const [device, setDevice] = createSignal<"desktop" | "phone">("desktop");
+
+/** ":5173/sobre" para localhost; "site.com/x" para o resto. */
+const tabLabel = (u: string) => u.replace(/^https?:\/\//, "").replace(/^(localhost|127\.0\.0\.1)(?=:)/, "").replace(/\/$/, "") || tx("Nova aba");
+const portOf = (u: string) => Number(/^https?:\/\/(?:localhost|127\.0\.0\.1):(\d+)/.exec(u)?.[1] ?? 0);
 
 const demoPage = `<!doctype html><html><head><meta charset="utf-8"><style>
 body{margin:0;font:14px/1.5 -apple-system,system-ui,sans-serif;background:#0d1017;color:#e7eaf3}
@@ -225,44 +236,95 @@ function Browser(props: { focusPort: number | null }) {
   const p = currentProject;
   const pid = () => p().id;
   const ports = () => portsOf(pid());
-  const url = () => urls()[pid()] ?? "";
-  const setUrl = (u: string) => setUrls({ ...urls(), [pid()]: u });
+  const st = (): BrState => brs()[pid()] ?? FIRST;
+  const put = (next: BrState) => setBrs({ ...brs(), [pid()]: next });
+  const [loading, setLoading] = createSignal<Record<number, boolean>>({});
+  const setLoad = (id: number, v: boolean) => setLoading({ ...loading(), [id]: v });
+  const active = () => st().list.find((t) => t.id === st().at) ?? st().list[0];
+  const url = () => active().url;
+  const patch = (id: number, f: (t: BrTab) => BrTab) => put({ ...st(), list: st().list.map((t) => (t.id === id ? f(t) : t)) });
+  const setUrl = (u: string) => (setLoad(active().id, !!u), patch(active().id, (t) => (t.url === u ? { ...t, n: t.n + 1 } : { ...t, url: u })));
+  const reload = () => (setLoad(active().id, true), patch(active().id, (t) => ({ ...t, n: t.n + 1 })));
+  const select = (id: number) => put({ ...st(), at: id });
+  let input: HTMLInputElement | undefined;
+  const newTab = () => {
+    const t = blankTab();
+    put({ list: [...st().list, t], at: t.id });
+    queueMicrotask(() => input?.focus());
+  };
+  const close = (id: number) => {
+    const list = st().list;
+    const i = list.findIndex((t) => t.id === id);
+    const rest = list.filter((t) => t.id !== id);
+    if (!rest.length) return put(FIRST);
+    put({ list: rest, at: st().at === id ? rest[Math.min(i, rest.length - 1)].id : st().at });
+  };
+  // um servidor: vai para a aba que já mostra ele; senão abre na aba da frente
+  const openPort = (port: number) => {
+    const has = st().list.find((t) => portOf(t.url) === port);
+    if (has) select(has.id);
+    else setUrl(`http://localhost:${port}`);
+  };
   const [draft, setDraft] = createSignal("");
-  const [n, setN] = createSignal(0); // recarregar
-  const [loading, setLoading] = createSignal(false);
 
-  // servidor novo no projeto: abre sozinho se nada estiver aberto (ou se o aberto parou)
+  // servidor novo no projeto: abre sozinho se a aba da frente estiver vazia (ou se o dela parou)
   createEffect(on(() => ports().join(","), () => {
     const u = url();
-    const port = Number(/:(\d+)/.exec(u)?.[1] ?? 0);
+    const port = portOf(u);
     if (ports().length && (!u || (port && !ports().includes(port)))) setUrl(`http://localhost:${ports()[0]}`);
   }));
-  createEffect(on(() => props.focusPort, (port) => port && setUrl(`http://localhost:${port}`), { defer: true }));
-  createEffect(on(url, (u) => (setDraft(u.replace(/^https?:\/\//, "")), setLoading(!!u))));
+  createEffect(on(() => props.focusPort, (port) => port && openPort(port), { defer: true }));
+  createEffect(on(() => `${active().id} ${url()}`, () => setDraft(url().replace(/^https?:\/\//, ""))));
 
   const go = () => {
     let u = draft().trim();
     if (!u) return;
     if (/^\d+$/.test(u)) u = `localhost:${u}`;
     if (!/^https?:\/\//.test(u)) u = `http://${u}`;
-    if (u === url()) setN(n() + 1);
-    else setUrl(u);
+    setUrl(u);
   };
   const external = () => url() && void api.openUrl(url()).catch(() => {});
 
   return (
     <div class="dbg-browser">
+      <Show when={st().list.length > 1}>
+        <div class="br-tabs" role="tablist" aria-label={tx("Abas do navegador")}>
+          <For each={st().list}>
+            {(t) => (
+              <div
+                class="br-tab"
+                classList={{ on: t.id === active().id }}
+                role="tab"
+                aria-selected={t.id === active().id}
+                tabindex="0"
+                title={t.url || tx("Nova aba")}
+                onClick={() => select(t.id)}
+                onAuxClick={(e) => e.button === 1 && (e.preventDefault(), close(t.id))}
+                onKeyDown={(e) => e.key === "Enter" && e.target === e.currentTarget && select(t.id)}
+              >
+                <Show when={loading()[t.id]} fallback={<Globe size={11} />}><span class="br-tab-spin" /></Show>
+                <span class="br-tab-name">{tabLabel(t.url)}</span>
+                <button class="br-tab-x" title={tx("Fechar a aba")} onClick={(e) => (e.stopPropagation(), close(t.id))}><X size={11} /></button>
+              </div>
+            )}
+          </For>
+          <button class="icon-btn small br-tab-new" title={tx("Nova aba")} onClick={newTab}><Plus size={12} /></button>
+        </div>
+      </Show>
       <div class="br-bar">
-        <button class="icon-btn small" title={tx("Recarregar")} disabled={!url()} onClick={() => (setLoading(true), setN(n() + 1))}><span class="br-reload" classList={{ spin: loading() }}><RotateCw size={12} /></span></button>
+        <button class="icon-btn small" title={tx("Recarregar")} disabled={!url()} onClick={reload}><span class="br-reload" classList={{ spin: !!loading()[active().id] }}><RotateCw size={12} /></span></button>
         <form class="br-url" onSubmit={(e) => (e.preventDefault(), go())}>
           <Globe size={11} />
-          <input value={draft()} placeholder={tx("localhost:3000")} spellcheck={false} onInput={(e) => setDraft(e.currentTarget.value)} onFocus={(e) => e.currentTarget.select()} aria-label={tx("Endereço")} />
+          <input ref={input} value={draft()} placeholder={tx("localhost:3000")} spellcheck={false} onInput={(e) => setDraft(e.currentTarget.value)} onFocus={(e) => e.currentTarget.select()} aria-label={tx("Endereço")} />
         </form>
         <div class="df-seg" role="radiogroup" aria-label={tx("Tamanho da tela")}>
           <button role="radio" aria-checked={device() === "desktop"} classList={{ on: device() === "desktop" }} title={tx("Tela de computador")} onClick={() => setDevice("desktop")}><Monitor size={12} /></button>
           <button role="radio" aria-checked={device() === "phone"} classList={{ on: device() === "phone" }} title={tx("Tela de celular (390 × 844)")} onClick={() => setDevice("phone")}><Smartphone size={12} /></button>
         </div>
         <button class="icon-btn small" title={tx("Abrir no seu navegador")} disabled={!url()} onClick={external}><ExternalLink size={12} /></button>
+        <Show when={st().list.length === 1}>
+          <button class="icon-btn small" title={tx("Nova aba: deixe outro endereço aberto ao lado deste")} onClick={newTab}><Plus size={12} /></button>
+        </Show>
       </div>
       <Show when={ports().length > 1}>
         <div class="br-ports">
@@ -270,7 +332,7 @@ function Browser(props: { focusPort: number | null }) {
             {(x) => (
               <For each={x.ports}>
                 {(port) => (
-                  <button class="port-chip" classList={{ on: url().includes(`:${port}`) }} title={x.cmd} onClick={() => setUrl(`http://localhost:${port}`)}>
+                  <button class="port-chip" classList={{ on: portOf(url()) === port }} title={x.cmd} onClick={() => openPort(port)}>
                     :{port} <span>{x.cmd.split(" ")[0]}</span>
                   </button>
                 )}
@@ -280,25 +342,36 @@ function Browser(props: { focusPort: number | null }) {
         </div>
       </Show>
       <div class="br-stage" classList={{ phone: device() === "phone" }}>
-        <Show
-          when={url()}
-          fallback={
-            <div class="dbg-empty">
-              <Globe size={20} />
-              <strong>{tx("Nenhum servidor rodando")}</strong>
-              <span>{tx("Quando a IA (ou você) subir o app desta pasta, como um npm run dev, ele aparece aqui sozinho. Ou digite um endereço lá em cima.")}</span>
-            </div>
-          }
-        >
-          <div class="br-frame">
+        <Show when={!url()}>
+          <div class="dbg-empty">
+            <Globe size={20} />
             <Show
-              when={p().demo}
-              fallback={<For each={[`${n()} ${url()}`]}>{(k) => <iframe title={tx("App rodando")} src={k.slice(k.indexOf(" ") + 1)} onLoad={() => setLoading(false)} />}</For>}
+              when={st().list.length > 1 || ports().length}
+              fallback={
+                <>
+                  <strong>{tx("Nenhum servidor rodando")}</strong>
+                  <span>{tx("Quando a IA (ou você) subir o app desta pasta, como um npm run dev, ele aparece aqui sozinho. Ou digite um endereço lá em cima.")}</span>
+                </>
+              }
             >
-              <iframe title={tx("App rodando")} srcdoc={demoPage} onLoad={() => setLoading(false)} />
+              <strong>{tx("Aba vazia")}</strong>
+              <span>{tx("Digite um endereço lá em cima, como localhost:3000.")}</span>
             </Show>
           </div>
         </Show>
+        {/* uma moldura por aba com endereço; só a da frente aparece, as outras seguem carregadas */}
+        <For each={st().list.filter((t) => t.url)}>
+          {(t) => (
+            <div class="br-frame" classList={{ hide: t.id !== active().id }}>
+              <Show
+                when={p().demo}
+                fallback={<iframe title={tx("App rodando")} src={t.url} onLoad={() => setLoad(t.id, false)} />}
+              >
+                <iframe title={tx("App rodando")} srcdoc={demoPage} onLoad={() => setLoad(t.id, false)} />
+              </Show>
+            </div>
+          )}
+        </For>
       </div>
     </div>
   );

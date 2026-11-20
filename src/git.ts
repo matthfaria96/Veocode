@@ -22,6 +22,9 @@ export interface GitChange {
   work: string;
   untracked: boolean;
   conflict: boolean;
+  /** linhas que entraram e saíram (disco contra o último commit); null em binário */
+  added?: number | null;
+  removed?: number | null;
 }
 export interface GitCommit {
   hash: string;
@@ -305,6 +308,12 @@ export async function fileDiff(pid: string, path: string): Promise<string> {
   return invoke<string>("git_file_diff", { projectId: pid, path });
 }
 
+/** Todas as mudanças da pasta num diff só (para revisar de uma vez). */
+export async function diffAll(pid: string): Promise<string> {
+  if (!real(pid)) return demoStatus().changes.map((c) => demoDiff(c.path)).join("\n");
+  return invoke<string>("git_diff_all", { projectId: pid });
+}
+
 /** Simulação: o arquivo de exemplo com duas linhas trocadas e uma nova. */
 function demoDiff(path: string): string {
   const lines = (fileContents[path] ?? defaultFileContent(path)).split("\n");
@@ -387,9 +396,9 @@ function demoStatus(): GitStatus {
     ahead: 2,
     behind: 1,
     changes: [
-      { path: "src/views/Home.tsx", from: null, index: ".", work: "M", untracked: false, conflict: false },
-      { path: "src/git.ts", from: null, index: "A", work: ".", untracked: false, conflict: false },
-      { path: "notas.txt", from: null, index: "?", work: "?", untracked: true, conflict: false },
+      { path: "src/views/Home.tsx", from: null, index: ".", work: "M", untracked: false, conflict: false, added: 2, removed: 1 },
+      { path: "src/git.ts", from: null, index: "A", work: ".", untracked: false, conflict: false, added: 2, removed: 1 },
+      { path: "notas.txt", from: null, index: "?", work: "?", untracked: true, conflict: false, added: 2, removed: 1 },
     ],
     moreChanges: 0,
     commits: [c("a1b2c3d", tx("Aba Git em cada projeto"), 600, false, ["main"]), c("e4f5a6b", tx("Ícone do app"), 5400, false), c("c7d8e9f", tx("Terminal por projeto"), 86400, true, ["origin/main"]), c("0a1b2c3", tx("Chat livre"), 86400 * 3, true)],

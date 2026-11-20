@@ -11,7 +11,8 @@ import { tx, txn } from "./i18n";
 
 export type RailTone = "ask" | "error" | "warn" | "work";
 export interface RailStatus {
-  tone: RailTone;
+  /** null: só o resumo na dica, sem bolinha */
+  tone: RailTone | null;
   lines: string[];
 }
 type Row = { tone: RailTone; text: string };
@@ -72,18 +73,20 @@ function accountsStatus() {
   return pack(urgentFirst(rows));
 }
 
-// IAs trabalhando vêm primeiro (é o que a pessoa procura aqui); servidor esquecido é nota de rodapé
-function computerStatus() {
-  const rows: Row[] = [];
-  const busy = xray.procs.filter((g) => g.children.length > 0);
-  if (busy.length) {
-    const n = xray.procs.length;
-    rows.push({ tone: "work", text: txn(n, "{n} IA aberta · {busy} trabalhando", "{n} IAs abertas · {busy} trabalhando", { busy: busy.length }) });
-    rows.push({ tone: "work", text: tx("Trabalhando: {v}", { v: hostParts(busy).join(", ") }) });
-  }
+// o resumo das IAs abertas mora aqui (saiu do topo da janela): aparece sempre na dica, mas a
+// bolinha só acende com alguma trabalhando ou um servidor esquecido
+function computerStatus(): RailStatus | null {
+  const n = xray.procs.length;
+  const busy = xray.procs.filter((g) => g.children.length > 0).length;
   const left = xray.ports?.leftovers.length ?? 0;
-  if (left) rows.push({ tone: "warn", text: txn(left, "{n} servidor ficou aberto sem ninguém", "{n} servidores ficaram abertos sem ninguém") });
-  return pack(rows);
+  const lines: string[] = [];
+  if (n) {
+    lines.push(busy ? txn(n, "{n} IA aberta · {busy} trabalhando", "{n} IAs abertas · {busy} trabalhando", { busy }) : txn(n, "{n} IA aberta", "{n} IAs abertas"));
+    lines.push(hostParts(xray.procs).join(", "));
+  }
+  if (left) lines.push(txn(left, "{n} servidor ficou aberto sem ninguém", "{n} servidores ficaram abertos sem ninguém"));
+  if (!lines.length) return null;
+  return { tone: busy ? "work" : left ? "warn" : null, lines };
 }
 
 /** O que a bolinha de cada item do menu diz agora (ou nada). */

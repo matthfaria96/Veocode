@@ -20,6 +20,7 @@ import {
   ExternalLink,
   GitBranch,
   GitCommitHorizontal,
+  GitCompareArrows,
   GitPullRequest,
   GitPullRequestDraft,
   Globe,
@@ -38,7 +39,7 @@ import { changeLabel, commitDraft, commitGit, fetchGit, gitOf, loadGit, loadGith
 import CommitGraph from "./CommitGraph";
 import { FileIcon } from "./icons";
 import { dismissable } from "../dismiss";
-import { currentProject, DIFF, openDiff, showToast, ws } from "../store";
+import { ALL_CHANGES, currentProject, DIFF, openAllChanges, openDiff, showToast, ws } from "../store";
 import { every } from "../every";
 import { locale, tx, txn } from "../i18n";
 
@@ -156,7 +157,19 @@ export default function GitPanel() {
             <CommitBox onPush={doPush} onPull={doPull} />
 
             {/* mudanças */}
-            <Section id="changes" title={tx("Mudanças")} count={changed()} hot>
+            <Section
+              id="changes"
+              title={tx("Mudanças")}
+              count={changed()}
+              hot
+              right={
+                <Show when={st().changes.length}>
+                  <button class="git-sec-link" classList={{ on: ws.activeFile === ALL_CHANGES }} title={tx("Ver todas as mudanças numa tela só, um arquivo embaixo do outro")} onClick={openAllChanges}>
+                    <GitCompareArrows size={12} /> {tx("Revisar tudo")}
+                  </button>
+                </Show>
+              }
+            >
               <Show when={st().changes.length} fallback={<div class="git-ok"><CircleCheck size={13} /> {tx("Nada pendente: a pasta está igual ao último commit.")}</div>}>
                 <ChangeGroup kind="conflict" title={tx("Em conflito")} items={groups().conflict} />
                 <ChangeGroup kind="staged" title={tx("Preparadas para o commit")} items={groups().staged} />
@@ -454,6 +467,12 @@ export default function GitPanel() {
                 <span class="git-file-icon"><FileIcon name={name} size={13} /></span>
                 <span class="git-file-name">{name}{isDir ? "/" : ""}</span>
                 <span class="git-file-dir">{dir}</span>
+                <Show when={c.added || c.removed}>
+                  <span class="git-file-n" title={tx("Linhas que entraram e saíram desde o último commit")}>
+                    <Show when={c.added}><b class="plus">+{c.added}</b></Show>
+                    <Show when={c.removed}><b class="minus">−{c.removed}</b></Show>
+                  </span>
+                </Show>
                 <span class="git-file-act" onClick={(ev) => ev.stopPropagation()}>
                   <Show when={props.kind === "staged"}>
                     <button class="icon-btn small" disabled={busy()} title={tx("Tirar do próximo commit")} onClick={() => void stage([c.path.replace(/\/$/, "")], false)}><Minus size={12} /></button>

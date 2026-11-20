@@ -1,30 +1,14 @@
-import { Bell, BellRing, Bot, CircleCheck, Command, HardDrive, Search } from "lucide-solid";
-import { createMemo, createSignal, For, Show } from "solid-js";
+import { Bell, BellRing, CircleCheck, Command, HardDrive, Search } from "lucide-solid";
+import { createSignal, For, Show } from "solid-js";
 import { needs, urgentCount } from "../attention";
 import { dismissable } from "../dismiss";
 import { setPaletteOpen, setView } from "../store";
-import { xray } from "../xray";
-import { hostParts } from "../railStatus";
 import AppMark from "./AppMark";
-import { tx, txn } from "../i18n";
+import { tx } from "../i18n";
 
 const isMac = navigator.userAgent.includes("Mac");
 
 export default function TitleBar() {
-  // só o texto, sem uma bolinha por IA (elas piscavam e não diziam mais que o número)
-  const busyN = () => xray.procs.filter((g) => g.children.length > 0).length;
-  const label = createMemo(() => {
-    if (!xray.procsLoaded) return "…";
-    const n = xray.procs.length;
-    const busy = xray.procs.filter((g) => g.children.length > 0).length;
-    if (n === 0) return tx("nenhuma IA aberta");
-    return busy ? txn(n, "{n} IA aberta · {busy} trabalhando", "{n} IAs abertas · {busy} trabalhando", { busy }) : txn(n, "{n} IA aberta", "{n} IAs abertas");
-  });
-  // onde estão: "6 no VS Code, 2 no app do Claude…"
-  const where = createMemo(() => {
-    const parts = hostParts(xray.procs);
-    return parts.length ? tx("Programas de IA abertos neste computador agora (cada conversa aberta conta uma, mesmo parada): {v}. Aceso = rodando comandos agora. Clique para ver e fechar.", { v: parts.join(", ") }) : tx("Nenhum programa de IA aberto agora.");
-  });
   return (
     <header class="titlebar" classList={{ mac: isMac }} data-tauri-drag-region>
       <div class="brand" data-tauri-drag-region>
@@ -41,10 +25,6 @@ export default function TitleBar() {
       </button>
 
       <div class="title-right" data-tauri-drag-region>
-        <button class="live-agents" classList={{ busy: busyN() > 0 }} title={where()} onClick={() => setView("system")}>
-          <Bot size={13} />
-          <span class="live-text">{label()}</span>
-        </button>
         <NeedsButton />
         <button
           class="ghost-btn"

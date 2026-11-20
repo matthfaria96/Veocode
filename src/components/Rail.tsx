@@ -27,12 +27,12 @@ export default function Rail() {
             return (
               <button class="rail-btn" classList={{ active: on(item) }} onClick={() => setView(item.id)}>
                 {item.icon()}
-                <Show when={st()}>{(s) => <i class={`rail-dot ${s().tone}`} aria-hidden="true" />}</Show>
+                <Show when={st()?.tone}>{(t) => <i class={`rail-dot ${t()}`} aria-hidden="true" />}</Show>
                 <span class="rail-tip">
                   <span class="rail-tip-head">{item.label} <kbd>⌘{i() + 1}</kbd></span>
                   <Show when={st()}>
                     {(s) => (
-                      <span class={`rail-tip-sum ${s().tone}`}>
+                      <span class={`rail-tip-sum ${s().tone ?? "idle"}`}>
                         <For each={s().lines}>{(l) => <span>{l}</span>}</For>
                       </span>
                     )}

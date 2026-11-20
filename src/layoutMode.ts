@@ -16,6 +16,28 @@ const recall = (k: string) => {
   }
 };
 
+// ---------------------------------------------------------------- janela estreita
+// Sem espaço para três colunas, os painéis laterais viram gavetas por cima da conversa: abrem
+// pelo mesmo botão de sempre, fecham ao clicar fora e não mudam o que fica lembrado para a
+// janela larga.
+const media = (q: string) => {
+  const m = typeof window !== "undefined" && window.matchMedia ? window.matchMedia(q) : null;
+  const [v, set] = createSignal(!!m?.matches);
+  m?.addEventListener("change", (e) => set(e.matches));
+  return v;
+};
+/** O painel da direita (depuração ou Git e conversa) abre por cima, não ao lado. */
+export const narrowRight = media("(max-width: 1100px)");
+/** A lateral (conversas ou arquivos) também. */
+export const narrowLeft = media("(max-width: 760px)");
+const [leftSheet, setLeftSheet] = createSignal(false);
+const [debugSheet, setDebugSheet] = createSignal(false);
+const [codeSheet, setCodeSheet] = createSignal(false);
+export { leftSheet, setLeftSheet };
+/** Alguma gaveta aberta agora (o fundo escurece e um clique fora fecha). */
+export const sheetOpen = () => (narrowLeft() && leftSheet()) || (narrowRight() && (projMode() === "code" ? codeSheet() : debugSheet()));
+export const closeSheets = () => (setLeftSheet(false), setDebugSheet(false), setCodeSheet(false));
+
 /** Atividade, comandos do agente e terminal: fechado, na faixa de baixo ou numa aba fixa no lugar da conversa. */
 export type PanelAt = "none" | "bottom" | "tab";
 // começa fechado; Ajustes → "Painel de baixo" escolhe se já abre aberto (settings.ts aplica ao carregar)
@@ -72,9 +94,9 @@ export const setTermH = (v: number, save = false) => (setTermHRaw(v), save && re
 
 /** Painel de depuração do modo IA (à direita): aberto, largura e a aba da frente. */
 export type DebugTab = "browser" | "procs" | "subs" | "activity" | "trail" | "file";
-const [debugOpen, setDebugOpenRaw] = createSignal(recall("veocode.ai.debug") !== "0");
-export { debugOpen };
-export const setDebugOpen = (v: boolean) => (setDebugOpenRaw(v), remember("veocode.ai.debug", v ? "1" : "0"));
+const [debugPref, setDebugPref] = createSignal(recall("veocode.ai.debug") !== "0");
+export const debugOpen = () => (narrowRight() ? debugSheet() : debugPref());
+export const setDebugOpen = (v: boolean) => (narrowRight() ? setDebugSheet(v) : (setDebugPref(v), remember("veocode.ai.debug", v ? "1" : "0")));
 const [debugW, setDebugWRaw] = createSignal(size("veocode.ai.debugW", 440, 320, 1400));
 export { debugW };
 export const setDebugW = (v: number, save = false) => (setDebugWRaw(v), save && remember("veocode.ai.debugW", String(v)));
@@ -87,9 +109,9 @@ export const setDebugTab = (v: DebugTab) => (setDebugTabRaw(v), v !== "file" && 
  *  conversa com a IA (como o Claude Code ao lado do código no VS Code) e, se você pôs ele aqui,
  *  o terminal. Aberto, largura e aba lembrados. O resto (comandos, atividade, rastro) é do modo IA. */
 export type CodeSideTab = "git" | "chat" | "env" | "term";
-const [codeSideOpen, setCodeSideOpenRaw] = createSignal(recall("veocode.code.side") === "1");
-export { codeSideOpen };
-export const setCodeSideOpen = (v: boolean) => (setCodeSideOpenRaw(v), remember("veocode.code.side", v ? "1" : "0"));
+const [codeSidePref, setCodeSidePref] = createSignal(recall("veocode.code.side") === "1");
+export const codeSideOpen = () => (narrowRight() ? codeSheet() : codeSidePref());
+export const setCodeSideOpen = (v: boolean) => (narrowRight() ? setCodeSheet(v) : (setCodeSidePref(v), remember("veocode.code.side", v ? "1" : "0")));
 const [codeSideW, setCodeSideWRaw] = createSignal(size("veocode.code.sideW", 400, 300, 1200));
 export { codeSideW };
 export const setCodeSideW = (v: number, save = false) => (setCodeSideWRaw(v), save && remember("veocode.code.sideW", String(v)));

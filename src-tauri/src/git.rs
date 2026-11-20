@@ -24,6 +24,9 @@ pub struct Change {
     pub work: String,
     pub untracked: bool,
     pub conflict: bool,
+    /// linhas que entraram e saíram (disco contra o último commit); None em binário
+    pub added: Option<u32>,
+    pub removed: Option<u32>,
 }
 
 #[derive(Serialize, Default, Debug, Clone)]
@@ -230,6 +233,20 @@ pub fn status(root: &Path) -> Result<Status, String> {
     s.behind = p.behind;
     s.more_changes = p.changes.len().saturating_sub(400);
     s.changes = p.changes.into_iter().take(400).collect();
+    // quantas linhas entraram e saíram em cada arquivo (disco contra o último commit)
+    if !s.changes.is_empty() {
+        let base = if s.empty { EMPTY_TREE } else { "HEAD" };
+        let nums = parse_numstat(&g.out(&["diff", "--numstat", "-M", "-z", base]).unwrap_or_default());
+        for c in &mut s.changes {
+            if let Some(&(a, r)) = nums.get(&c.path) {
+                (c.added, c.removed) = (Some(a), Some(r));
+            } else if c.untracked && !c.path.ends_with('/') {
+                if let Some(n) = count_lines(&top.join(&c.path)) {
+                    (c.added, c.removed) = (Some(n), Some(0));
+                }
+            }
+        }
+    }
 
     s.remotes = parse_remotes(&g.out(&["remote", "-v"]).unwrap_or_default());
 
@@ -510,14 +527,7 @@ pub fn commit_diff(root: &Path, hash: &str, path: &str) -> Result<String, String
     }
     let g = Git { bin: git_bin()?, root: root.to_path_buf() };
     let mut d = g.out(&["show", "--format=", "-M", "--first-parent", "--no-color", hash, "--", path]).ok_or(crate::i18n::tr("o git não mostrou esse arquivo", "git didn't show that file"))?;
-    if d.len() > 200_000 {
-        let mut cut = 200_000;
-        while !d.is_char_boundary(cut) {
-            cut -= 1;
-        }
-        d.truncate(cut);
-        d.push_str(crate::i18n::tr("\n… (diff muito grande, cortado aqui)", "\n… (diff too large, cut here)"));
-    }
+    cut(&mut d, 200_000);
     Ok(d)
 }
 
@@ -532,22 +542,96 @@ pub fn file_diff(root: &Path, path: &str) -> Result<String, String> {
     let tracked = g.out(&["ls-files", "--error-unmatch", "--", path]).is_some() || g.out(&["cat-file", "-e", &format!("HEAD:./{path}")]).is_some();
     let mut d = if tracked {
         // repositório sem commit ainda: compara com a árvore vazia
-        let base = if g.out(&["rev-parse", "--verify", "-q", "HEAD"]).is_some() { "HEAD" } else { "4b825dc642cb6eb9a060e54bf8d69288fbee4904" };
+        let base = if g.out(&["rev-parse", "--verify", "-q", "HEAD"]).is_some() { "HEAD" } else { EMPTY_TREE };
         g.out(&["diff", "--no-color", "--no-ext-diff", "-M", "-U4", base, "--", path]).unwrap_or_default()
     } else {
         // --no-index sai com 1 quando há diferença: lê a saída mesmo assim
         let (_, out, _) = run_cmd(command(&bin, root, &["diff", "--no-color", "--no-ext-diff", "--no-index", "--", "/dev/null", path]), Duration::from_secs(15))?;
         out
     };
-    if d.len() > 400_000 {
-        let mut cut = 400_000;
-        while !d.is_char_boundary(cut) {
-            cut -= 1;
-        }
-        d.truncate(cut);
-        d.push_str(crate::i18n::tr("\n… (diff muito grande, cortado aqui)", "\n… (diff too large, cut here)"));
-    }
+    cut(&mut d, 400_000);
     Ok(d)
+}
+
+/// Todas as mudanças da pasta do projeto num diff só, para revisar de uma vez: o que está no
+/// disco contra o último commit, mais os arquivos novos inteiros. Caminhos relativos ao projeto.
+pub fn diff_all(root: &Path) -> Result<String, String> {
+    const MAX: usize = 1_500_000;
+    let bin = git_bin()?;
+    let g = Git { bin: bin.clone(), root: root.to_path_buf() };
+    if g.out(&["rev-parse", "--show-toplevel"]).is_none() {
+        return Ok(String::new());
+    }
+    let base = if g.out(&["rev-parse", "--verify", "-q", "HEAD"]).is_some() { "HEAD" } else { EMPTY_TREE };
+    let mut d = g.out(&["diff", "--no-color", "--no-ext-diff", "-M", "-U4", "--relative", base]).unwrap_or_default();
+    // arquivos que o git ainda não acompanha: entram inteiros (os grandes, só o nome)
+    let untracked = g.out(&["ls-files", "--others", "--exclude-standard", "-z"]).unwrap_or_default();
+    for p in untracked.split('\0').filter(|p| !p.is_empty()).take(80) {
+        if d.len() > MAX {
+            break;
+        }
+        let big = std::fs::metadata(root.join(p)).map(|m| m.len() > 512 * 1024).unwrap_or(true);
+        if big {
+            d.push_str(&format!("diff --git a/{p} b/{p}\nnew file mode 100644\n"));
+            continue;
+        }
+        let (_, out, _) = run_cmd(command(&bin, root, &["diff", "--no-color", "--no-ext-diff", "--no-index", "--", "/dev/null", p]), Duration::from_secs(15))?;
+        d.push_str(&out);
+    }
+    cut(&mut d, MAX);
+    Ok(d)
+}
+
+/// Árvore vazia do git: a base de comparação num repositório ainda sem commit.
+const EMPTY_TREE: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+
+/// Corta um diff grande demais (sem partir um caractere no meio) e avisa no fim.
+fn cut(d: &mut String, max: usize) {
+    if d.len() <= max {
+        return;
+    }
+    let mut at = max;
+    while !d.is_char_boundary(at) {
+        at -= 1;
+    }
+    d.truncate(at);
+    d.push_str(crate::i18n::tr("\n… (diff muito grande, cortado aqui)", "\n… (diff too large, cut here)"));
+}
+
+/// `git diff --numstat -z`: caminho → (linhas que entraram, que saíram). Binário fica de fora.
+fn parse_numstat(raw: &str) -> std::collections::HashMap<String, (u32, u32)> {
+    let mut out = std::collections::HashMap::new();
+    let mut it = raw.split('\0');
+    while let Some(rec) = it.next() {
+        let rec = rec.trim_start_matches('\n');
+        let mut f = rec.splitn(3, '\t');
+        let (Some(a), Some(r), Some(p)) = (f.next(), f.next(), f.next()) else { continue };
+        // renomeado: o caminho vem vazio e depois chegam o antigo e o novo
+        let path = if p.is_empty() {
+            let _old = it.next();
+            it.next().unwrap_or_default().to_string()
+        } else {
+            p.to_string()
+        };
+        if let (Ok(a), Ok(r)) = (a.parse(), r.parse()) {
+            out.insert(path, (a, r));
+        }
+    }
+    out
+}
+
+/// Linhas de um arquivo novo (até 2 MB; binário não conta).
+fn count_lines(path: &Path) -> Option<u32> {
+    let meta = std::fs::metadata(path).ok()?;
+    if !meta.is_file() || meta.len() > 2 * 1024 * 1024 {
+        return None;
+    }
+    let bytes = std::fs::read(path).ok()?;
+    if bytes.iter().take(8000).any(|&b| b == 0) {
+        return None;
+    }
+    let n = bytes.iter().filter(|&&b| b == b'\n').count();
+    Some((n + usize::from(!bytes.is_empty() && !bytes.ends_with(b"\n"))) as u32)
 }
 
 fn lines(o: Option<String>) -> HashSet<String> {
@@ -652,6 +736,7 @@ fn parse_status(raw: &str) -> Parsed {
                     work: (xy[1] as char).to_string(),
                     untracked: false,
                     conflict: kind == b'u',
+                    ..Default::default()
                 });
             }
             _ => {}
@@ -930,7 +1015,7 @@ u UU N... 100644 100644 100644 100644 f1 f2 f3 conflito.md\0\
         assert_eq!(p.upstream.as_deref(), Some("origin/main"));
         assert_eq!((p.ahead, p.behind), (2, 1));
         assert_eq!(p.changes.len(), 5);
-        assert_eq!(p.changes[0], Change { path: "src/a.ts".into(), from: None, index: ".".into(), work: "M".into(), untracked: false, conflict: false });
+        assert_eq!(p.changes[0], Change { path: "src/a.ts".into(), from: None, index: ".".into(), work: "M".into(), untracked: false, conflict: false, added: None, removed: None });
         assert_eq!(p.changes[1].path, "novo arquivo.txt");
         assert_eq!(p.changes[1].index, "A");
         assert_eq!(p.changes[2].path, "b.rs");
@@ -941,6 +1026,17 @@ u UU N... 100644 100644 100644 100644 f1 f2 f3 conflito.md\0\
         let d = parse_status("# branch.oid (initial)\0# branch.head (detached)\0");
         assert!(d.detached);
         assert!(d.branch.is_none());
+    }
+
+    #[test]
+    fn numstat_counts_lines_per_file() {
+        // comum, binário ("-") e renomeado (caminho vazio, depois o antigo e o novo)
+        let raw = "3\t1\tsrc/a.ts\0-\t-\timg.png\05\t0\t\0velho.rs\0novo.rs\0";
+        let n = parse_numstat(&raw);
+        assert_eq!(n.get("src/a.ts"), Some(&(3, 1)));
+        assert_eq!(n.get("img.png"), None);
+        assert_eq!(n.get("novo.rs"), Some(&(5, 0)));
+        assert_eq!(n.len(), 2);
     }
 
     #[test]

@@ -1,5 +1,5 @@
 import { AlertTriangle, Check, ExternalLink, FileText, GitCompareArrows, MessageSquare, Search, SquareTerminal, X } from "lucide-solid";
-import DiffView from "./DiffView";
+import DiffView, { AllChanges } from "./DiffView";
 import { projMode } from "../layoutMode";
 import { FileIcon } from "./icons";
 import { ImageView } from "./Media";
@@ -10,7 +10,7 @@ import { ask } from "../dialogs";
 import { draftOf, dropDraft, edit, isUnsaved, saveNow, textOf } from "../editing";
 import { openRealFile } from "../realProject";
 import { defaultFileContent, fileContents } from "../data/mock";
-import { closeTab, currentProject, diffPathOf, isDiffTab, openFile, projectId, showToast, ws } from "../store";
+import { ALL_CHANGES, closeTab, currentProject, diffPathOf, isDiffTab, openFile, projectId, showToast, ws } from "../store";
 import { tx } from "../i18n";
 import { tokenize } from "../syntax";
 
@@ -184,12 +184,13 @@ export default function Editor(props: { tools?: JSX.Element }) {
         <For each={ws.openTabs}>
           {(path) => {
             const diff = isDiffTab(path);
+            const all = path === ALL_CHANGES;
             const file = diff ? diffPathOf(path) : path;
             return (
-              <div class="tab" classList={{ active: ws.activeFile === path, diff, edited: !diff && !currentProject().demo && isUnsaved(path) }} title={diff ? tx("{path}: o que mudou desde o último commit", { path: file }) : !currentProject().demo && isUnsaved(path) ? tx("Salvando…") : path} onClick={() => (diff || currentProject().demo ? openFile(path) : openRealFile(path))}>
+              <div class="tab" classList={{ active: ws.activeFile === path, diff, edited: !diff && !currentProject().demo && isUnsaved(path) }} title={all ? tx("Todas as mudanças desde o último commit") : diff ? tx("{path}: o que mudou desde o último commit", { path: file }) : !currentProject().demo && isUnsaved(path) ? tx("Salvando…") : path} onClick={() => (diff || currentProject().demo ? openFile(path) : openRealFile(path))}>
                 <span class="tab-icon">{diff ? <GitCompareArrows size={12} /> : <FileIcon name={file.split("/").pop() ?? file} size={12} />}</span>
-                <span class="tab-name">{file.split("/").pop()}</span>
-                <Show when={diff}><small class="tab-sub">{tx("mudanças")}</small></Show>
+                <span class="tab-name">{all ? tx("Todas as mudanças") : file.split("/").pop()}</span>
+                <Show when={diff && !all}><small class="tab-sub">{tx("mudanças")}</small></Show>
                 <span class="tab-dot" />
                 <button
                   class="tab-close"
@@ -208,7 +209,7 @@ export default function Editor(props: { tools?: JSX.Element }) {
         </For>
         <Show when={props.tools}><div class="tabs-tools">{props.tools}</div></Show>
       </div>
-      <Show when={!isDiffTab(ws.activeFile)} fallback={<DiffView path={diffPathOf(ws.activeFile)} />}>
+      <Show when={!isDiffTab(ws.activeFile)} fallback={<Show when={ws.activeFile === ALL_CHANGES} fallback={<DiffView path={diffPathOf(ws.activeFile)} />}><AllChanges /></Show>}>
       <Show when={ws.activeFile} fallback={<EditorHome />}>
         <div class="breadcrumb">
           <span>{ws.activeFile.split("/").join("  ›  ")}</span>

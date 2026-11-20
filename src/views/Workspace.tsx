@@ -1,4 +1,4 @@
-import { ChevronDown, Code2, FilePlus, FlaskConical, FolderMinus, FolderPlus, FolderSearch, GitBranch, MessagesSquare, PanelRight, Pause, Play, RefreshCw, SquareTerminal, X } from "lucide-solid";
+import { ChevronDown, Code2, FilePlus, FlaskConical, FolderMinus, FolderPlus, FolderSearch, GitBranch, MessagesSquare, PanelLeft, PanelRight, Pause, Play, RefreshCw, SquareTerminal, X } from "lucide-solid";
 import { askCloseProject } from "../components/CloseProject";
 import { ProjectIcon } from "../components/icons";
 import { createEffect, createSignal, For, lazy, on, onCleanup, onMount, Show, Suspense } from "solid-js";
@@ -24,7 +24,7 @@ import Editor from "../components/Editor";
 import ChatPanel from "../components/ChatPanel";
 import AgentCursors from "../components/AgentCursors";
 import { ProviderMark } from "../components/ui";
-import { codeSideOpen, codeSideW, debugOpen, debugW, focusMode, moveTerm, projMode, setCodeSideOpen, setCodeSideW, setDebugOpen, setDebugW, setProjMode, setTermH, setTermOpen, termAt, termH, termOpen, termShown, toggleTerm } from "../layoutMode";
+import { closeSheets, codeSideOpen, codeSideW, debugOpen, debugW, focusMode, leftSheet, moveTerm, narrowLeft, projMode, setCodeSideOpen, setCodeSideW, setDebugOpen, setDebugW, setLeftSheet, setProjMode, setTermH, setTermOpen, sheetOpen, termAt, termH, termOpen, termShown, toggleTerm } from "../layoutMode";
 
 import { tx } from "../i18n";
 
@@ -102,7 +102,9 @@ export default function Workspace() {
   onMount(() => {
     const key = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey;
-      if (mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "e") {
+      if (e.key === "Escape" && sheetOpen() && !document.querySelector(".modal-backdrop, .palette-backdrop")) {
+        closeSheets();
+      } else if (mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "e") {
         e.preventDefault();
         setProjMode(projMode() === "code" ? "ai" : "code");
       } else if (projMode() === "code" && mod && e.altKey && !e.shiftKey && (e.key.toLowerCase() === "b" || e.code === "KeyB")) {
@@ -139,11 +141,11 @@ export default function Workspace() {
   return (
     <div
       class="workspace"
-      classList={{ "ws-code": code(), "ws-ai": !code(), "debug-off": !debugOpen(), "cside-on": code() && codeSideOpen(), focus: !code() && focusMode() && isTauri && !p().demo, resizing: dragging() }}
+      classList={{ "ws-code": code(), "ws-ai": !code(), "debug-off": !debugOpen(), "cside-on": code() && codeSideOpen(), focus: !code() && focusMode() && isTauri && !p().demo, resizing: dragging(), "left-sheet": narrowLeft() && leftSheet() }}
       style={{ "--debug-w": `${debugW()}px`, "--cside-w": `${codeSideW()}px` }}
       ref={root}
     >
-      <aside class="sidebar">
+      <aside class="sidebar" onClick={(e) => narrowLeft() && (e.target as HTMLElement).closest(".cv-row, .tree-row:not(.dir)") && setLeftSheet(false)}>
         <div class="side-top">
           <ModeSwitch />
         </div>
@@ -237,6 +239,7 @@ export default function Workspace() {
         fallback={
           <>
             <section class="center">
+              <NarrowBar code={false} name={p().name} />
               <Show when={p().demo}>
                 <div class="sim-banner">
                   <FlaskConical size={15} />
@@ -262,6 +265,7 @@ export default function Workspace() {
       >
         <>
         <section class="code-main" classList={{ "term-on": bottomTerm() }} style={{ "--term-h": `${termH()}px` }}>
+          <NarrowBar code name={p().name} />
           <div class="code-stage">
             <Editor
               tools={
@@ -301,7 +305,20 @@ export default function Workspace() {
         </Show>
         </>
       </Show>
+      <Show when={sheetOpen()}><div class="ws-scrim" onClick={closeSheets} /></Show>
       <AgentCursors />
+    </div>
+  );
+}
+
+/** Janela estreita: a lateral sai da tela e este botão traz ela de volta, por cima. */
+function NarrowBar(props: { code: boolean; name: string }) {
+  return (
+    <div class="ws-strip">
+      <button class="ghost-btn small" onClick={() => setLeftSheet(true)}>
+        <PanelLeft size={14} /> {props.code ? tx("Arquivos") : tx("Conversas")}
+      </button>
+      <span class="ws-strip-name">{props.name}</span>
     </div>
   );
 }
