@@ -52,6 +52,8 @@ pub struct Settings {
     pub free_account: String,
     /// Chat livre pode olhar o computador (só leitura, fora os segredos)
     pub free_pc: bool,
+    /// tela Projetos: o painel de baixo (atividade e terminal) já abre aberto
+    pub bottom_panel: bool,
 }
 
 /// Lê campo a campo: um valor ruim não derruba os outros.
@@ -66,6 +68,7 @@ pub fn load(dir: &Path) -> Settings {
         motion: serde_json::from_value(field("motion")).unwrap_or_default(),
         free_account: serde_json::from_value(field("freeAccount")).unwrap_or_default(),
         free_pc: serde_json::from_value(field("freePc")).unwrap_or_default(),
+        bottom_panel: serde_json::from_value(field("bottomPanel")).unwrap_or_default(),
     }
 }
 
@@ -89,13 +92,13 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
         assert_eq!(load(&dir), Settings::default());
 
-        let s = Settings { theme: Theme::Claro, language: Language::En, icons: Icons::Minimalista, motion: Motion::Reduzida, free_account: "acc-1".into(), free_pc: true };
+        let s = Settings { theme: Theme::Claro, language: Language::En, icons: Icons::Minimalista, motion: Motion::Reduzida, free_account: "acc-1".into(), free_pc: true, bottom_panel: true };
         save(&dir, &s).unwrap();
         assert_eq!(load(&dir), s);
 
         // valor desconhecido num campo não apaga o outro
         fs::write(dir.join("settings.json"), r#"{"icons":"neon","motion":"reduzida","freePc":"sim","freeAccount":"a2","language":"klingon"}"#).unwrap();
-        assert_eq!(load(&dir), Settings { theme: Theme::Escuro, language: Language::Sistema, icons: Icons::Detalhado, motion: Motion::Reduzida, free_account: "a2".into(), free_pc: false });
+        assert_eq!(load(&dir), Settings { theme: Theme::Escuro, language: Language::Sistema, icons: Icons::Detalhado, motion: Motion::Reduzida, free_account: "a2".into(), free_pc: false, bottom_panel: false });
 
         fs::write(dir.join("settings.json"), "{ quebrado").unwrap();
         assert_eq!(load(&dir), Settings::default());

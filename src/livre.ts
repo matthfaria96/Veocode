@@ -77,6 +77,7 @@ type Ev =
   | { kind: "done"; ok: boolean; detail: string | null }
   | { kind: "step"; event: AgentEvent }
   | { kind: "usage"; context: number }
+  | { kind: "compact" }
   | { kind: "error"; message: string };
 
 /** Eventos do Rust com projectId "livre" (chat.ts encaminha para cá). */

@@ -6,6 +6,7 @@ import { createStore } from "solid-js/store";
 import { isTauri } from "./api";
 import { showToast } from "./store";
 import { setLanguagePref, tx } from "./i18n";
+import { setPanelAt } from "./layoutMode";
 
 export type IconStyle = "minimalista" | "detalhado";
 export type Motion = "completa" | "reduzida";
@@ -22,9 +23,11 @@ export interface Settings {
   freeAccount: string;
   /** Chat livre pode olhar o computador (só leitura) */
   freePc: boolean;
+  /** tela Projetos: o painel de baixo (atividade e terminal) já abre aberto */
+  bottomPanel: boolean;
 }
 
-const defaults: Settings = { theme: "escuro", language: "sistema", icons: "detalhado", motion: "completa", freeAccount: "", freePc: false };
+const defaults: Settings = { theme: "escuro", language: "sistema", icons: "detalhado", motion: "completa", freeAccount: "", freePc: false, bottomPanel: false };
 const KEY = "veocode.settings";
 
 export const [settings, setSettings] = createStore<Settings>({ ...defaults });
@@ -55,6 +58,8 @@ export async function loadSettings() {
     /* fica o padrão */
   }
   applyMotion();
+  // o painel de baixo começa como o ajuste manda (fechado, a não ser que a pessoa prefira aberto)
+  setPanelAt(settings.bottomPanel ? "bottom" : "none");
 }
 
 /** Muda na hora e grava; se a gravação falhar, volta ao que estava. */

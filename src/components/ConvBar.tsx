@@ -6,7 +6,10 @@ import { Dynamic } from "solid-js/web";
 import { bottomOpen, focusMode, setBottomOpen, setFocusMode } from "../layoutMode";
 import { chatOf } from "../chat";
 import { activeKey, CACHE_TTL, closeTab, concludeTab, continueFresh, fmtTokens, newTab, renameTab, selectTab, tabsOf, weightOf } from "../convTabs";
-import { ws } from "../store";
+import { projects, ws } from "../store";
+import { accountById } from "../accounts";
+import { ctxOf, ctxPanel, toggleCtx, windowOf } from "../contextInfo";
+import { ContextPanel } from "./ContextPanel";
 import type { View } from "./ChatPanel";
 import { tx, txn } from "../i18n";
 
@@ -36,7 +39,9 @@ function Tool(props: { icon: Component<{ size?: number }>; name: string; hint: s
 export function ConvTabsBar(props: { pid: string; view: View; onView: (v: View) => void; extCount: number }) {
   const [editing, setEditing] = createSignal<string | null>(null);
   const k = () => activeKey(props.pid);
-  const ctx = () => chatOf(k()).context;
+  // tamanho ao vivo (cada resposta) ou, antes da primeira, o da última medição do painel
+  const ctx = () => chatOf(k()).context ?? ctxOf(k()).data?.used ?? null;
+  const claude = () => accountById(projects.find((p) => p.id === props.pid)?.accountId ?? "").provider === "claude";
   return (
     <div class="conv-bar">
       <div class="conv-tabs" role="tablist">
@@ -88,10 +93,25 @@ export function ConvTabsBar(props: { pid: string; view: View; onView: (v: View) 
           <Plus size={14} />
         </button>
       </div>
-      <Show when={ctx()}>
-        <span class={`conv-ctx ${weightOf(ctx())}`} title={tx("Esta conversa carrega {v} tokens. Cada mensagem manda tudo de novo para o Claude (com desconto de cache enquanto você está ativo). Conversas acima de ~150 mil gastam bem mais: conclua e comece outra.", { v: fmtTokens(ctx()!) })}>
-          <Gauge size={12} /> {fmtTokens(ctx()!)}
-        </span>
+      <Show when={claude()}>
+        <div class="conv-ctx-wrap">
+          <button
+            class={`conv-ctx ${weightOf(ctx())}`}
+            classList={{ on: ctxPanel() === k(), bare: !ctx() }}
+            aria-expanded={ctxPanel() === k()}
+            title={ctx() ? tx("Esta conversa carrega {v} tokens. Cada mensagem manda tudo de novo para o Claude (com desconto de cache enquanto você está ativo). Clique para ver o que ocupa a janela e compactar.", { v: fmtTokens(ctx()!) }) : tx("Contexto da conversa: o que ocupa a janela do Claude")}
+            onClick={() => toggleCtx(k())}
+          >
+            <Gauge size={12} />
+            <Show when={ctx()} fallback={<span class="conv-ctx-label">{tx("Contexto")}</span>}>
+              {fmtTokens(ctx()!)}
+              <Show when={windowOf(k())}>{(w) => <small class="conv-ctx-pct">{Math.min(100, Math.round((ctx()! / w()) * 100))}%</small>}</Show>
+            </Show>
+          </button>
+          <Show when={ctxPanel() === k()}>
+            <ContextPanel pid={props.pid} k={k()} />
+          </Show>
+        </div>
       </Show>
       <div class="conv-tools">
         <Tool

@@ -70,6 +70,7 @@ type ChatEvent =
   | { kind: "done"; ok: boolean; detail: string | null }
   | { kind: "step"; event: AgentEvent }
   | { kind: "usage"; context: number }
+  | { kind: "compact"; state: "running" | "done" | "failed"; before: number | null; after: number | null; detail: string | null }
   | { kind: "limits"; account: string; limits: Limits }
   | { kind: "error"; message: string };
 
@@ -113,6 +114,11 @@ const echoes: { text: string; at: number }[] = [];
 const sayKeys = new Set<string>();
 const norm = (s: string) => s.replace(/\s+/g, " ").trim().slice(0, 80);
 
+// compactações mostradas ao vivo: a linha que o histórico traz depois é a mesma
+let compactEchoes = 0;
+/** Para o agentFeed: essa compactação já está na tela? (consome a marca) */
+export const compactShown = () => (compactEchoes > 0 ? (compactEchoes--, true) : false);
+
 /** Para o agentFeed: esse pedido/resposta já está na tela? (consome a marca) */
 export function alreadyShown(kind: "user" | "say", id: string, text: string) {
   if (kind === "say" && sayKeys.delete(id)) return true;
@@ -155,6 +161,20 @@ function handle(pid: string, e: ChatEvent) {
         c.lastAt = Date.now();
       }));
       return;
+    case "compact": {
+      if (!here) return;
+      const last = [...ws.events].reverse().find((x) => x.kind === "compact" && x.tab === pid && x.status === "running");
+      if (e.state === "running") {
+        if (!last) pushEvent({ kind: "compact", title: tx("Compactando a conversa…"), agent: acc.label, color: acc.color, status: "running", tab: pid });
+        return;
+      }
+      const done = e.state === "done";
+      if (done) compactEchoes++;
+      const patch = { status: done ? "ok" : "error", title: done ? tx("Conversa compactada") : tx("Não deu para compactar"), detail: e.detail ?? undefined } as const;
+      if (last) setWs("events", (x) => x.id === last.id, patch);
+      else pushEvent({ kind: "compact", agent: acc.label, color: acc.color, tab: pid, ...patch });
+      return;
+    }
     case "delta":
       setChats(pid, "draft", (d) => d + e.text);
       return;
@@ -258,6 +278,28 @@ export async function sendChat(pid: string, rewind?: string) {
     }));
     setAttsOf(pid, files);
     if (projectId() === baseOf(pid)) setWs("running", anyBusy(baseOf(pid)));
+  }
+}
+
+/** Compacta a conversa (`/compact` do Claude): ele resume o que veio antes e libera a janela. */
+export async function compactChat(pid: string) {
+  ensure(pid);
+  if (chats[pid].busy || !isClaudeChat(pid)) return;
+  const here = projectId() === baseOf(pid);
+  const acc = accountOf(pid);
+  setChats(pid, produce((x) => ((x.busy = true), (x.draft = ""), (x.error = null))));
+  if (here) {
+    pushEvent({ kind: "compact", title: tx("Compactando a conversa…"), agent: acc.label, color: acc.color, status: "running", tab: pid });
+    setWs("running", true);
+  }
+  try {
+    await invoke("chat_send", { projectId: pid, text: "/compact", attach: null, files: [], rewind: null, ...sendPrefs(baseOf(pid)) });
+  } catch (e) {
+    setChats(pid, produce((x) => ((x.busy = false), (x.error = errMsg(e)))));
+    if (here) {
+      setWs("events", (x) => x.kind === "compact" && x.tab === pid && x.status === "running", { status: "error", title: tx("Não deu para compactar") });
+      setWs("running", anyBusy(baseOf(pid)));
+    }
   }
 }
 

@@ -212,7 +212,7 @@ export function continueFresh(pid: string, key: string) {
 
 /** No plano do Claude o cache da conversa dura 1 h parado: depois disso a próxima mensagem relê tudo sem desconto. */
 export const CACHE_TTL = 60 * 60_000;
-export const fmtTokens = (n: number) => (n >= 1000 ? `${Math.round(n / 1000)} mil` : String(n));
+export const fmtTokens = (n: number) => (n >= 1000 ? tx("{n} mil", { n: Math.round(n / 1000) }) : String(n));
 export type Weight = "leve" | "media" | "pesada";
 export const weightOf = (n: number | null): Weight => (!n || n < 60_000 ? "leve" : n < 150_000 ? "media" : "pesada");
 

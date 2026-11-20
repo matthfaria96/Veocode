@@ -1,4 +1,4 @@
-import { AlertTriangle, Eye, ArrowLeft, Ban, Check, ChevronDown, FileCode2, History, Maximize2, MessageSquarePlus, Pencil, Paperclip, Plus, SendHorizontal, ShieldCheck, Square, TerminalSquare, X } from "lucide-solid";
+import { AlertTriangle, Eye, ArrowLeft, Ban, Check, ChevronDown, FileCode2, History, Maximize2, MessageSquarePlus, Pencil, Paperclip, Plus, SendHorizontal, Shrink, ShieldCheck, Square, TerminalSquare, X } from "lucide-solid";
 import { createEffect, createMemo, createResource, createSignal, For, Match, on, Show, Switch } from "solid-js";
 import { accessLevels } from "../data/mock";
 import { accountById } from "../accounts";
@@ -85,7 +85,7 @@ function RealIdle(props: { onAccess: () => void; onConvos: () => void }) {
 
 const fileName = (p: string) => p.slice(p.lastIndexOf("/") + 1);
 
-type Block = { t: "user" | "say" | "done"; e: ActivityEvent } | { t: "work"; items: ActivityEvent[] };
+type Block = { t: "user" | "say" | "done" | "compact"; e: ActivityEvent } | { t: "work"; items: ActivityEvent[] };
 
 /** Conversa real: pedidos, respostas e os passos do Claude (lidos do histórico dele). */
 function RealConversation(props: { events: () => ActivityEvent[]; tail?: boolean; k?: string }) {
@@ -107,7 +107,7 @@ function RealConversation(props: { events: () => ActivityEvent[]; tail?: boolean
     const map = new Map<string, Block>();
     let work: string | null = null;
     for (const e of props.events()) {
-      if (e.kind === "user" || e.kind === "say" || e.kind === "done") {
+      if (e.kind === "user" || e.kind === "say" || e.kind === "done" || e.kind === "compact") {
         map.set(`${e.kind}:${e.id}`, { t: e.kind, e });
         work = null;
       } else if (work) {
@@ -182,6 +182,15 @@ function RealConversation(props: { events: () => ActivityEvent[]; tail?: boolean
                       </Show>
                     </div>
                   </Show>
+                )}
+              </Match>
+              <Match when={b()?.t === "compact" && (b() as { e: ActivityEvent }).e}>
+                {(e) => (
+                  <div class="compact-line pop-in" classList={{ running: e().status === "running", error: e().status === "error" }}>
+                    <Show when={e().status === "running"} fallback={<Shrink size={12} />}><span class="spinner" /></Show>
+                    <span>{e().title}</span>
+                    <Show when={e().detail}><b>{e().detail}</b></Show>
+                  </div>
                 )}
               </Match>
               <Match when={b()?.t === "work" && (b() as { items: ActivityEvent[] }).items}>

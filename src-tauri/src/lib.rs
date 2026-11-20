@@ -3,6 +3,7 @@ mod attach;
 mod agent;
 mod apiagent;
 mod chat;
+mod context;
 mod convos;
 mod inventory;
 mod accounts;
@@ -605,6 +606,31 @@ fn chat_send(
 ) -> Result<Option<String>, String> {
     let (model, effort) = chat::model_choice(model, effort)?;
     let files = attach::checked(files)?;
+    let mut args = chat_args(&state, project_id, model, effort)?;
+    // arquivo anexado: só dentro do projeto e até 60 KB (Chat livre não anexa)
+    if args.project_id != livre::ID {
+        if let Some(rel) = attach.filter(|a| !a.is_empty()) {
+            let full = files::resolve_in_root(&args.root, &rel)?;
+            let mut body = std::fs::read_to_string(&full).map_err(|_| crate::trf!("não deu para ler {rel} como texto", "couldn't read {rel} as text"))?;
+            if body.len() > 60_000 {
+                let mut cut = 60_000;
+                while !body.is_char_boundary(cut) {
+                    cut -= 1;
+                }
+                body.truncate(cut);
+                body.push_str("\n… (cortado)");
+            }
+            args.attach = Some((rel, body));
+        }
+    }
+    args.text = text;
+    args.files = files;
+    args.rewind = rewind;
+    state.chats.send(app, args)
+}
+
+/// Como o agente de uma conversa roda (conta, pasta, nível, memória). Texto e anexos vêm vazios.
+fn chat_args(state: &AppState, project_id: String, model: Option<String>, effort: Option<String>) -> Result<chat::SendArgs, String> {
     if project_id == livre::ID {
         let mut account = state.free_account()?;
         if account.provider == Provider::Claude && model.is_some() {
@@ -613,28 +639,25 @@ fn chat_send(
         let pc = state.settings.lock().map_err(|e| e.to_string())?.free_pc;
         let t = livre::target(&state.data_dir, &xray::util::home(), pc)?;
         let claude = account.provider == Provider::Claude;
-        return state.chats.send(
-            app,
-            chat::SendArgs {
-                project_id,
-                root: if claude { t.cwd } else { t.tools_root },
-                project_name: "Chat livre".into(),
-                account,
-                text,
-                attach: None,
-                level: t.level,
-                overrides: t.overrides,
-                settings: t.settings,
-                mode: t.mode,
-                add_dir: t.add_dir,
-                prompt: Some(t.prompt),
-                tools: t.tools,
-                stream_steps: true,
-                effort: if claude { effort } else { None },
-                files,
-                rewind,
-            },
-        );
+        return Ok(chat::SendArgs {
+            project_id,
+            root: if claude { t.cwd } else { t.tools_root },
+            project_name: "Chat livre".into(),
+            account,
+            text: String::new(),
+            attach: None,
+            level: t.level,
+            overrides: t.overrides,
+            settings: t.settings,
+            mode: t.mode,
+            add_dir: t.add_dir,
+            prompt: Some(t.prompt),
+            tools: t.tools,
+            stream_steps: true,
+            effort: if claude { effort } else { None },
+            files: vec![],
+            rewind: None,
+        });
     }
     let base = chat::base_project(&project_id).to_string();
     let p = state.store.lock().map_err(|e| e.to_string())?.get(&base).cloned().ok_or(crate::i18n::tr("projeto não encontrado", "project not found"))?;
@@ -647,46 +670,39 @@ fn chat_send(
     }
     let root = PathBuf::from(&p.path);
     chat::project_root_ok(&root)?;
-    // arquivo anexado: só dentro do projeto e até 60 KB
-    let attach = match attach.filter(|a| !a.is_empty()) {
-        Some(rel) => {
-            let full = files::resolve_in_root(&root, &rel)?;
-            let mut body = std::fs::read_to_string(&full).map_err(|_| crate::trf!("não deu para ler {rel} como texto", "couldn't read {rel} as text"))?;
-            if body.len() > 60_000 {
-                let mut cut = 60_000;
-                while !body.is_char_boundary(cut) {
-                    cut -= 1;
-                }
-                body.truncate(cut);
-                body.push_str("\n… (cortado)");
-            }
-            Some((rel, body))
-        }
-        None => None,
-    };
     let settings = access::compile(p.access, &p.overrides).settings();
-    state.chats.send(
-        app,
-        chat::SendArgs {
-            project_id,
-            root,
-            project_name: p.name.clone(),
-            account,
-            text,
-            attach,
-            level: p.access,
-            overrides: p.overrides.clone(),
-            settings,
-            mode: access::MODES[p.access.min(3) as usize],
-            add_dir: None,
-            prompt: memory,
-            tools: true,
-            stream_steps: false,
-            effort: if claude { effort } else { None },
-            files,
-            rewind,
-        },
-    )
+    Ok(chat::SendArgs {
+        project_id,
+        root,
+        project_name: p.name.clone(),
+        account,
+        text: String::new(),
+        attach: None,
+        level: p.access,
+        overrides: p.overrides.clone(),
+        settings,
+        mode: access::MODES[p.access.min(3) as usize],
+        add_dir: None,
+        prompt: memory,
+        tools: true,
+        stream_steps: false,
+        effort: if claude { effort } else { None },
+        files: vec![],
+        rewind: None,
+    })
+}
+
+/// Raio-x do contexto da conversa (o `/context` do Claude): o que ocupa a janela e quanto falta.
+#[tauri::command]
+async fn chat_context(state: State<'_, AppState>, project_id: String, model: Option<String>, session: Option<String>) -> Result<context::Context, String> {
+    let (model, _) = chat::model_choice(model, None)?;
+    let args = chat_args(&state, project_id, model, None)?;
+    if args.account.provider != Provider::Claude {
+        return Err(crate::i18n::tr("O raio-x do contexto é só para conversas com o Claude.", "The context breakdown is only for conversations with Claude.").into());
+    }
+    // a do chat aberto; senão a que a aba lembra (conversa ainda não retomada neste processo)
+    let session = state.chats.current(&args.project_id).filter(|(k, _)| k == "claude").map(|(_, s)| s).or(session.filter(|s| convos::valid_id(s)));
+    blocking(move || context::run(&args, session.as_deref())).await?
 }
 
 /// Guarda um anexo colado (imagem do ⌘V) e devolve o que a interface mostra.
@@ -1236,6 +1252,7 @@ pub fn run() {
             chat_permission,
             chat_stop,
             chat_reset,
+            chat_context,
             chat_history,
             chat_conversations,
             chat_delete,

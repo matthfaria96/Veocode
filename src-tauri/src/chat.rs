@@ -42,6 +42,8 @@ pub enum ChatEvent {
     PermissionGone { request_id: String },
     /// fim da resposta
     Done { ok: bool, detail: Option<String> },
+    /// `/compact`: "running" (começou), "done" (antes → depois) ou "failed" (motivo em `detail`)
+    Compact { state: String, before: Option<u64>, after: Option<u64>, detail: Option<String> },
     /// tamanho do contexto da conversa agora (tokens que a próxima mensagem manda de novo)
     Usage { context: u64 },
     /// uso do plano (5 h e semana) que o Claude Code mandou junto com a resposta
@@ -106,6 +108,8 @@ struct ProjectChat {
     /// última entrada da conversa do Claude (uuid): é a "âncora" de onde o próximo pedido sai,
     /// para editar um pedido depois e recomeçar dali (`--resume-session-at`)
     last_uuid: Option<String>,
+    /// `/compact` em andamento: a resposta "sintética" que o Claude manda depois não vira mensagem
+    compacting: bool,
 }
 
 /// Projeto de uma chave de conversa: "projeto" ou "projeto~aba" (várias conversas por projeto).
@@ -284,6 +288,19 @@ impl Chats {
         r.map(|_| anchor)
     }
 
+    fn set_compacting(&self, project: &str, on: bool) {
+        if let Ok(mut m) = self.map.lock() {
+            if let Some(c) = m.get_mut(project) {
+                c.compacting = on;
+            }
+        }
+    }
+
+    /// Havia um `/compact` em andamento? (e limpa a marca)
+    fn take_compacting(&self, project: &str) -> bool {
+        self.map.lock().ok().and_then(|mut m| m.get_mut(project).map(|c| std::mem::take(&mut c.compacting))).unwrap_or(false)
+    }
+
     /// Guarda a última entrada da conversa (só as da conversa principal, não de subagentes).
     fn note_uuid(&self, project: &str, v: &Value) {
         if v.get("parent_tool_use_id").is_some_and(|p| !p.is_null()) {
@@ -351,6 +368,31 @@ impl Chats {
                 }
                 vec![ChatEvent::Session { session_id: sid }]
             }
+            ("system", "status") => {
+                let compacting = v.get("status").and_then(Value::as_str) == Some("compacting");
+                let result = v.get("compact_result").and_then(Value::as_str);
+                if compacting || result.is_some() {
+                    self.set_compacting(project, true);
+                }
+                if compacting {
+                    return vec![ChatEvent::Compact { state: "running".into(), before: None, after: None, detail: None }];
+                }
+                if result == Some("failed") {
+                    let detail = v.get("compact_error").and_then(Value::as_str).map(String::from);
+                    return vec![ChatEvent::Compact { state: "failed".into(), before: None, after: None, detail }];
+                }
+                vec![]
+            }
+            ("system", "compact_boundary") => {
+                let m = v.get("compact_metadata").or_else(|| v.get("compactMetadata"));
+                let n = |a: &str, b: &str| m.and_then(|m| m.get(a).or_else(|| m.get(b))).and_then(Value::as_u64);
+                let (before, after) = (n("pre_tokens", "preTokens"), n("post_tokens", "postTokens"));
+                let mut out = vec![ChatEvent::Compact { state: "done".into(), before, after, detail: crate::agent::compact_detail(before, after) }];
+                if let Some(context) = after {
+                    out.push(ChatEvent::Usage { context });
+                }
+                out
+            }
             ("rate_limit_event", _) => crate::limits::from_event(account, v).map(|limits| vec![ChatEvent::Limits { account: account.into(), limits }]).unwrap_or_default(),
             ("stream_event", _) => {
                 let e = v.get("event").unwrap_or(&Value::Null);
@@ -370,6 +412,10 @@ impl Chats {
             ("assistant", _) => {
                 self.note_uuid(project, v);
                 if v.get("parent_tool_use_id").is_some_and(|p| !p.is_null()) {
+                    return vec![];
+                }
+                // eco do `/compact` (o resultado já saiu no evento Compact)
+                if v.pointer("/message/model").and_then(Value::as_str) == Some("<synthetic>") && self.take_compacting(project) {
                     return vec![];
                 }
                 let uuid = v.get("uuid").and_then(Value::as_str).unwrap_or("");
@@ -404,6 +450,7 @@ impl Chats {
                 vec![ChatEvent::Permission { request_id: id, tool, title, detail, path }]
             }
             ("result", _) => {
+                self.take_compacting(project);
                 let ok = v.get("is_error").and_then(Value::as_bool) != Some(true) && sub == "success";
                 let denied = v.get("permission_denials").and_then(Value::as_array).map(|a| a.len()).unwrap_or(0);
                 let secs = v.get("duration_ms").and_then(Value::as_u64).map(|ms| ms as f64 / 1000.0);
@@ -417,7 +464,7 @@ impl Chats {
                 if !ok {
                     match v.get("result").and_then(Value::as_str).filter(|r| !r.trim().is_empty()) {
                         Some(r) => parts.push(cut(r, 160)),
-                        None => parts.push("interrompido".into()),
+                        None => parts.push(crate::i18n::tr("interrompido", "interrupted").into()),
                     }
                 }
                 vec![ChatEvent::Done { ok, detail: Some(parts.join(" · ")).filter(|s| !s.is_empty()) }]
@@ -705,8 +752,22 @@ fn spawn_claude(a: &SendArgs, resume: Option<&str>, resume_at: Option<&str>, lev
             cmd.arg(format!("--resume-session-at={at}"));
         }
     }
-    if a.account.config_dir.is_some() {
-        cmd.env("CLAUDE_CONFIG_DIR", crate::accounts::claude::config_dir(&a.account));
+    claude_env(&mut cmd, &claude, &a.account);
+    cmd.current_dir(&a.root).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000); // sem janela de console
+    }
+    let mut child = cmd.spawn().map_err(|e| crate::trf!("não deu para abrir o Claude: {e}", "couldn't open Claude: {e}"))?;
+    let stdin = child.stdin.take().ok_or(crate::i18n::tr("sem entrada do Claude", "no input from Claude"))?;
+    Ok(ClaudeProc { child, stdin, account: a.account.id.clone(), level_key, proc_id })
+}
+
+/// Ambiente do Claude: conta (pasta de config), sem herdar uma sessão de fora e com PATH completo.
+pub fn claude_env(cmd: &mut Command, claude: &Path, account: &Account) {
+    if account.config_dir.is_some() {
+        cmd.env("CLAUDE_CONFIG_DIR", crate::accounts::claude::config_dir(account));
     }
     // o Veocode pode ter sido aberto de dentro de uma sessão do Claude: não herdar isso
     cmd.env_remove("CLAUDECODE").env("CLAUDE_CODE_ENTRYPOINT", "sdk-veocode");
@@ -725,15 +786,6 @@ fn spawn_claude(a: &SendArgs, resume: Option<&str>, resume_at: Option<&str>, lev
     if let Ok(joined) = std::env::join_paths(path) {
         cmd.env("PATH", joined);
     }
-    cmd.current_dir(&a.root).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x0800_0000); // sem janela de console
-    }
-    let mut child = cmd.spawn().map_err(|e| crate::trf!("não deu para abrir o Claude: {e}", "couldn't open Claude: {e}"))?;
-    let stdin = child.stdin.take().ok_or(crate::i18n::tr("sem entrada do Claude", "no input from Claude"))?;
-    Ok(ClaudeProc { child, stdin, account: a.account.id.clone(), level_key, proc_id })
 }
 
 /// Texto curto para o cartão de permissão.
@@ -741,16 +793,25 @@ fn describe(tool: &str, input: &Value, description: Option<&str>) -> (String, Op
     let s = |k: &str| input.get(k).and_then(Value::as_str).map(String::from);
     let file = s("file_path").or_else(|| s("notebook_path"));
     match tool {
-        "Edit" | "MultiEdit" | "NotebookEdit" => (format!("Editar {}", file.clone().unwrap_or_default()), None, file),
-        "Write" => (format!("Escrever {}", file.clone().unwrap_or_default()), s("content").map(|c| format!("{} linhas", c.lines().count())), file),
+        "Edit" | "MultiEdit" | "NotebookEdit" => {
+            let f = file.clone().unwrap_or_default();
+            (crate::trf!("Editar {f}", "Edit {f}"), None, file)
+        }
+        "Write" => {
+            let f = file.clone().unwrap_or_default();
+            (crate::trf!("Escrever {f}", "Write {f}"), s("content").map(|c| {
+                let n = c.lines().count();
+                crate::trf!("{n} linhas", "{n} lines")
+            }), file)
+        }
         "Bash" | "PowerShell" => (s("description").map(|d| cut(&d, 90)).unwrap_or_else(|| crate::i18n::tr("Rodar um comando", "Run a command").into()), s("command").map(|c| cut(&c, 400)), None),
         "WebFetch" => (crate::i18n::tr("Abrir uma página", "Open a page").into(), s("url"), None),
         "WebSearch" => (crate::i18n::tr("Pesquisar na internet", "Search the web").into(), s("query"), None),
         t if t.starts_with("mcp__") => {
             let rest = t.trim_start_matches("mcp__").replacen("__", " · ", 1);
-            (format!("Usar MCP {rest}"), Some(cut(&input.to_string(), 300)), None)
+            (crate::trf!("Usar MCP {rest}", "Use MCP {rest}"), Some(cut(&input.to_string(), 300)), None)
         }
-        t => (description.map(|d| cut(d, 90)).unwrap_or_else(|| format!("Usar {t}")), Some(cut(&input.to_string(), 300)), file),
+        t => (description.map(|d| cut(d, 90)).unwrap_or_else(|| crate::trf!("Usar {t}", "Use {t}")), Some(cut(&input.to_string(), 300)), file),
     }
 }
 

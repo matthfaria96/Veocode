@@ -123,7 +123,7 @@ export type FileView = FileContent | { kind: "loading" } | { kind: "error"; mess
 
 export interface ActivityEvent {
   id: number;
-  kind: "think" | "read" | "search" | "swarm" | "edit" | "create" | "delete" | "run" | "tool" | "done" | "user" | "say" | "web" | "plan";
+  kind: "think" | "read" | "search" | "swarm" | "edit" | "create" | "delete" | "run" | "tool" | "done" | "user" | "say" | "web" | "plan" | "compact";
   title: string;
   detail?: string;
   time: string;

@@ -1,6 +1,6 @@
 import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
-import { Check, CircleHelp, FolderOpen, Keyboard, Languages, Monitor, Moon, Palette, Sun, Waves } from "lucide-solid";
+import { Check, CircleHelp, FolderOpen, Keyboard, Languages, Monitor, Moon, PanelBottom, Palette, Sun, Waves } from "lucide-solid";
 import { createResource, For, Show, type JSX } from "solid-js";
 import { api, isTauri, prettyPath } from "../api";
 import { setHelpOpen, showToast } from "../store";
@@ -80,6 +80,20 @@ function LangPreview(props: { tag: JSX.Element; lines: string[] }) {
     <div class="set-preview lang-preview">
       <span class="lang-tag">{props.tag}</span>
       <For each={props.lines}>{(l, i) => <span class="lang-line" style={{ opacity: i() ? 0.6 : 1 }}>{l}</span>}</For>
+    </div>
+  );
+}
+
+function PanelPreview(props: { open: boolean }) {
+  return (
+    <div class="set-preview panel-preview">
+      <span class="pp-bubble right" />
+      <span class="pp-bubble" />
+      <span class="pp-bubble right short" />
+      <span class="pp-box" />
+      <Show when={props.open}>
+        <span class="pp-panel"><i /><i /><i /></span>
+      </Show>
     </div>
   );
 }
@@ -172,6 +186,17 @@ export default function Settings() {
           </Choice>
           <Choice value="reduzida" current={settings.motion} title={tx("Reduzidas")} desc={tx("Sem laços nem deslizes: as mudanças aparecem direto. Bom para quem se incomoda com movimento.")} onPick={(v) => updateSettings({ motion: v })}>
             <MotionPreview motion="reduzida" />
+          </Choice>
+        </div>
+      </Section>
+
+      <Section icon={<PanelBottom size={15} />} title={tx("Painel de baixo")} desc={tx("Atividade, comandos do agente e terminal embaixo da conversa, na tela Projetos. Abre e fecha pelo botão ao lado das abas.")} delay={120}>
+        <div class="set-cards" role="radiogroup" aria-label={tx("Painel de baixo")}>
+          <Choice value="fechado" current={settings.bottomPanel ? "aberto" : "fechado"} title={tx("Começa fechado")} desc={tx("Mais espaço para a conversa. Quando quiser ver a atividade, é um clique.")} onPick={() => updateSettings({ bottomPanel: false })}>
+            <PanelPreview open={false} />
+          </Choice>
+          <Choice value="aberto" current={settings.bottomPanel ? "aberto" : "fechado"} title={tx("Começa aberto")} desc={tx("A atividade e o terminal já aparecem embaixo da conversa ao abrir o app.")} onPick={() => updateSettings({ bottomPanel: true })}>
+            <PanelPreview open={true} />
           </Choice>
         </div>
       </Section>

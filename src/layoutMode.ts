@@ -40,13 +40,9 @@ const recall = (k: string) => {
 
 /** Atividade, comandos do agente e terminal: fechado, na faixa de baixo ou numa aba fixa no lugar da conversa. */
 export type PanelAt = "none" | "bottom" | "tab";
-const saved = recall("veocode.ws.panel");
-const [panelAt, setPanelRaw] = createSignal<PanelAt>(saved === "bottom" || saved === "tab" ? saved : recall("veocode.ws.bottom") === "1" ? "bottom" : "none");
-export { panelAt };
-export function setPanelAt(v: PanelAt) {
-  setPanelRaw(v);
-  remember("veocode.ws.panel", v);
-}
+// começa fechado; Ajustes → "Painel de baixo" escolhe se já abre aberto (settings.ts aplica ao carregar)
+const [panelAt, setPanelAt] = createSignal<PanelAt>("none");
+export { panelAt, setPanelAt };
 export const bottomOpen = () => panelAt() === "bottom";
 export const setBottomOpen = (v: boolean) => setPanelAt(v ? "bottom" : "none");
 

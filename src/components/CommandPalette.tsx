@@ -1,10 +1,13 @@
-import { ArrowUpRight, Bot, MessagesSquare, CircleHelp, Settings2, FolderPlus, HardDrive, Puzzle, Search, LayoutDashboard } from "lucide-solid";
+import { ArrowUpRight, Bot, MessagesSquare, CircleHelp, Settings2, FolderPlus, HardDrive, Puzzle, Search, LayoutDashboard, Gauge } from "lucide-solid";
 import { FileIcon, ProjectIcon } from "./icons";
 import { api } from "../api";
 import { revealAndOpen } from "../fileActions";
 import { createMemo, createResource, createSignal, For, onMount, type JSX } from "solid-js";
 import { addProjectFromPicker, currentProject, setHelpOpen, setPaletteOpen, setProjectId, setView, projects } from "../store";
 import { tx } from "../i18n";
+import { toggleCtx, ctxPanel } from "../contextInfo";
+import { activeKey } from "../convTabs";
+import { accountById } from "../accounts";
 
 interface Action {
   label: string;
@@ -29,6 +32,13 @@ export default function CommandPalette() {
         setView("workspace");
       },
     })),
+    ...(currentProject() && accountById(currentProject().accountId).provider === "claude"
+      ? [{ label: tx("Contexto da conversa: o que ocupa a janela do Claude e compactar"), hint: tx("Projetos → medidor ao lado das abas"), icon: () => <Gauge size={15} />, run: () => {
+          const k = activeKey(currentProject().id);
+          setView("workspace");
+          if (ctxPanel() !== k) setTimeout(() => toggleCtx(k), 60);
+        } }]
+      : []),
     { label: tx("Liberar espaço: caches e históricos das IAs"), hint: tx("Computador → Espaço e memória"), icon: () => <HardDrive size={15} />, run: () => setView("system") },
     { label: tx("Ver programas e máquinas virtuais que as IAs usam"), hint: tx("Computador → Espaço e memória"), icon: () => <HardDrive size={15} />, run: () => setView("system") },
     { label: tx("Trocar conta de um projeto"), hint: tx("Contas e IAs"), icon: () => <Bot size={15} />, run: () => setView("accounts") },

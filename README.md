@@ -64,7 +64,7 @@ AI coding agents are great, and they are also a black box running with your user
 ### Projects
 A real folder per project: live file tree, editor, Git panel and terminals. The agent's chat runs inside the app (Claude Code headless with `claude -p`, or DeepSeek / OpenAI-compatible / Ollama with a small set of file tools). Every step the agent takes — reading, searching, editing, running a command — is animated on the tree with a cursor in the account's color, so you *see* the work instead of scrolling logs. Permission requests show up as cards with **Allow** / **Deny**.
 
-Run several conversations in the same project at once (one tab each), and turn on **focus mode** to see them all side by side, each with its own message box. The grid adjusts itself to 2, 3, 4, 6 or 8 conversations.
+Run several conversations in the same project at once (one tab each), and turn on **focus mode** to see them all side by side, each with its own message box. The grid adjusts itself to 2, 3, 4, 6 or 8 conversations. Click the context gauge next to the tabs to see what fills Claude's context window (messages, tools, MCP, skills, memory files) and compact the conversation in one click.
 
 ![Projects](docs/screenshots/projects.jpg)
 

@@ -221,6 +221,8 @@ export const topics: Topic[] = [
           "\"Nova conversa\" começa do zero.",
           "Várias conversas ao mesmo tempo: o + na barra de cima abre outra aba; as outras continuam trabalhando.",
           "Modo foco (o botão de grade na barra de cima): todas as conversas do projeto lado a lado, cada uma com a sua caixa. A grade se ajusta sozinha a 2, 3, 4, 6 ou 8 conversas. Clique de novo para voltar.",
+          "Contexto (o medidor ao lado das abas): clique para ver quanto da janela do Claude a conversa ocupa e com o quê (mensagens, ferramentas, MCP, skills, memória). \"Compactar conversa\" resume o que veio antes e libera espaço.",
+          "O painel de baixo (atividade e terminal) começa fechado; em Ajustes → Painel de baixo dá para fazer ele já abrir aberto.",
           "Conversas de outra conta aparecem com cadeado: troque a conta do projeto antes.",
           "O botão de terminal abre o Claude no Terminal do sistema, na pasta e com a conta do projeto.",
         ],

@@ -424,6 +424,16 @@ fn patch_detail(r: &Value) -> Option<String> {
     Some(format!("+{add} −{del}"))
 }
 
+/// "39.9k → 9.8k" (tamanho da conversa antes e depois de compactar).
+pub fn compact_detail(before: Option<u64>, after: Option<u64>) -> Option<String> {
+    let k = |n: u64| if n >= 1000 { format!("{}k", crate::i18n::dec(&format!("{:.1}", n as f64 / 1000.0))) } else { n.to_string() };
+    match (before, after) {
+        (Some(b), Some(a)) => Some(format!("{} → {}", k(b), k(a))),
+        (Some(b), None) => Some(k(b)),
+        _ => None,
+    }
+}
+
 fn is_noise(text: &str) -> bool {
     let t = text.trim_start();
     t.is_empty()
@@ -437,10 +447,28 @@ fn is_noise(text: &str) -> bool {
 
 fn parse_line(v: &Value, c: &Ctx, tools: &mut HashMap<String, String>) -> Vec<AgentEvent> {
     let ty = s(v, "type").unwrap_or("");
+    // conversa compactada: vira uma linha "antes → depois" (o resumo que o Claude escreve fica de fora)
+    if ty == "system" && s(v, "subtype") == Some("compact_boundary") && c.sub.is_none() {
+        let ts = s(v, "timestamp").and_then(|t| DateTime::parse_from_rfc3339(t).ok()).map(|t| t.timestamp_millis()).unwrap_or(0);
+        let m = v.get("compactMetadata");
+        let n = |k: &str| m.and_then(|m| m.get(k)).and_then(Value::as_u64);
+        return vec![AgentEvent {
+            id: s(v, "uuid").unwrap_or("").into(),
+            session: c.session.into(),
+            account: c.account.into(),
+            kind: "compact".into(),
+            title: s(m.unwrap_or(&Value::Null), "trigger").unwrap_or("manual").into(),
+            detail: compact_detail(n("preTokens"), n("postTokens")),
+            status: "ok".into(),
+            ts,
+            history: c.history,
+            ..Default::default()
+        }];
+    }
     if ty != "user" && ty != "assistant" {
         return vec![];
     }
-    if v.get("isMeta").and_then(Value::as_bool) == Some(true) {
+    if v.get("isMeta").and_then(Value::as_bool) == Some(true) || v.get("isCompactSummary").and_then(Value::as_bool) == Some(true) {
         return vec![];
     }
     let ts = s(v, "timestamp").and_then(|t| DateTime::parse_from_rfc3339(t).ok()).map(|t| t.timestamp_millis()).unwrap_or(0);

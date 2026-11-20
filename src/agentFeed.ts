@@ -5,7 +5,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { createSignal } from "solid-js";
 import { accountById } from "./accounts";
-import { alreadyShown } from "./chat";
+import { alreadyShown, compactShown } from "./chat";
 import { isTauri } from "./api";
 import { loadDir, openRealFile } from "./realProject";
 import { projectId, pushEvent, setWs, ws, type ActivityEvent, type Cursor, type FileMark } from "./store";
@@ -17,7 +17,7 @@ export interface AgentEvent {
   account: string;
   sub: string | null;
   subLabel: string | null;
-  kind: "user" | "say" | "think" | "read" | "search" | "edit" | "create" | "run" | "web" | "tool" | "swarm" | "plan" | "done" | "result";
+  kind: "user" | "say" | "think" | "read" | "search" | "edit" | "create" | "run" | "web" | "tool" | "swarm" | "plan" | "done" | "result" | "compact";
   title: string;
   detail: string | null;
   path: string | null;
@@ -209,6 +209,13 @@ export function startAgentFeed(root: HTMLElement): () => void {
     // pensar e responder não mexem o cursor: ele só aparece onde algo acontece (arquivo, terminal)
     if (e.kind === "think") {
       if (live) setWs("running", true);
+      return;
+    }
+
+    // conversa compactada: uma linha "antes → depois" (a ao vivo já está na tela)
+    if (e.kind === "compact") {
+      if (live && compactShown()) return;
+      pushEvent({ ...tag, kind: "compact", title: e.title === "auto" ? tx("Compactada automaticamente") : tx("Conversa compactada"), detail: e.detail ?? undefined, agent: who, color, status: "ok", at: e.ts });
       return;
     }
 

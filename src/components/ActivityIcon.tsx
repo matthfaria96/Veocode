@@ -1,4 +1,4 @@
-import { Brain, Check, Trash2, FilePlus2, FileSearch, Eye, Globe, ListChecks, MessageSquare, Pencil, Plug, SquareTerminal, User, Users } from "lucide-solid";
+import { Brain, Check, Trash2, FilePlus2, FileSearch, Eye, Globe, ListChecks, MessageSquare, Pencil, Plug, Shrink, SquareTerminal, User, Users } from "lucide-solid";
 import type { ActivityEvent } from "../store";
 
 export const kindColor: Record<ActivityEvent["kind"], string> = {
@@ -16,6 +16,7 @@ export const kindColor: Record<ActivityEvent["kind"], string> = {
   say: "var(--accent)",
   web: "var(--info)",
   plan: "var(--accent-2)",
+  compact: "var(--info)",
 };
 
 export default function ActivityIcon(props: { kind: ActivityEvent["kind"]; size?: number }) {
@@ -35,5 +36,6 @@ export default function ActivityIcon(props: { kind: ActivityEvent["kind"]; size?
     case "say": return <MessageSquare size={s()} />;
     case "web": return <Globe size={s()} />;
     case "plan": return <ListChecks size={s()} />;
+    case "compact": return <Shrink size={s()} />;
   }
 }
