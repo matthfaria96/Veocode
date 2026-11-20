@@ -123,6 +123,17 @@ export interface MenuItem {
   label: string;
   icon?: () => JSX.Element;
   danger?: boolean;
-  run: () => void;
+  /** linha menor embaixo do nome */
+  hint?: string;
+  /** atalho com o menu aberto (uma tecla: "P", "1"…) */
+  key?: string;
+  /** abre um submenu ao lado em vez de rodar */
+  sub?: MenuEntry[];
+  run?: () => void;
 }
-export const [contextMenu, setContextMenu] = createSignal<{ x: number; y: number; items: (MenuItem | "sep")[] } | null>(null);
+/** Título de um grupo dentro do menu. */
+export interface MenuHead {
+  head: string;
+}
+export type MenuEntry = MenuItem | MenuHead | "sep";
+export const [contextMenu, setContextMenu] = createSignal<{ x: number; y: number; items: MenuEntry[] } | null>(null);

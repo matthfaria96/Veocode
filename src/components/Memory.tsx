@@ -1,13 +1,17 @@
-// Memória do projeto: o que vai para o Claude no começo de cada conversa nova.
+// Memória do projeto: o que vai para o Claude no começo de cada conversa nova. Abre numa janela
+// por cima de tudo, pelo selo Memória na caixa de mensagem.
 // Em cima, "Sempre lembrar" (texto livre); embaixo, um cartão por conversa concluída.
 // Cada cartão edita ou apaga só ele; a tela não recarrega inteira.
 import { invoke } from "@tauri-apps/api/core";
-import { Brain, Check, ChevronDown, Pencil, Pin, Trash2, X } from "lucide-solid";
+import { Brain, Check, ChevronDown, Pencil, Pin, Trash2 } from "lucide-solid";
 import { createEffect, createSignal, For, on, Show } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import { isTauri } from "../api";
 import { showToast } from "../store";
 import { loadMemory, memory as cache, setMemoryText } from "../memoryStore";
+import { confirmAction } from "../dialogs";
+import { closeModal } from "../modals";
+import Modal, { ModalSection } from "./Modal";
 import { tx, txn } from "../i18n";
 
 type Item = { title: string; body: string };
@@ -25,7 +29,7 @@ function parse(text: string): Doc {
 const serialize = (d: Doc) => [d.notes.trim(), ...d.items.map((i) => `## ${i.title.trim() || tx("Sem título")}\n${i.body.trim()}`)].filter(Boolean).join("\n\n");
 const tokens = (s: string) => Math.round(s.length / 4);
 
-export function MemoryPanel(props: { pid: string; onClose: () => void }) {
+export function MemoryPanel(props: { pid: string }) {
   const [doc, setDoc] = createStore<Doc>({ notes: "", items: [] });
   const [notes, setNotes] = createSignal<string | null>(null); // rascunho das notas fixas
   const [editing, setEditing] = createSignal<Item | null>(null);
@@ -92,23 +96,33 @@ export function MemoryPanel(props: { pid: string; onClose: () => void }) {
   };
 
   const total = () => tokens(serialize({ notes: notes() ?? doc.notes, items: doc.items }));
+  // fechar com algo escrito e não salvo pergunta antes
+  const dirty = () => (notes() !== null && notes() !== doc.notes) || editing() !== null;
+  const close = async () => {
+    if (dirty() && !(await confirmAction(tx("Descartar o que você escreveu?"), tx("A memória ainda não foi salva. Fechando agora, o texto novo se perde."), tx("Descartar"), true))) return;
+    closeModal();
+  };
   const newest = () => [...doc.items].reverse();
   const [date, rest] = [(t: string) => t.split(" · ")[0], (t: string) => t.split(" · ").slice(1).join(" · ") || t];
 
   return (
-    <div class="mem-panel pop-in">
-      <div class="mem-head">
-        <span class="mem-icon"><Brain size={16} /></span>
-        <div>
-          <strong>{tx("Memória do projeto")}</strong>
-          <small>{tx("O Claude lê isto no começo de cada conversa nova, em vez de reler conversas antigas inteiras.")}</small>
-        </div>
-        <span class="mem-size" title={tx("Quanto a memória pesa em cada conversa nova")}>{tx("~{total} tokens", { total: total() })}</span>
-        <button class="icon-btn small" title={tx("Voltar para a conversa")} onClick={props.onClose}><X size={14} /></button>
-      </div>
-
+    <Modal
+      icon={Brain}
+      title={tx("Memória do projeto")}
+      sub={tx("O Claude lê isto no começo de cada conversa nova, em vez de reler conversas antigas inteiras.")}
+      onClose={() => void close()}
+      aside={<span class="modal-pill" title={tx("Quanto a memória pesa em cada conversa nova")}>{tx("~{total} tokens", { total: total() })}</span>}
+      note={tx("Fica guardada no Veocode, fora da pasta do projeto. Passou de ~2 mil tokens, os resumos mais antigos saem sozinhos.")}
+      actions={
+        <Show when={doc.notes || doc.items.length}>
+          <Show when={confirm() === "all"} fallback={<button class="ghost-btn small danger-text" onClick={() => setConfirm("all")}><Trash2 size={12} /> {tx("Apagar tudo")}</button>}>
+            <span class="mem-confirm pop-in">{tx("Apagar a memória inteira?")}<button class="link-btn danger-text" onClick={() => void wipe()}>{tx("Sim")}</button><button class="link-btn" onClick={() => setConfirm(null)}>{tx("Não")}</button></span>
+          </Show>
+        </Show>
+      }
+    >
       <Show when={cache[props.pid] !== undefined || !isTauri} fallback={<div class="loading-rows"><div /><div /></div>}>
-        <section class="mem-card notes">
+        <section class="mem-card notes modal-hero">
           <header>
             <Pin size={13} />
             <strong>{tx("Sempre lembrar")}</strong>
@@ -130,10 +144,7 @@ export function MemoryPanel(props: { pid: string; onClose: () => void }) {
           </Show>
         </section>
 
-        <div class="mem-section">
-          <span>{tx("Conversas concluídas")}</span>
-          <small>{doc.items.length ? txn(doc.items.length, "{n} resumo · mais novo em cima", "{n} resumos · mais novo em cima") : ""}</small>
-        </div>
+        <ModalSection title={tx("Conversas concluídas")} info={doc.items.length ? txn(doc.items.length, "{n} resumo · mais novo em cima", "{n} resumos · mais novo em cima") : undefined} />
         <Show when={doc.items.length} fallback={<p class="mem-empty">{tx("Nenhuma ainda. Quando uma conversa terminar, clique no ✓ da aba dela: o resumo (pedidos, arquivos mexidos e a resposta final) entra aqui, feito no próprio app, sem gastar tokens.")}</p>}>
           <div class="mem-list">
             <For each={newest()}>
@@ -178,15 +189,7 @@ export function MemoryPanel(props: { pid: string; onClose: () => void }) {
           </div>
         </Show>
 
-        <div class="mem-actions">
-          <span class="mem-note">{tx("Fica guardada no Veocode, fora da pasta do projeto. Passou de ~2 mil tokens, os resumos mais antigos saem sozinhos.")}</span>
-          <Show when={doc.notes || doc.items.length}>
-            <Show when={confirm() === "all"} fallback={<button class="ghost-btn small danger-text" onClick={() => setConfirm("all")}>{tx("Apagar tudo")}</button>}>
-              <span class="mem-confirm pop-in">{tx("Apagar a memória inteira?")}<button class="link-btn danger-text" onClick={() => void wipe()}>{tx("Sim")}</button><button class="link-btn" onClick={() => setConfirm(null)}>{tx("Não")}</button></span>
-            </Show>
-          </Show>
-        </div>
       </Show>
-    </div>
+    </Modal>
   );
 }

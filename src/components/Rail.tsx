@@ -1,6 +1,7 @@
 import { Bot, LayoutDashboard, MessagesSquare, CircleHelp, FolderOpen, Monitor, Settings } from "lucide-solid";
-import { For, type JSX } from "solid-js";
+import { createMemo, For, Show, type JSX } from "solid-js";
 import { helpOpen, setHelpOpen, setView, view, type View } from "../store";
+import { railStatus } from "../railStatus";
 import { tx } from "../i18n";
 
 // "also": telas que acendem o mesmo ícone (abas da mesma área)
@@ -9,7 +10,7 @@ const items: { id: View; label: string; icon: () => JSX.Element; also?: View[] }
   { id: "workspace", get label() { return tx("Projetos"); }, icon: () => <FolderOpen size={19} /> },
   { id: "livre", get label() { return tx("Chat livre"); }, icon: () => <MessagesSquare size={19} /> },
   { id: "accounts", get label() { return tx("Contas e IAs"); }, icon: () => <Bot size={19} /> },
-  { id: "inventory", get label() { return tx("Computador: extras do Claude, espaço e memória"); }, icon: () => <Monitor size={19} />, also: ["system"] },
+  { id: "system", get label() { return tx("Computador: espaço, IAs abertas e extras do Claude"); }, icon: () => <Monitor size={19} />, also: ["inventory"] },
 ];
 
 export default function Rail() {
@@ -20,12 +21,26 @@ export default function Rail() {
       <div class="rail-items">
         <span class="rail-indicator" style={{ transform: `translateY(${Math.max(0, index()) * 52}px)`, opacity: index() < 0 ? 0 : 1 }} />
         <For each={items}>
-          {(item, i) => (
-            <button class="rail-btn" classList={{ active: on(item) }} onClick={() => setView(item.id)}>
-              {item.icon()}
-              <span class="rail-tip">{item.label} <kbd>⌘{i() + 1}</kbd></span>
-            </button>
-          )}
+          {(item, i) => {
+            // bolinha discreta quando algo acontece ali; o resumo vem na dica
+            const st = createMemo(() => railStatus(item.id));
+            return (
+              <button class="rail-btn" classList={{ active: on(item) }} onClick={() => setView(item.id)}>
+                {item.icon()}
+                <Show when={st()}>{(s) => <i class={`rail-dot ${s().tone}`} aria-hidden="true" />}</Show>
+                <span class="rail-tip">
+                  <span class="rail-tip-head">{item.label} <kbd>⌘{i() + 1}</kbd></span>
+                  <Show when={st()}>
+                    {(s) => (
+                      <span class={`rail-tip-sum ${s().tone}`}>
+                        <For each={s().lines}>{(l) => <span>{l}</span>}</For>
+                      </span>
+                    )}
+                  </Show>
+                </span>
+              </button>
+            );
+          }}
         </For>
       </div>
       <div class="rail-foot">

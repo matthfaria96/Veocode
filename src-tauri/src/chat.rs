@@ -110,6 +110,9 @@ struct ProjectChat {
     last_uuid: Option<String>,
     /// `/compact` em andamento: a resposta "sintética" que o Claude manda depois não vira mensagem
     compacting: bool,
+    /// bifurcação esperando o 1º pedido: o Claude abre uma cópia da sessão (`--fork-session`),
+    /// inteira ("") ou até esta entrada (uuid, `--resume-session-at`); a original fica intacta
+    fork: Option<String>,
 }
 
 /// Projeto de uma chave de conversa: "projeto" ou "projeto~aba" (várias conversas por projeto).
@@ -184,6 +187,8 @@ impl Chats {
         chat.api_pending.clear();
         chat.session = None;
         chat.api_conv = None;
+        chat.fork = None;
+        chat.last_uuid = None;
         chat.history.clear();
         chat.history_account = account.to_string();
         if kind == "claude" {
@@ -192,6 +197,18 @@ impl Chats {
             chat.history = api.unwrap_or_default();
             chat.api_conv = Some(id.to_string());
         }
+        Ok(())
+    }
+
+    /// Bifurca uma sessão do Claude nesta conversa: o próximo pedido sai de uma cópia dela
+    /// (inteira ou até `at`), com id novo. A sessão original não muda.
+    pub fn fork(&self, project: &str, account: &str, parent: &str, at: Option<&str>) -> Result<(), String> {
+        self.open(project, account, "claude", parent, None)?;
+        let mut map = self.map.lock().map_err(|e| e.to_string())?;
+        let chat = map.entry(project.to_string()).or_default();
+        let at = at.filter(|a| !a.is_empty()).map(String::from);
+        chat.last_uuid = at.clone();
+        chat.fork = Some(at.unwrap_or_default());
         Ok(())
     }
 
@@ -257,8 +274,13 @@ impl Chats {
                     chat.last_uuid = convos::last_uuid(&file);
                 }
             }
+            // bifurcação: a cópia nasce agora (do ponto escolhido, se houver)
+            let fork = if resume.is_some() { chat.fork.take() } else { None };
+            if let Some(at) = fork.as_deref().filter(|a| !a.is_empty()) {
+                resume_at.get_or_insert_with(|| at.to_string());
+            }
             let proc_id = NEXT_GEN.fetch_add(1, Ordering::SeqCst);
-            let proc = spawn_claude(&a, resume.as_deref(), resume_at.as_deref().filter(|_| resume.is_some()), level_key, proc_id)?;
+            let proc = spawn_claude(&a, resume.as_deref(), resume_at.as_deref().filter(|_| resume.is_some()), fork.is_some(), level_key, proc_id)?;
             chat.claude = Some(proc);
             let stdout = chat.claude.as_mut().unwrap().child.stdout.take().ok_or(crate::i18n::tr("sem saída do Claude", "no output from Claude"))?;
             let stderr = chat.claude.as_mut().unwrap().child.stderr.take();
@@ -715,7 +737,7 @@ pub fn model_choice(model: Option<String>, effort: Option<String>) -> Result<(Op
 
 static NEXT_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
-fn spawn_claude(a: &SendArgs, resume: Option<&str>, resume_at: Option<&str>, level_key: String, proc_id: u64) -> Result<ClaudeProc, String> {
+fn spawn_claude(a: &SendArgs, resume: Option<&str>, resume_at: Option<&str>, fork: bool, level_key: String, proc_id: u64) -> Result<ClaudeProc, String> {
     let claude = crate::xray::util::which("claude").ok_or(crate::i18n::tr("Não achei o comando `claude`. Instale o Claude Code e tente de novo.", "Couldn't find the `claude` command. Install Claude Code and try again."))?;
     let mut cmd = Command::new(&claude);
     cmd.args(["--output-format", "stream-json", "--verbose", "--input-format", "stream-json", "--include-partial-messages"])
@@ -750,6 +772,10 @@ fn spawn_claude(a: &SendArgs, resume: Option<&str>, resume_at: Option<&str>, lev
         // pedido editado: a conversa volta até aqui (o resto fica num ramo que o Claude esquece)
         if let Some(at) = resume_at {
             cmd.arg(format!("--resume-session-at={at}"));
+        }
+        // bifurcação: id novo, a sessão de origem fica como estava
+        if fork {
+            cmd.arg("--fork-session");
         }
     }
     claude_env(&mut cmd, &claude, &a.account);

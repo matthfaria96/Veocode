@@ -1,15 +1,17 @@
 // Barra de conversas do projeto (abas), medidor de contexto, aviso de conversa pesada e
 // memória do projeto.
-import { Activity, Brain, Check, Eye, Gauge, History, LayoutGrid, PanelBottom, PanelRight, Plus, Sparkles, X } from "lucide-solid";
+import { Activity, Brain, Check, Eye, GitBranch, History, LayoutGrid, PanelBottom, PanelRight, Plus, Sparkles, SquarePen, X } from "lucide-solid";
 import { createSignal, For, Show, type Component, type JSX } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { bottomOpen, debugOpen, focusMode, setBottomOpen, setDebugOpen, setFocusMode } from "../layoutMode";
 import { chatOf } from "../chat";
-import { activeKey, CACHE_TTL, closeTab, concludeTab, continueFresh, fmtTokens, newTab, renameTab, selectTab, tabsOf, weightOf } from "../convTabs";
+import { activeKey, CACHE_TTL, closeTab, concludeTab, continueFresh, fmtTokens, forkConversation, newTab, renameTab, selectTab, startConversation, tabsOf, weightOf } from "../convTabs";
+import { customName, forkParentOf } from "../forks";
+import { histFind } from "../convHist";
+import { ProjectIcon } from "./icons";
 import { projects, ws } from "../store";
 import { accountById } from "../accounts";
-import { ctxOf, ctxPanel, toggleCtx, windowOf } from "../contextInfo";
-import { ContextPanel } from "./ContextPanel";
+import { isOpen, openMemory } from "../modals";
 import type { View } from "./ChatPanel";
 import { tx, txn } from "../i18n";
 
@@ -36,26 +38,46 @@ function Tool(props: { icon: Component<{ size?: number }>; name: string; hint: s
   );
 }
 
-export function ConvTabsBar(props: { pid: string; view: View; onView: (v: View) => void; extCount: number; slim?: boolean }) {
+export function ConvTabsBar(props: { pid: string; view: View; onView: (v: View) => void; extCount: number; slim?: boolean; docked?: boolean }) {
   const [editing, setEditing] = createSignal<string | null>(null);
   const k = () => activeKey(props.pid);
-  // tamanho ao vivo (cada resposta) ou, antes da primeira, o da última medição do painel
-  const ctx = () => chatOf(k()).context ?? ctxOf(k()).data?.used ?? null;
   const claude = () => accountById(projects.find((p) => p.id === props.pid)?.accountId ?? "").provider === "claude";
   const cur = () => tabsOf(props.pid).find((t) => t.key === k());
+  const proj = () => projects.find((p) => p.id === props.pid);
+  const session = () => chatOf(k()).session;
+  const title = () => (session() && customName(session())) || cur()?.title || "Conversa";
+  // ramo: de qual conversa saiu (nome dela)
+  const parent = () => {
+    const ps = chatOf(k()).fork?.parent ?? forkParentOf(session()) ?? forkParentOf(k());
+    return ps ? customName(ps) ?? histFind(props.pid, ps)?.title ?? tx("outra conversa") : null;
+  };
+  const canFork = () => claude() && !!session() && !chatOf(k()).busy;
+  const fork = () => {
+    const s = session();
+    if (s) void forkConversation(props.pid, { session: s, account: proj()?.accountId ?? "", title: title() });
+  };
   return (
     <div class="conv-bar" classList={{ slim: props.slim }}>
       <Show when={props.slim}>
         <div class="conv-now">
           <Show
             when={props.view === "chat"}
-            fallback={<strong>{props.view === "ext" ? tx("Fora do Veocode") : props.view === "hist" ? tx("Conversas anteriores") : props.view === "mem" ? tx("Memória do projeto") : tx("Atividade")}</strong>}
+            fallback={<strong>{props.view === "ext" ? tx("Fora do Veocode") : props.view === "hist" ? tx("Conversas anteriores") : tx("Atividade")}</strong>}
           >
+            <Show when={proj()}>
+              {(pr) => (
+                <span class="conv-crumb" title={pr().path}>
+                  <ProjectIcon id={pr().id} name={pr().name} stack={pr().stack} size={14} />
+                  <span>{pr().name}</span>
+                  <i>/</i>
+                </span>
+              )}
+            </Show>
             <i class="conv-dot" classList={{ busy: chatOf(k()).busy, ask: chatOf(k()).perms.length > 0, err: !!chatOf(k()).error }} />
-            <Show when={editing() === k()} fallback={<strong title={tx("Dois cliques para renomear")} onDblClick={() => setEditing(k())}>{tx(cur()?.title ?? "Conversa")}</strong>}>
+            <Show when={editing() === k()} fallback={<strong title={tx("Dois cliques para renomear")} onDblClick={() => setEditing(k())}>{tx(title())}</strong>}>
               <input
                 class="conv-rename"
-                value={cur()?.title ?? ""}
+                value={title()}
                 ref={(el) => requestAnimationFrame(() => (el.focus(), el.select()))}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") e.currentTarget.blur();
@@ -67,6 +89,7 @@ export function ConvTabsBar(props: { pid: string; view: View; onView: (v: View) 
                 }}
               />
             </Show>
+            <Show when={parent()}>{(pn) => <small class="conv-branch" title={tx("Ramo de “{v}”: começou com as mensagens dela; o que acontece aqui não muda a original.", { v: pn() })}><GitBranch size={11} /> {tx("ramo de {v}", { v: pn().length > 28 ? `${pn().slice(0, 27)}…` : pn() })}</small>}</Show>
             <small>{chatOf(k()).busy ? tx("trabalhando") : chatOf(k()).perms.length ? tx("esperando você") : ""}</small>
           </Show>
         </div>
@@ -120,27 +143,12 @@ export function ConvTabsBar(props: { pid: string; view: View; onView: (v: View) 
           <Plus size={14} />
         </button>
       </div>
-      <Show when={claude()}>
-        <div class="conv-ctx-wrap">
-          <button
-            class={`conv-ctx ${weightOf(ctx())}`}
-            classList={{ on: ctxPanel() === k(), bare: !ctx() }}
-            aria-expanded={ctxPanel() === k()}
-            title={ctx() ? tx("Esta conversa carrega {v} tokens. Cada mensagem manda tudo de novo para o Claude (com desconto de cache enquanto você está ativo). Clique para ver o que ocupa a janela e compactar.", { v: fmtTokens(ctx()!) }) : tx("Contexto da conversa: o que ocupa a janela do Claude")}
-            onClick={() => toggleCtx(k())}
-          >
-            <Gauge size={12} />
-            <Show when={ctx()} fallback={<span class="conv-ctx-label">{tx("Contexto")}</span>}>
-              {fmtTokens(ctx()!)}
-              <Show when={windowOf(k())}>{(w) => <small class="conv-ctx-pct">{Math.min(100, Math.round((ctx()! / w()) * 100))}%</small>}</Show>
-            </Show>
-          </button>
-          <Show when={ctxPanel() === k()}>
-            <ContextPanel pid={props.pid} k={k()} />
-          </Show>
-        </div>
-      </Show>
       <div class="conv-tools">
+        <Show when={props.docked}>
+          <Tool icon={SquarePen} name={tx("Nova conversa")} hint={tx("Começa uma conversa nova neste projeto (as outras continuam no modo IA)")} onClick={() => (props.view !== "chat" && props.onView("chat"), startConversation(props.pid))} />
+          <Tool icon={History} name={tx("Conversas anteriores")} hint={tx("Trocar para outra conversa deste projeto")} on={props.view === "hist"} onClick={() => props.onView("hist")} />
+        </Show>
+        <Show when={!props.docked}>
         <Tool
           icon={LayoutGrid}
           name={focusMode() ? tx("Sair do modo foco") : tx("Modo foco")}
@@ -153,7 +161,11 @@ export function ConvTabsBar(props: { pid: string; view: View; onView: (v: View) 
         >
           <Show when={focusMode() && tabsOf(props.pid).length > 1}><i class="ctool-badge">{tabsOf(props.pid).length}</i></Show>
         </Tool>
-        <Show when={props.slim}>
+        </Show>
+        <Show when={props.slim && canFork()}>
+          <Tool icon={GitBranch} name={tx("Bifurcar")} hint={tx("Uma conversa nova que começa com tudo desta. Para tentar outro caminho sem perder este.")} onClick={fork} />
+        </Show>
+        <Show when={props.slim && !props.docked}>
           <Tool icon={PanelRight} name={debugOpen() ? tx("Esconder o painel da direita") : tx("Mostrar o painel da direita")} hint={tx("Navegador, comandos rodando, subagentes e atividade, ao lado da conversa")} on={debugOpen()} onClick={() => setDebugOpen(!debugOpen())} />
         </Show>
         <Show when={!props.slim}>
@@ -170,7 +182,7 @@ export function ConvTabsBar(props: { pid: string; view: View; onView: (v: View) 
         </div>
         <i class="conv-sep" />
         <Tool icon={History} name={tx("Histórico")} hint={tx("Conversas anteriores deste projeto")} on={props.view === "hist"} onClick={() => props.onView("hist")} />
-        <Tool icon={Brain} name={tx("Memória")} hint={tx("O que o Claude já sabe deste projeto sem reler conversas antigas")} on={props.view === "mem"} onClick={() => props.onView("mem")} />
+        <Tool icon={Brain} name={tx("Memória")} hint={tx("O que o Claude já sabe deste projeto sem reler conversas antigas")} on={isOpen("memory", props.pid)} onClick={() => openMemory(props.pid)} />
         </Show>
       </div>
     </div>

@@ -8,7 +8,7 @@ import { absPathOf, projects, showToast } from "../store";
 import { kindLabel, sk, type Item, type PluginInfo } from "../skills";
 import { xray } from "../xray";
 import { inv, loadInventory, pluginAction, refreshRunning, removeMcp, trashItem, type McpRun } from "../inventory";
-import { AccountChip, CountUp, PageHeader } from "../components/ui";
+import { AccountChip, CountUp } from "../components/ui";
 import { FolderIcon, ProjectIcon } from "../components/icons";
 import ConfirmDialog from "../components/ConfirmDialog";
 import Explainer from "../components/Explainer";
@@ -295,22 +295,66 @@ export default function Inventory() {
   );
   const famOpen = (f: Family) => !!open()[`fam:${f.id}`] || q().trim().length > 0 || skillFamilies().length === 1;
   const runAction = (a: Action) => (a.confirm ? setConfirm(a) : a.run());
+  // tela larga: receitas numa coluna, conexões e pacotes na outra
+  const has = (c: (typeof cats)[number]) => shown(c.id).length > 0 || cat() === c.id;
+  const colA = () => visibleCats().filter((c) => c.id === "skills" && has(c));
+  const colB = () => visibleCats().filter((c) => c.id !== "skills" && has(c));
+  const section = (c: (typeof cats)[number]) => (
+    <section class="inv-section stagger">
+      <div class="inv-section-head">
+        <span class="inv-cat-icon"><c.icon size={15} /></span>
+        <div>
+          <strong>{c.label} <small>{shown(c.id).length}</small></strong>
+          <small>{c.hint}</small>
+        </div>
+      </div>
+      <Show
+        when={c.id === "skills" && keys(c.id).length > 0}
+        fallback={
+          <div class="inv-list">
+            <For each={keys(c.id)} fallback={<div class="scope-empty">{tx("Nada aqui{v}", { v: q() ? tx(" com essa busca") : "" })}</div>}>
+              {(k, n) => (
+                <Show when={byKey().get(k)}>
+                  {(r) => <RowView r={r()} n={n()} open={!!open()[k]} onToggle={() => toggle(k)} onAction={runAction} onRead={setReading} />}
+                </Show>
+              )}
+            </For>
+          </div>
+        }
+      >
+        <div class="inv-list">
+          <For each={skillFamilies()}>
+            {(f) => (
+              <FamilyView f={f} open={famOpen(f)} onToggle={() => toggle(`fam:${f.id}`)} first={byKey().get(f.keys[0])}>
+                <For each={f.keys}>
+                  {(k, n) => (
+                    <Show when={byKey().get(k)}>
+                      {(r) => <RowView r={r()} n={n()} open={!!open()[k]} onToggle={() => toggle(k)} onAction={runAction} onRead={setReading} />}
+                    </Show>
+                  )}
+                </For>
+              </FamilyView>
+            )}
+          </For>
+        </div>
+      </Show>
+    </section>
+  );
 
   return (
     <div class="page">
-      <ComputerTabs />
-      <PageHeader
-        title={tx("Extras do Claude")}
-        subtitle={isTauri ? tx("Habilidades a mais que o Claude ganhou, onde cada uma vale e quanto pesa. Daqui dá para desligar ou tirar.") : tx("Modo navegador: exemplo. Abra pelo app para ver os seus.")}
+      <ComputerTabs
         actions={
-          <button class="ghost-btn" onClick={loadInventory}>
-            <RefreshCw size={14} classList={{ spinning: inv.loading }} /> {tx("Atualizar")}
+          <button class="ghost-btn small" onClick={loadInventory}>
+            <RefreshCw size={13} classList={{ spinning: inv.loading }} /> {tx("Atualizar")}
           </button>
         }
       />
 
+      <div class="cx-help">
       <Explainer
         id="skills"
+        closed
         title={tx("O que é esta tela?")}
         intro={tx("O Claude já sabe programar sozinho. Aqui aparecem os extras que alguém instalou para ele. São quatro tipos:")}
         terms={[
@@ -333,10 +377,11 @@ export default function Inventory() {
           { word: tx("Skill na conta"), means: <>{tx("Pasta")} <code>~/.claude/skills</code>{tx(", fora dos projetos.")} <strong>{tx("Vale em todos os projetos")}</strong> {tx("daquela conta neste computador.")}</> },
           { word: tx("Plugin (/plugin, do GitHub)"), means: <><strong>{tx("Sempre é baixado para o computador")}</strong> (<code>~/.claude/plugins</code>{tx("). Na instalação você escolhe onde ele liga:")} <em>user</em> {tx("= todos os projetos;")} <em>project</em> {tx("ou")} <em>local</em> {tx("= só no projeto onde instalou.")}</> },
           { word: tx("Conexão (claude mcp add)"), means: <>{tx("Sem nada a mais,")} <strong>{tx("vale só na pasta")}</strong> {tx("onde você rodou o comando (guardada no computador). Com")} <code>--scope project</code> {tx("vai para")} <code>.mcp.json</code> {tx("no projeto; com")} <code>--scope user</code>{tx(", vale em todos.")}</> },
-          { word: tx("Programas que a skill instala"), means: <>{tx("Coisas instaladas com npm, pip ou brew ficam")} <strong>{tx("no computador todo")}</strong>{tx(", para qualquer projeto. Veja em")} <em>{tx("Espaço e memória → Instalado pelas IAs")}</em>.</> },
+          { word: tx("Programas que a skill instala"), means: <>{tx("Coisas instaladas com npm, pip ou brew ficam")} <strong>{tx("no computador todo")}</strong>{tx(", para qualquer projeto. Veja em")} <em>{tx("Uso da máquina → Instalado pelas IAs")}</em>.</> },
         ]}
         calm={<>{tx("No Veocode, cada conta do Claude tem a sua pasta: o que foi instalado “no computador” por uma conta")} <strong>{tx("não aparece")}</strong> {tx("para outra. Quer ver só o que vale num projeto? Escolha ele no seletor logo abaixo.")}</>}
       />
+      </div>
 
       <div class="inv-bar">
         <ProjectPicker value={proj()} onChange={setProj} />
@@ -379,51 +424,10 @@ export default function Inventory() {
       </Show>
 
       <Show when={inv.loaded} fallback={<div class="loading-rows"><div /><div /><div /></div>}>
-        <For each={visibleCats()}>
-          {(c) => (
-            <Show when={shown(c.id).length || cat() === c.id}>
-              <section class="inv-section stagger">
-                <div class="inv-section-head">
-                  <span class="inv-cat-icon"><c.icon size={15} /></span>
-                  <div>
-                    <strong>{c.label} <small>{shown(c.id).length}</small></strong>
-                    <small>{c.hint}</small>
-                  </div>
-                </div>
-                <Show
-                  when={c.id === "skills" && keys(c.id).length > 0}
-                  fallback={
-                    <div class="inv-list">
-                      <For each={keys(c.id)} fallback={<div class="scope-empty">{tx("Nada aqui{v}", { v: q() ? tx(" com essa busca") : "" })}</div>}>
-                        {(k, n) => (
-                          <Show when={byKey().get(k)}>
-                            {(r) => <RowView r={r()} n={n()} open={!!open()[k]} onToggle={() => toggle(k)} onAction={runAction} onRead={setReading} />}
-                          </Show>
-                        )}
-                      </For>
-                    </div>
-                  }
-                >
-                  <div class="inv-list">
-                    <For each={skillFamilies()}>
-                      {(f) => (
-                        <FamilyView f={f} open={famOpen(f)} onToggle={() => toggle(`fam:${f.id}`)} first={byKey().get(f.keys[0])}>
-                          <For each={f.keys}>
-                            {(k, n) => (
-                              <Show when={byKey().get(k)}>
-                                {(r) => <RowView r={r()} n={n()} open={!!open()[k]} onToggle={() => toggle(k)} onAction={runAction} onRead={setReading} />}
-                              </Show>
-                            )}
-                          </For>
-                        </FamilyView>
-                      )}
-                    </For>
-                  </div>
-                </Show>
-              </section>
-            </Show>
-          )}
-        </For>
+        <div class="inv-cols" classList={{ split: colA().length > 0 && colB().length > 0 }}>
+          <Show when={colA().length}><div class="inv-col"><For each={colA()}>{section}</For></div></Show>
+          <Show when={colB().length}><div class="inv-col"><For each={colB()}>{section}</For></div></Show>
+        </div>
       </Show>
 
       <Show when={reading()}>{(i) => <SkillDetail i={i()} onClose={() => setReading(null)} />}</Show>

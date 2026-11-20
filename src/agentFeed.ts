@@ -2,10 +2,11 @@
 // e aqui cada passo vira a mesma animação da demo: cursor da conta indo até o arquivo,
 // marca na árvore, linha na Atividade, comando no Terminal e conversa no painel do agente.
 
+import { copiedFromParent } from "./forks";
 import { invoke } from "@tauri-apps/api/core";
 import { createSignal } from "solid-js";
 import { accountById } from "./accounts";
-import { alreadyShown, compactShown } from "./chat";
+import { alreadyShown, compactShown, openedWhole } from "./chat";
 import { isTauri } from "./api";
 import { loadDir, openRealFile } from "./realProject";
 import { projectId, pushEvent, setWs, ws, type ActivityEvent, type Cursor, type FileMark } from "./store";
@@ -168,6 +169,11 @@ export function startAgentFeed(root: HTMLElement): () => void {
   const term = (text: string, tone?: "cmd" | "ok" | "dim") => setWs("terminal", (t) => [...t, { text, tone }].slice(-200));
 
   const apply = async (e: AgentEvent) => {
+    // ramo novo: o leitor de fundo repete as mensagens copiadas da original, que já estão na tela
+    // (o histórico aberto pela lista vem com a aba e entra inteiro)
+    if (!e.tab && copiedFromParent(e.session, e.ts)) return;
+    // o fim de uma sessão que já foi aberta inteira numa aba (o leitor de fundo chegou depois)
+    if (!e.tab && e.history && e.session && openedWhole(e.session)) return;
     // de qual conversa é (a aba do chat filtra por isso)
     const tag = { session: e.session || undefined, tab: e.tab, sub: e.sub ?? undefined, subLabel: e.sub ? (e.subLabel ?? undefined) : undefined };
     const live = !e.history;

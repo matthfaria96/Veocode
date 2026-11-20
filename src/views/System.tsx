@@ -4,7 +4,7 @@ import { api, copyText, isTauri, type AgentGroup, type Leftover, type Proc } fro
 import { formatBytes } from "../data/mock";
 import { showToast } from "../store";
 import { agentColor, diskPoints, killLeftover, killProc, loadCaches, loadInstalls, loadMachines, loadModels, refreshPorts, refreshProcs, setXray, toggleMachine, trashCaches, xray, type CacheRow } from "../xray";
-import { CountUp, PageHeader, Sparkline, Stagger } from "../components/ui";
+import { CountUp, Sparkline, Stagger } from "../components/ui";
 import ConfirmDialog from "../components/ConfirmDialog";
 import Explainer from "../components/Explainer";
 import ComputerTabs from "../components/ComputerTabs";
@@ -90,17 +90,13 @@ export default function System() {
 
   return (
     <div class="page">
-      <ComputerTabs />
-      <PageHeader
-        title={tx("Espaço e memória")}
-        subtitle={isTauri ? tx("O que as IAs deixaram no disco e o que está aberto agora. Marque o que não quer e mande para a Lixeira.") : tx("Modo navegador: dados fictícios. Abra pelo app para ver a máquina de verdade.")}
+      <ComputerTabs
         actions={
-          <button class="ghost-btn" onClick={refreshAll}>
-            <RefreshCw size={14} classList={{ spinning: measuring() || xray.installsLoading || xray.machinesLoading }} /> {tx("Atualizar")}
+          <button class="ghost-btn small" onClick={refreshAll}>
+            <RefreshCw size={13} classList={{ spinning: measuring() || xray.installsLoading || xray.machinesLoading }} /> {tx("Atualizar")}
           </button>
         }
       />
-
 
       <section class="cx-hero">
         <span class="cx-orb a" />
@@ -132,7 +128,8 @@ export default function System() {
         </div>
       </section>
 
-      <div class="xray-tabs">
+      <div class="cx-body">
+      <nav class="xray-tabs" aria-label={tx("Partes")}>
         <For each={tabs}>
           {(t, i) => (
             <button class="xray-tab" classList={{ active: tab() === t.id }} style={{ "--k": t.color, "--i": i() }} onClick={() => setTab(t.id)}>
@@ -144,8 +141,9 @@ export default function System() {
             </button>
           )}
         </For>
-      </div>
+      </nav>
 
+      <div class="cx-main">
       <Switch>
         <Match when={tab() === "claude"}>
           <div class="cx-pane">
@@ -450,6 +448,8 @@ export default function System() {
           </div>
         </Match>
       </Switch>
+      </div>
+      </div>
 
       <div class="cx-explain">
       <Explainer

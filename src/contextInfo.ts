@@ -3,9 +3,10 @@
 // tokens) e guardado por conversa até a próxima mensagem.
 
 import { invoke } from "@tauri-apps/api/core";
-import { createSignal } from "solid-js";
 import { createStore } from "solid-js/store";
 import { isTauri } from "./api";
+import { modal, setModal } from "./modals";
+import { projects } from "./store";
 import { chatOf } from "./chat";
 import { sendPrefs } from "./chatPrefs";
 import { tx } from "./i18n";
@@ -48,8 +49,11 @@ const [store, setStore] = createStore<Record<string, Entry>>({});
 const blank: Entry = { data: null, at: 0, loading: false, error: null };
 export const ctxOf = (key: string): Entry => store[key] ?? blank;
 
-/** Painel aberto (chave da conversa) — a paleta de comandos abre por aqui também. */
-export const [ctxPanel, setCtxPanel] = createSignal<string | null>(null);
+/** Conversa com a janela do contexto aberta (a paleta de comandos abre por aqui também). */
+export const ctxPanel = (): string | null => {
+  const m = modal();
+  return m?.kind === "context" ? m.k ?? null : null;
+};
 
 /** Medição antiga: a conversa mexeu depois dela. */
 export const isStale = (key: string) => {
@@ -65,17 +69,18 @@ export async function measure(key: string) {
   setStore(key, { ...ctxOf(key), loading: true, error: null });
   try {
     const base = key.split("~")[0];
-    const data = isTauri ? await invoke<ContextData>("chat_context", { projectId: key, model: sendPrefs(base).model ?? null, session: chatOf(key).session ?? sessionOfTab(key) }) : demo();
+    const sim = !isTauri || !!projects.find((p) => p.id === base)?.demo;
+    const data = !sim ? await invoke<ContextData>("chat_context", { projectId: key, model: sendPrefs(base).model ?? null, session: chatOf(key).session ?? sessionOfTab(key) }) : demo();
     setStore(key, { data, at: Date.now(), loading: false, error: null });
   } catch (e) {
     setStore(key, { ...ctxOf(key), loading: false, error: e instanceof Error ? e.message : String(e) });
   }
 }
 
-/** Abre (ou fecha) o painel e mede se a medição estiver velha. */
+/** Abre (ou fecha) a janela do contexto e mede se a medição estiver velha. */
 export function toggleCtx(key: string) {
-  if (ctxPanel() === key) return setCtxPanel(null);
-  setCtxPanel(key);
+  if (ctxPanel() === key) return setModal(null);
+  setModal({ kind: "context", pid: key.split("~")[0], k: key });
   if (isStale(key)) void measure(key);
 }
 

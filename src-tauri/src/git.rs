@@ -1,8 +1,8 @@
-//! Git e GitHub de cada projeto, só leitura: branch, o que falta enviar ou baixar, arquivos
-//! mudados, commits, branches, stash e, com o GitHub CLI (`gh`) logado, PRs, CI e o repositório.
-//! A única ação é "buscar" (`git fetch`), que atualiza o que se sabe do remoto sem mexer nos
-//! arquivos nem nos branches da pessoa. Commit, push e pull ficam com ela (ou com a IA, pelo
-//! nível de acesso).
+//! Git e GitHub de cada projeto: branch, o que falta enviar ou baixar, arquivos mudados,
+//! commits, branches, stash e, com o GitHub CLI (`gh`) logado, PRs, CI e o repositório.
+//! Ações (sempre por um clique da pessoa, nunca da IA): buscar (`git fetch`), preparar e tirar
+//! arquivos do próximo commit, fazer o commit, enviar (`git push`) e baixar (`git pull --ff-only`,
+//! que nunca cria merge nem conflito: se os dois lados mudaram, a pessoa resolve no Terminal).
 
 use serde::Serialize;
 use std::collections::HashSet;
@@ -324,6 +324,133 @@ fn fetch_error(err: &str) -> String {
     } else {
         let first = err.lines().find(|l| !l.trim().is_empty()).unwrap_or(crate::i18n::tr("erro desconhecido", "unknown error"));
         crate::trf!("O git não conseguiu buscar: {}", "git couldn't fetch: {}", first.trim().trim_start_matches("fatal: "))
+    }
+}
+
+// ---------------------------------------------------------------- ações (clique da pessoa)
+
+/// Caminhos vindos da tela: relativos, sem sair da pasta.
+fn safe_paths(paths: &[String]) -> Result<Vec<String>, String> {
+    let ok = |p: &str| !p.is_empty() && !p.starts_with('/') && !p.starts_with('-') && !p.split(['/', '\\']).any(|x| x == "..");
+    if paths.is_empty() || paths.iter().any(|p| !ok(p)) {
+        return Err(crate::i18n::tr("caminho inválido", "invalid path").into());
+    }
+    Ok(paths.to_vec())
+}
+
+fn first_line(err: &str) -> String {
+    err.lines().map(str::trim).find(|l| !l.is_empty() && !l.starts_with("hint:")).unwrap_or("").trim_start_matches("fatal: ").trim_start_matches("error: ").to_string()
+}
+
+/// Põe (`stage`) ou tira arquivos do próximo commit. Os caminhos são relativos à raiz do repositório.
+pub fn stage(root: &Path, paths: &[String], on: bool) -> Result<(), String> {
+    let bin = git_bin()?;
+    let paths = safe_paths(paths)?;
+    let top = Git { bin: bin.clone(), root: root.to_path_buf() }.out(&["rev-parse", "--show-toplevel"]).map(|t| PathBuf::from(t.trim())).unwrap_or_else(|| root.to_path_buf());
+    let mut args: Vec<&str> = if on { vec!["add", "-A", "--"] } else { vec!["restore", "--staged", "--"] };
+    args.extend(paths.iter().map(String::as_str));
+    match run_cmd(command(&bin, &top, &args), Duration::from_secs(30)) {
+        Ok((true, _, _)) => Ok(()),
+        // repositório ainda sem commit: o restore não funciona, o rm --cached sim
+        Ok((false, _, _)) if !on => {
+            let mut a: Vec<&str> = vec!["rm", "--cached", "-r", "-q", "--"];
+            a.extend(paths.iter().map(String::as_str));
+            match run_cmd(command(&bin, &top, &a), Duration::from_secs(30)) {
+                Ok((true, _, _)) => Ok(()),
+                Ok((false, _, err)) => Err(first_line(&err)),
+                Err(e) => Err(e),
+            }
+        }
+        Ok((false, _, err)) => Err(first_line(&err)),
+        Err(e) => Err(e),
+    }
+}
+
+/// Commit. `all`: prepara tudo antes (como o "commit inteligente" do VS Code). Devolve o hash curto.
+pub fn commit(root: &Path, message: &str, all: bool) -> Result<String, String> {
+    let bin = git_bin()?;
+    let msg = message.trim();
+    if msg.is_empty() {
+        return Err(crate::i18n::tr("Escreva uma mensagem para o commit.", "Write a commit message.").into());
+    }
+    if all {
+        match run_cmd(command(&bin, root, &["add", "-A", "--", "."]), Duration::from_secs(60)) {
+            Ok((true, _, _)) => {}
+            Ok((false, _, err)) => return Err(first_line(&err)),
+            Err(e) => return Err(e),
+        }
+    }
+    match run_cmd(command(&bin, root, &["commit", "-q", "-m", msg]), Duration::from_secs(180)) {
+        Ok((true, _, _)) => Ok(Git { bin, root: root.to_path_buf() }.out(&["rev-parse", "--short", "HEAD"]).unwrap_or_default().trim().to_string()),
+        Ok((false, out, err)) => {
+            let e = format!("{err}\n{out}").to_lowercase();
+            if e.contains("tell me who you are") || e.contains("user.email") {
+                Err(crate::i18n::tr("O git ainda não sabe o seu nome e e-mail. No Terminal: git config --global user.name \"Seu Nome\" e git config --global user.email voce@exemplo.com", "git doesn't know your name and email yet. In Terminal: git config --global user.name \"Your Name\" and git config --global user.email you@example.com").into())
+            } else if e.contains("nothing to commit") || e.contains("no changes added") {
+                Err(crate::i18n::tr("Nada para salvar: nenhuma mudança preparada.", "Nothing to commit: no changes are staged.").into())
+            } else {
+                let l = first_line(if err.trim().is_empty() { &out } else { &err });
+                Err(crate::trf!("O commit não foi feito: {}", "The commit wasn't made: {}", l))
+            }
+        }
+        Err(e) => Err(crate::trf!("O commit não foi feito: {e}.", "The commit wasn't made: {e}.")),
+    }
+}
+
+/// `git push` (o branch novo vai para o origin e passa a acompanhá-lo).
+pub fn push(root: &Path) -> Result<(), String> {
+    let bin = git_bin()?;
+    let g = Git { bin: bin.clone(), root: root.to_path_buf() };
+    let has_up = g.out(&["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]).is_some();
+    let branch = g.out(&["symbolic-ref", "--short", "-q", "HEAD"]).unwrap_or_default().trim().to_string();
+    let remotes = g.out(&["remote"]).unwrap_or_default();
+    let remote = remotes.lines().find(|r| r.trim() == "origin").or_else(|| remotes.lines().next()).map(|r| r.trim().to_string());
+    let args: Vec<&str> = match (&remote, has_up) {
+        (_, true) => vec!["push", "--quiet"],
+        (Some(r), false) if !branch.is_empty() => vec!["push", "--quiet", "-u", r.as_str(), branch.as_str()],
+        _ => return Err(crate::i18n::tr("Este repositório não tem remoto para onde enviar.", "This repository has no remote to push to.").into()),
+    };
+    match run_cmd(command(&bin, root, &args), Duration::from_secs(180)) {
+        Ok((true, _, _)) => Ok(()),
+        Ok((false, _, err)) => {
+            let e = err.to_lowercase();
+            if e.contains("rejected") || e.contains("fetch first") || e.contains("non-fast-forward") {
+                Err(crate::i18n::tr("O remoto tem commits que você ainda não tem. Baixe primeiro e envie de novo.", "The remote has commits you don't have yet. Pull first, then push again.").into())
+            } else {
+                Err(remote_error(&err, crate::i18n::tr("enviar", "push")))
+            }
+        }
+        Err(e) => Err(crate::trf!("Não deu para enviar: {e}.", "Couldn't push: {e}.")),
+    }
+}
+
+/// `git pull --ff-only`: traz o que há de novo sem criar merge (nem conflito).
+pub fn pull(root: &Path) -> Result<(), String> {
+    let bin = git_bin()?;
+    match run_cmd(command(&bin, root, &["pull", "--ff-only", "--quiet"]), Duration::from_secs(180)) {
+        Ok((true, _, _)) => Ok(()),
+        Ok((false, _, err)) => {
+            let e = err.to_lowercase();
+            if e.contains("not possible to fast-forward") || e.contains("diverging") || e.contains("divergent") {
+                Err(crate::i18n::tr("Os dois lados mudaram, então não dá para só baixar. Resolva no Terminal (por exemplo git pull --rebase) ou peça para a IA.", "Both sides changed, so it can't just pull. Sort it out in Terminal (for example git pull --rebase) or ask the AI.").into())
+            } else if e.contains("would be overwritten") {
+                Err(crate::i18n::tr("Suas mudanças não salvas mexem nos mesmos arquivos. Faça o commit (ou guarde com git stash) e baixe de novo.", "Your uncommitted changes touch the same files. Commit them (or git stash) and pull again.").into())
+            } else {
+                Err(remote_error(&err, crate::i18n::tr("baixar", "pull")))
+            }
+        }
+        Err(e) => Err(crate::trf!("Não deu para baixar: {e}.", "Couldn't pull: {e}.")),
+    }
+}
+
+fn remote_error(err: &str, what: &str) -> String {
+    let e = err.to_lowercase();
+    if e.contains("authentication") || e.contains("could not read username") || e.contains("permission denied") || e.contains("terminal prompts disabled") {
+        crate::i18n::tr("O remoto pediu login. Entre pelo Terminal (por exemplo `gh auth login` ou com a sua chave SSH) e tente de novo.", "The remote asked for a login. Sign in from Terminal (for example `gh auth login` or with your SSH key) and try again.").into()
+    } else if e.contains("could not resolve host") || e.contains("network") || e.contains("timed out") {
+        crate::i18n::tr("Sem conexão com o remoto agora.", "No connection to the remote right now.").into()
+    } else {
+        crate::trf!("O git não conseguiu {}: {}", "git couldn't {}: {}", what, first_line(err))
     }
 }
 

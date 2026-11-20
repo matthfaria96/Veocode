@@ -92,22 +92,23 @@ export const topics: Topic[] = [
     id: "projetos",
     title: "Projetos",
     view: "workspace",
-    where: "Terceiro ícone do menu lateral. Troque de projeto pelo nome no topo da tela.",
+    where: "Segundo ícone do menu lateral (a pasta). Troque de projeto pelo nome no topo da tela.",
     lead: "A mesa de trabalho de um projeto: os arquivos, o editor, a conversa com a IA e tudo o que ela está fazendo, ao vivo.",
     sections: [
       {
         title: "As partes da tela",
         items: [
-          "Embaixo do nome do projeto, Código | IA troca o jeito de ver o projeto (⌘E alterna). Cada modo lembra como você deixou.",
-          "Modo Código, como um editor: à esquerda a árvore de arquivos, o Git e o Rastro; no meio os arquivos em abas. Clique no texto e escreva: ele grava sozinho. ⌘S (Ctrl+S) grava na hora. Marcas coloridas na árvore mostram o que a IA leu, editou, criou ou apagou.",
+          "No alto da coluna da esquerda, IA | Código troca o jeito de ver o projeto (⌘E alterna). Cada modo lembra como você deixou.",
+          "Modo Código, como um editor: à esquerda a árvore de arquivos; no meio os arquivos em abas; à direita, num painel que abre e fecha pelo ícone ao lado do terminal (⌥⌘B), o Git, a Conversa com a IA (como o Claude Code ao lado do código no VS Code), o Ambiente (perfis do .env e serviços) e, se você quiser, o terminal. Clique no texto e escreva: ele grava sozinho. ⌘S (Ctrl+S) grava na hora. Marcas coloridas na árvore mostram o que a IA leu, editou, criou ou apagou.",
           "No Git do modo Código, clique num arquivo mudado para ver o que era (no último commit) e o que é agora, lado a lado ou numa coluna só.",
-          "O terminal do modo Código abre com ⌘J ou pelo botão ao lado das abas. O botão de painel no terminal põe ele embaixo ou à direita; arraste a borda para mudar o tamanho.",
-          "Modo IA: à esquerda as conversas do projeto (as abertas e as anteriores); um clique troca a conversa do meio. Embaixo da lista ficam Fora do Veocode, Memória e Nível de acesso.",
-          "À direita do modo IA, o painel de depuração: Navegador (o app desta pasta rodando, em tela de computador ou de celular), Comandos (servidores e builds rodando na pasta, e cada comando da IA com o resultado), Subagentes (cada ajudante e o que está fazendo) e Atividade.",
+          "O terminal do modo Código abre com ⌘J ou pelo botão ao lado das abas. Ele mora em um lugar só: embaixo do editor ou como aba do painel da direita (o botão de painel no próprio terminal muda). Embaixo, arraste a borda para mudar a altura.",
+          "Ambiente, no painel da direita do modo Código: os perfis do .env e os serviços do projeto. Deixe as opções de uma variável uma embaixo da outra no .env (uma ativa, as outras comentadas com #, com um comentário em cima como nome) e troque com um clique: os serviços rodando que leem aquele .env reiniciam sozinhos. Opções que apontam para outra máquina aparecem como \"remoto\"; as que parecem produção pedem confirmação.",
+          "Os serviços (o npm run dev do front, do back…) o Veocode acha na pasta, e dá para adicionar os seus. Cada um roda num terminal do projeto, numa aba com o nome dele; parar encerra também o que ele abriu, para a porta ficar livre.",
+          "Modo IA, como no Claude: à esquerda os seus projetos, cada um abrindo as conversas dele, da mais recente para a mais antiga. Um clique abre a conversa no meio; o + ao lado do projeto começa uma conversa nova nele. Na caixa de mensagem, ao lado do nível de acesso, fica a Memória do projeto.",
+          "À direita do modo IA, o painel de depuração: Navegador (o app desta pasta rodando, em tela de computador ou de celular), Comandos (servidores e builds rodando na pasta, e cada comando da IA com o resultado), Subagentes (cada ajudante e o que está fazendo), Atividade e Rastro. Embaixo da Atividade aparece \"Fora do Veocode\" quando o Claude roda nesta pasta pelo Terminal, editor ou app do Claude.",
           "Clique no nome da conta, na caixa de mensagem, para trocar a conta, o modelo do Claude (Opus, Fable, Sonnet, Haiku) e a força do raciocínio. Vale a partir da próxima mensagem e a conversa continua.",
           "Terminou um projeto? No menu do nome do projeto (em cima, à esquerda) ou no ⋯ do cartão na tela inicial, use \"Fechar projeto…\": dá para só tirar do Veocode (a pasta fica) ou também mandar a pasta para a Lixeira.",
-          "Embaixo, o botão Simples/Avançado: no Avançado aparece à esquerda uma coluna com todos os projetos, um embaixo do outro, para trocar com um clique sem sair da tela.",
-          "Em cima, \"IAs abertas\" conta cada Claude aberto agora no computador (no VS Code, no app do Claude, no Terminal…). Passe o mouse para ver onde estão.",
+          "Em cima, \"IAs abertas\" conta cada Claude aberto agora no computador (no VS Code, no app do Claude, no Terminal…); o ícone fica verde quando alguma está rodando comandos. Passe o mouse para ver onde estão.",
           "Cursores coloridos (um por conta, e um para cada subagente) mostram onde a IA está mexendo agora.",
         ],
       },
@@ -146,14 +147,14 @@ export const topics: Topic[] = [
       {
         title: "Git e GitHub do projeto",
         items: [
-          "A aba Git (no painel da direita, ou clicando no nome do branch embaixo do projeto) mostra o estado do git deste projeto, sozinho.",
-          "No topo: o branch, e as setas ↑ (commits daqui que o remoto ainda não tem) e ↓ (commits do remoto que ainda não estão aqui).",
-          "Mudanças não salvas no git: os arquivos alterados, novos ou apagados desde o último commit. Clicar abre o arquivo no editor.",
+          "O Git fica no painel da direita do modo Código (ou clique no nome do branch embaixo do projeto). A bolinha com número no ícone do painel e na aba Git conta os arquivos mudados sem commit; sem mudanças, mostra ↑ para enviar e ↓ para baixar.",
+          "No topo: o branch e as setas ↑ (commits daqui que o remoto ainda não tem) e ↓ (do remoto que ainda não estão aqui). Clicar nelas envia ou baixa. A nuvem busca (git fetch) sem mudar seus arquivos.",
+          "Como no VS Code: escreva a mensagem e clique em Commit (⌘Enter). Sem nada preparado, o commit leva todas as mudanças; com o + você escolhe arquivo por arquivo (o − tira). A seta ao lado do Commit tem \"Commit e enviar\". Clicar num arquivo mostra o que mudou nele.",
           "Commits: um desenho com uma linha colorida por branch, que se separa e se junta como no GitHub. Bolinha vazia é commit que só existe neste computador; cheia é o que já está no remoto. Clique num commit para ver os arquivos que ele mudou, e num arquivo para ver as linhas.",
-          "No fim da aba, a explicação das letras da árvore de arquivos (L lido, B busca, M modificado, N novo, A apagado).",
+          "As seções abrem e fecham (o Veocode lembra). Em \"O que as letras querem dizer\": M modificado, N novo, A apagado, R renomeado, ! em conflito, e as da árvore (L lido, B busca).",
           "Branches, stash (mudanças deixadas de lado) e remotos, com um botão para abrir o repositório no navegador.",
           "Com o GitHub CLI (gh) instalado e logado aparecem também: repositório (público ou privado, issues, versão), testes automáticos (CI) do branch e PRs abertos com o estado dos checks.",
-          "Buscar (git fetch) pergunta ao remoto o que há de novo, sem mudar seus arquivos. O Veocode não faz commit, push nem pull: isso fica com você no Terminal ou com a IA, pelo nível de acesso.",
+          "Sem mudanças, a caixa do commit vira o que falta: Enviar, Baixar ou Publicar o branch. Baixar só avança (git pull --ff-only): se os dois lados mudaram, o Veocode avisa em vez de criar merge. Estes botões são só seus; a IA faz git pelo nível de acesso.",
           "Na Visão geral e embaixo do nome do projeto, um resumo: ↑ para enviar, ↓ para baixar e ● arquivos mudados.",
         ],
       },
@@ -219,9 +220,11 @@ export const topics: Topic[] = [
       {
         title: "Conversas anteriores",
         items: [
-          "Em Anteriores, na lista do modo IA, ficam as conversas desta pasta (as do chat, as do Terminal e as do editor). Clique para continuar de onde parou; Ver todas abre a lista completa.",
-          "\"Nova conversa\" começa do zero.",
-          "Várias conversas ao mesmo tempo: Nova, em cima da lista, abre outra; as outras continuam trabalhando.",
+          "Na lista do modo IA ficam todas as conversas da pasta (as do chat, as do Terminal e as do editor), numa lista só. Clique para continuar de onde parou: ela entra no lugar da conversa do meio. Uma conversa que está trabalhando continua sozinha enquanto você olha outra.",
+          "\"Nova conversa\" (⌘N) começa do zero. Várias conversas podem trabalhar ao mesmo tempo.",
+          "Bifurcar: no ⋯ de uma conversa, ou no botão de ramo em cima dela, abre uma conversa nova com tudo o que veio antes. Para tentar outro caminho sem perder o atual. Num pedido seu, o botão de ramo bifurca dali: tudo até antes dele, e o texto dele na caixa para você mudar.",
+          "Os ramos ficam embaixo da conversa de onde saíram, na lista. Ramos feitos pelo Terminal (claude --fork-session) também aparecem assim.",
+          "Dois cliques numa conversa da lista (ou no título em cima dela) para renomear. O ⋯ (ou o clique direito) tem: Abrir em (lado a lado, Terminal com claude --resume, VS Code, Finder), Fixar (P), Marcar como não lida (U), Renomear (R), Bifurcar (F), Concluir, Arquivar (A) e Apagar (D). Com o menu aberto, a letra roda o item.",
           "Modo foco (o botão de grade na barra de cima): todas as conversas do projeto lado a lado, cada uma com a sua caixa. A grade se ajusta sozinha a 2, 3, 4, 6 ou 8 conversas. Clique de novo para voltar.",
           "Contexto (o medidor em cima da conversa): clique para ver quanto da janela do Claude a conversa ocupa e com o quê (mensagens, ferramentas, MCP, skills, memória). \"Compactar conversa\" resume o que veio antes e libera espaço.",
           "O terminal do modo Código começa fechado; em Ajustes → Terminal no modo Código dá para fazer ele já abrir aberto.",
@@ -235,7 +238,7 @@ export const topics: Topic[] = [
     id: "livre",
     title: "Chat livre",
     view: "livre",
-    where: "Quarto ícone do menu lateral (dois balões).",
+    where: "Terceiro ícone do menu lateral (dois balões).",
     lead: "Uma conversa fora de qualquer projeto, para tirar dúvidas, escrever textos e pensar junto. Se você quiser, a IA também pode olhar os arquivos do seu computador, só para ler.",
     sections: [
       {
@@ -277,7 +280,7 @@ export const topics: Topic[] = [
     id: "contas",
     title: "Contas e IAs",
     view: "accounts",
-    where: "Quinto ícone do menu lateral.",
+    where: "Quarto ícone do menu lateral (o robô).",
     lead: "As contas de IA que o Veocode usa, quanto cada uma trabalhou na semana e o cofre com as chaves e senhas que os projetos usam.",
     sections: [
       {
@@ -311,10 +314,34 @@ export const topics: Topic[] = [
     ],
   },
   {
+    id: "raiox",
+    title: "Computador: uso da máquina",
+    view: "system",
+    where: "Quinto ícone do menu lateral (o monitor), primeira aba no topo: \"Uso da máquina\". O botão \"Liberar espaço\" no topo também abre aqui.",
+    lead: "O que as IAs deixaram no disco e o que está aberto agora no computador.",
+    sections: [
+      {
+        title: "As cinco partes",
+        items: [
+          "Claude no computador: quanto o app do Claude (ambiente do Cowork, caches), o Claude Code (conversas, pontos de restauração, versões) e o próprio Veocode ocupam, com um botão de conserto em cada item. Tudo vai para a Lixeira; esvazie a Lixeira para o espaço voltar.",
+          "Outros caches: arquivos temporários de pacotes e builds. Marque e mande para a Lixeira.",
+          "Instalado pelas IAs: programas que o Claude instalou enquanto trabalhava, com o projeto que pediu e o comando para remover. Valem para o computador todo.",
+          "IAs locais: modelos baixados para rodar no próprio computador (Ollama, LM Studio, Hugging Face), o tamanho e, quando dá, de qual projeto veio o pedido.",
+          "Máquinas virtuais: Docker e afins. Os do Docker e do Lima dá para ligar e parar daqui. Containers criados pelo Docker Compose mostram a pasta do projeto que criou.",
+          "IAs abertas agora: cada IA aberta, onde ela está (VS Code, app do Claude, Terminal…), o que ela abriu e quanta memória usa.",
+        ],
+      },
+      {
+        title: "Bom saber",
+        items: ["Nada é apagado sem você confirmar, e tudo vai para a Lixeira.", "Encerrar só vale para programas que uma IA abriu.", "Remover um programa nunca é feito pelo Veocode: ele copia o comando para você rodar se quiser."],
+      },
+    ],
+  },
+  {
     id: "inventario",
     title: "Computador: extras do Claude",
     view: "inventory",
-    where: "Sexto ícone do menu lateral (o monitor), aba \"Extras do Claude\".",
+    where: "Quinto ícone do menu lateral (o monitor), segunda aba no topo: \"Extras do Claude\".",
     lead: "Habilidades a mais que alguém instalou para o Claude, onde cada uma vale e quanto pesa. Você não precisa mexer aqui para o Veocode funcionar: é para ver e, se quiser, tirar o que não usa.",
     sections: [
       {
@@ -356,30 +383,6 @@ export const topics: Topic[] = [
           "Conexões: Remover, feito pelo próprio Claude.",
           "Antes de tirar qualquer coisa, o Veocode pergunta. Senhas e chaves das conexões nunca aparecem na tela.",
         ],
-      },
-    ],
-  },
-  {
-    id: "raiox",
-    title: "Computador: espaço e memória",
-    view: "system",
-    where: "Sexto ícone do menu lateral (o monitor), aba \"Espaço e memória\". O botão \"Liberar espaço\" no topo também abre aqui.",
-    lead: "O que as IAs deixaram no disco e o que está aberto agora no computador.",
-    sections: [
-      {
-        title: "As cinco partes",
-        items: [
-          "Claude no computador: quanto o app do Claude (ambiente do Cowork, caches), o Claude Code (conversas, pontos de restauração, versões) e o próprio Veocode ocupam, com um botão de conserto em cada item. Tudo vai para a Lixeira; esvazie a Lixeira para o espaço voltar.",
-          "Outros caches: arquivos temporários de pacotes e builds. Marque e mande para a Lixeira.",
-          "Instalado pelas IAs: programas que o Claude instalou enquanto trabalhava, com o projeto que pediu e o comando para remover. Valem para o computador todo.",
-          "IAs locais: modelos baixados para rodar no próprio computador (Ollama, LM Studio, Hugging Face), o tamanho e, quando dá, de qual projeto veio o pedido.",
-          "Máquinas virtuais: Docker e afins. Os do Docker e do Lima dá para ligar e parar daqui. Containers criados pelo Docker Compose mostram a pasta do projeto que criou.",
-          "IAs abertas agora: cada IA aberta, onde ela está (VS Code, app do Claude, Terminal…), o que ela abriu e quanta memória usa.",
-        ],
-      },
-      {
-        title: "Bom saber",
-        items: ["Nada é apagado sem você confirmar, e tudo vai para a Lixeira.", "Encerrar só vale para programas que uma IA abriu.", "Remover um programa nunca é feito pelo Veocode: ele copia o comando para você rodar se quiser."],
       },
     ],
   },

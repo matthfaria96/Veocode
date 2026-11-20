@@ -1,18 +1,19 @@
-import { AlertTriangle, Eye, ArrowLeft, Ban, Check, ChevronDown, FileCode2, History, Maximize2, MessageSquarePlus, Pencil, Paperclip, Plus, SendHorizontal, Shrink, ShieldCheck, Square, TerminalSquare, X } from "lucide-solid";
-import { createEffect, createMemo, createResource, createSignal, For, Match, on, Show, Switch } from "solid-js";
+import { AlertTriangle, Brain, Eye, ArrowLeft, Ban, Check, ChevronDown, FileCode2, History, Loader2, Maximize2, MessageSquarePlus, Pencil, Paperclip, Plus, SendHorizontal, Shrink, ShieldCheck, Square, TerminalSquare, X } from "lucide-solid";
+import { createEffect, createMemo, createSignal, For, Match, on, Show, Switch } from "solid-js";
 import { accessLevels } from "../data/mock";
 import { accountById } from "../accounts";
 import { currentProject, isDiffTab, showToast, ws, type ActivityEvent } from "../store";
 import { seenAgent } from "../agentFeed";
 import { acc, loadAccess, openClaude } from "../access";
-import { answerPermission, chatOf, clearError, deleteConvos, listConversations, ofChat, resendEdited, sendChat, setAttach, setInput, stopChat, type Convo } from "../chat";
-import { activeKey, closeTab, nameFromPrompt, newTab, openInTab, selectTab, syncRunning, tabsOf, wakeActive, wakeTab, type ConvTab } from "../convTabs";
+import { answerPermission, chatOf, clearError, deleteConvos, ofChat, resendEdited, sendChat, setAttach, setInput, stopChat, type Convo } from "../chat";
+import { activeKey, closeTab, forkConversation, nameFromPrompt, openInTab, selectTab, startConversation, syncRunning, tabsOf, wakeActive, wakeTab, type ConvTab } from "../convTabs";
+import { dropFromHist, histLoaded, histLoading, histOf, loadHist } from "../convHist";
 import { ConvTabsBar, EconomyHint } from "./ConvBar";
-import { MemoryPanel } from "./Memory";
+import { ContextChip } from "./ContextPanel";
+import { isOpen, openAccess, openMemory } from "../modals";
 import { isTauri } from "../api";
-import AccessLevel from "./AccessLevel";
 import ConvoRow from "./ConvoRow";
-import { gitTab, setChatTab } from "../git";
+import { setChatTab } from "../git";
 import { focusMode, panelAt, setFocusMode, setPanelAt } from "../layoutMode";
 import BottomPanel from "./BottomPanel";
 import { MicButton } from "./Mic";
@@ -29,6 +30,32 @@ import MsgTools, { focusComposer } from "./MsgTools";
 import Markdown from "./Markdown";
 import { tx, txn } from "../i18n";
 import { gridFit, spanOf, useWidth } from "../gridFit";
+
+/**
+ * Rola junto com o fim da conversa só enquanto você está perto dele; subiu para ler, fica onde
+ * está (como no Claude). Trocar de conversa ou mandar um pedido volta para o fim.
+ */
+function useFollow(el: () => HTMLElement | undefined, changes: () => unknown, reset: () => unknown, force: () => boolean) {
+  let stick = true;
+  let mine = 0; // rolagem feita aqui (não é você rolando)
+  const bottom = (smooth: boolean) =>
+    setTimeout(() => {
+      const s = el();
+      if (!s) return;
+      mine = Date.now();
+      s.scrollTo({ top: s.scrollHeight, behavior: smooth ? "smooth" : "auto" });
+    }, 30);
+  createEffect(on(reset, () => ((stick = true), bottom(false))));
+  createEffect(on(changes, () => {
+    if (force()) stick = true;
+    if (stick) bottom(true);
+  }, { defer: true }));
+  return (e: Event) => {
+    if (Date.now() - mine < 700) return;
+    const s = e.currentTarget as HTMLElement;
+    stick = s.scrollHeight - s.scrollTop - s.clientHeight < 120;
+  };
+}
 
 /** Projeto real sem conversa ainda. */
 function RealIdle(props: { onAccess: () => void; onConvos: () => void }) {
@@ -119,11 +146,35 @@ function RealConversation(props: { events: () => ActivityEvent[]; tail?: boolean
     }
     return map;
   });
-  const keys = createMemo(() => [...blocks().keys()].slice(-16), undefined, { equals: (a, b) => a.length === b.length && a.every((k, i) => k === b[i]) });
+  // mostra o fim da conversa; "Mostrar anteriores" vai abrindo para cima (sem pular a rolagem)
+  const [limit, setLimit] = createSignal(40);
+  createEffect(on(key, () => setLimit(40), { defer: true }));
+  const allKeys = createMemo(() => [...blocks().keys()]);
+  const hidden = () => Math.max(0, allKeys().length - limit());
+  const keys = createMemo(() => allKeys().slice(-limit()), undefined, { equals: (a, b) => a.length === b.length && a.every((k, i) => k === b[i]) });
+  let topEl: HTMLDivElement | undefined;
+  const showMore = () => {
+    const sc = topEl?.closest(".chat-scroll") as HTMLElement | null;
+    const before = sc ? sc.scrollHeight - sc.scrollTop : 0;
+    setLimit(limit() + 40);
+    if (sc) requestAnimationFrame(() => (sc.scrollTop = sc.scrollHeight - before));
+  };
+  // ramo daqui: só nas conversas do Claude que já têm sessão (a âncora vem do histórico dele)
+  const forkAt = (e: ActivityEvent) => {
+    const pid = currentProject().id;
+    const c = chatOf(key());
+    const parent = c.session ?? c.fork?.parent;
+    if (!parent || e.anchor === undefined || e.anchor.startsWith("api:")) return undefined;
+    return () => void forkConversation(pid, { session: parent, account: currentProject().accountId, title: tabsOf(pid).find((t) => t.key === key())?.title ?? "Conversa" }, { anchor: e.anchor!, text: clean(e.title) });
+  };
 
 
   return (
     <>
+      <div ref={topEl} class="chat-top-anchor" />
+      <Show when={hidden() > 0}>
+        <button class="chat-more" onClick={showMore}>{txn(hidden(), "Mostrar {n} parte anterior", "Mostrar {n} partes anteriores")}</button>
+      </Show>
       <For each={keys()}>
         {(k) => {
           const b = () => blocks().get(k);
@@ -140,6 +191,7 @@ function RealConversation(props: { events: () => ActivityEvent[]; tail?: boolean
                         <MsgTools
                           text={e().title}
                           onEdit={props.tail && e().anchor !== undefined ? () => startEdit(e()) : undefined}
+                          onFork={props.tail ? forkAt(e()) : undefined}
                           onReuse={() => (setInput(key(), e().title), focusComposer(props.k ? document.querySelector(`[data-chat-key="${props.k}"]`) : document.querySelector(".chat-panel")))}
                         />
                       </div>
@@ -244,19 +296,26 @@ function RealConversation(props: { events: () => ActivityEvent[]; tail?: boolean
   );
 }
 
-/** Conversas anteriores do projeto: sessões do Claude (de todas as contas) e conversas com APIs. */
+/** Todas as conversas do projeto (sessões do Claude de todas as contas e conversas com APIs), para apagar várias. */
 function Conversations(props: { onClose: () => void }) {
   const p = currentProject;
   const pid = p().id;
-  const [data, { refetch }] = createResource(() => listConversations(pid).catch((e) => (showToast(String(e)), { items: [] as Convo[], current: null })));
+  void loadHist(pid, 0);
+  const items = () => histOf(pid);
   const [opening, setOpening] = createSignal<string | null>(null);
   const usable = (c: Convo) => c.account === p().accountId;
   const open = async (c: Convo) => {
     if (!usable(c)) return showToast(tx("Esta conversa é da conta {label}. Troque a conta do projeto para continuar nela.", { label: accountById(c.account).label }));
     setOpening(`${c.kind}:${c.id}`);
-    await openInTab(pid, c);
+    const ok = await openInTab(pid, c);
     setOpening(null);
-    props.onClose();
+    if (ok) props.onClose();
+  };
+  const remove = async (list: Convo[]) => {
+    const n = await deleteConvos(pid, list, null);
+    if (!n) return;
+    dropFromHist(pid, list.map((c) => c.id));
+    void loadHist(pid, 0);
   };
   return (
     <div class="convos">
@@ -266,19 +325,19 @@ function Conversations(props: { onClose: () => void }) {
         <button
           class="ghost-btn small"
           onClick={() => {
-            newTab(pid);
+            startConversation(pid);
             props.onClose();
           }}
         >
           <MessageSquarePlus size={12} /> {tx("Nova")}
         </button>
       </div>
-      <Show when={!data.loading} fallback={<div class="convos-empty"><span class="spinner" /> {tx("Lendo os históricos…")}</div>}>
+      <Show when={histLoaded(pid) || !histLoading(pid)} fallback={<div class="convos-empty"><span class="spinner" /> {tx("Lendo os históricos…")}</div>}>
         <Show
-          when={data()?.items.length}
+          when={items().length}
           fallback={<div class="convos-empty">{tx("Nenhuma conversa ainda nesta pasta. As sessões do Claude (pelo chat, Terminal ou editor) e as conversas com APIs aparecem aqui.")}</div>}
         >
-          <For each={data()!.items}>
+          <For each={items()}>
             {(c, i) => {
               const key = `${c.kind}:${c.id}`;
               // a conversa aberta de outra conta (o projeto trocou de conta) não vale mais: mostra o cadeado
@@ -291,18 +350,18 @@ function Conversations(props: { onClose: () => void }) {
                   locked={!usable(c)}
                   opening={opening() === key}
                   disabled={!!opening()}
-                  title={usable(c) ? (current() ? tx("Aberta numa aba: clique para ir até ela") : tx("Continuar esta conversa numa aba")) : tx("Da conta {label}: troque a conta do projeto para continuar", { label: accountById(c.account).label })}
+                  title={usable(c) ? (current() ? tx("Aberta: clique para ir até ela") : tx("Continuar esta conversa")) : tx("Da conta {label}: troque a conta do projeto para continuar", { label: accountById(c.account).label })}
                   extra={<Show when={c.origin}><span>· {c.origin}</span></Show>}
                   onOpen={() => open(c)}
-                  onDelete={async () => (await deleteConvos(pid, [c], data()?.current ?? null)) && refetch()}
+                  onDelete={() => void remove([c])}
                 />
               );
             }}
           </For>
           <div class="convos-foot">
-            <button class="convos-refresh" onClick={() => refetch()}>{tx("Atualizar a lista")}</button>
-            <button class="convos-clear" disabled={chatOf(pid).busy} onClick={async () => (await deleteConvos(pid, [...data()!.items], data()?.current ?? null)) && refetch()}>
-              {tx("Apagar todas ({length})", { length: data()!.items.length })}
+            <button class="convos-refresh" onClick={() => void loadHist(pid, 0)}>{histLoading(pid) ? tx("Lendo…") : tx("Atualizar a lista")}</button>
+            <button class="convos-clear" disabled={tabsOf(pid).some((t) => chatOf(t.key).busy)} onClick={() => void remove([...items()])}>
+              {tx("Apagar todas ({length})", { length: items().length })}
             </button>
           </div>
         </Show>
@@ -357,7 +416,7 @@ function ChatTail(props: { k?: string }) {
 }
 
 /** Caixa de mensagem: Enter envia, Shift+Enter quebra linha. */
-function Composer(props: { onLevel: () => void; levelOn?: boolean; k?: string; compact?: boolean }) {
+function Composer(props: { onLevel: () => void; k?: string; compact?: boolean }) {
   const p = currentProject;
   const k = () => props.k ?? activeKey(p().id);
   const chat = () => chatOf(k());
@@ -435,9 +494,17 @@ function Composer(props: { onLevel: () => void; levelOn?: boolean; k?: string; c
           <Paperclip size={14} />
         </button>
         <AgentChipButton prefKey={p().id} accountId={a().id} open={menu()} title={tx("Conta, modelo e força do raciocínio deste projeto")} onClick={() => setMenu(!menu())} />
-        <button class="composer-chip" classList={{ on: props.levelOn, unapplied: unapplied() }} style={{ "--lc": level().color }} title={unapplied() ? tx("Nível de acesso: ainda não vale no Claude Code, clique para gravar") : tx("Nível de acesso: o que a IA pode fazer aqui (clique para mudar)")} onClick={props.onLevel}>
+        <button class="composer-chip" classList={{ on: isOpen("access", p().id), unapplied: unapplied() }} aria-haspopup="dialog" style={{ "--lc": level().color }} title={unapplied() ? tx("Nível de acesso: ainda não vale no Claude Code, clique para gravar") : tx("Nível de acesso: o que a IA pode fazer aqui (clique para mudar)")} onClick={props.onLevel}>
           <ShieldCheck size={12} /> {level().short}
         </button>
+        <Show when={!demo() && !props.compact}>
+          <button class="composer-chip mem-chip" classList={{ on: isOpen("memory", p().id) }} aria-haspopup="dialog" title={tx("Memória do projeto: o que o Claude já sabe daqui sem reler conversas antigas")} onClick={() => openMemory(p().id)}>
+            <Brain size={12} /> <span>{tx("Memória")}</span>
+          </button>
+        </Show>
+        <Show when={!demo() && !props.compact && a().provider === "claude"}>
+          <ContextChip k={k()} />
+        </Show>
         <span class="composer-gap" />
         <UsageRing id={a().id} />
         <Show when={!demo()}><MicButton target={k()} /></Show>
@@ -492,7 +559,7 @@ function FocusTile(props: { pid: string; tab: ConvTab; span: number; onLevel: ()
   const active = () => activeKey(props.pid) === k();
   const state = () => (c().perms.length ? tx("esperando você") : c().busy ? tx("trabalhando") : c().error ? tx("com erro") : events().length ? "" : tx("vazia"));
   let scroller!: HTMLDivElement;
-  createEffect(on(() => [events().length, c().draft.length >> 6, c().perms.length, c().error], () => setTimeout(() => scroller?.scrollTo({ top: scroller.scrollHeight, behavior: "smooth" }), 30)));
+  const follow = useFollow(() => scroller, () => [events().length, c().draft.length >> 6, c().perms.length, c().error], k, () => events()[events().length - 1]?.kind === "user");
   return (
     <section
       class="focus-tile pop-in"
@@ -509,7 +576,7 @@ function FocusTile(props: { pid: string; tab: ConvTab; span: number; onLevel: ()
         <button class="icon-btn small" title={tx("Abrir só esta conversa (sai do modo foco)")} onClick={() => (selectTab(props.pid, k()), setFocusMode(false))}><Maximize2 size={13} /></button>
         <button class="icon-btn small" title={tx("Fechar a aba (a conversa fica no histórico)")} onClick={() => void closeTab(props.pid, k())}><X size={13} /></button>
       </header>
-      <div class="chat-scroll focus-scroll" ref={scroller}>
+      <div class="chat-scroll focus-scroll" ref={scroller} onScroll={follow}>
         <Show when={events().length > 0 || c().busy || c().error} fallback={<div class="focus-empty"><MessageSquarePlus size={18} /><span>{tx("Conversa nova: peça algo aqui embaixo.")}</span></div>}>
           <RealConversation events={events} tail k={k()} />
         </Show>
@@ -519,9 +586,9 @@ function FocusTile(props: { pid: string; tab: ConvTab; span: number; onLevel: ()
   );
 }
 
-export type Pane = "chat" | "ext" | "mem" | "hist";
+export type Pane = "chat" | "ext" | "hist";
 export type View = Pane | "act";
-// o que aparece no lugar da conversa: ela mesma, sessões de fora, histórico ou memória. Fica fora do
+// o que aparece no lugar da conversa: ela mesma, sessões de fora ou o histórico. Fica fora do
 // componente para a lista de conversas (modo IA, à esquerda) poder trocar.
 const [pane, setPane] = createSignal<Pane>("chat");
 export const chatPane = pane;
@@ -531,8 +598,8 @@ export function showChatPane(v: Pane) {
   setPane(v);
 }
 
-export default function ChatPanel(props: { slim?: boolean }) {
-  const [tab, setTab] = [gitTab, setChatTab];
+/** `docked`: dentro do painel da direita do modo Código (estreito: sem o modo foco). */
+export default function ChatPanel(props: { slim?: boolean; docked?: boolean }) {
   const project = currentProject;
   const view = (): View => (panelAt() === "tab" ? "act" : pane());
   const go = (v: View) => {
@@ -544,13 +611,8 @@ export default function ChatPanel(props: { slim?: boolean }) {
     setPane(pane() === v ? "chat" : v);
   };
   const ext = () => view() === "ext";
-  // a memória fica montada depois da 1ª vez: voltar nela não recarrega
-  const [memSeen, setMemSeen] = createSignal(false);
-  createEffect(() => view() === "mem" && setMemSeen(true));
-  const mem = () => view() === "mem";
   const convos = () => view() === "hist";
   const setConvos = (v: boolean) => (v ? go("hist") : pane() === "hist" && setPane("chat"));
-  const setMem = (_: false) => pane() === "mem" && setPane("chat");
   createEffect(on(() => project().id, (id) => {
     setPane("chat");
     if (isTauri && !project().demo) {
@@ -559,8 +621,14 @@ export default function ChatPanel(props: { slim?: boolean }) {
     }
   }));
   const real = () => isTauri && !project().demo;
-  const focusOn = () => focusMode() && real() && view() === "chat";
+  const focusOn = () => !props.docked && focusMode() && real() && view() === "chat";
   const key = () => activeKey(project().id);
+  // aba reaberta depois de fechar o app: a conversa dela está voltando (não é uma conversa nova)
+  const waking = () => {
+    const p = project();
+    const t = tabsOf(p.id).find((x) => x.key === key());
+    return real() && !!t?.session && !chatOf(key()).session && !chatOf(key()).conv && (!t.account || t.account === p.accountId);
+  };
   const tabEvents = createMemo(() => ws.events.filter((e) => ofChat(key(), e)));
   // sessões do Claude nesta pasta que não são de nenhuma aba (Terminal, editor, app do Claude)
   const extEvents = createMemo(() => {
@@ -572,26 +640,24 @@ export default function ChatPanel(props: { slim?: boolean }) {
   createEffect(on(() => project().id, (id) => isTauri && loadAccess(id)));
   let scroller!: HTMLDivElement;
 
-  // rola o chat junto com a atividade
-  createEffect(on(() => [shown().length, key(), ext(), chatOf(key()).draft.length >> 6, chatOf(key()).perms.length, chatOf(key()).error], () => setTimeout(() => scroller && scroller.scrollTo({ top: scroller.scrollHeight, behavior: "smooth" }), 30)));
+  // rola o chat junto com a atividade (se você não subiu para ler)
+  const follow = useFollow(
+    () => scroller,
+    () => [shown().length, chatOf(key()).draft.length >> 6, chatOf(key()).perms.length, chatOf(key()).error],
+    () => [key(), ext(), chatOf(key()).conv?.id, chatOf(key()).fork?.parent],
+    () => shown()[shown().length - 1]?.kind === "user",
+  );
 
   const userMsgs = () => ws.events.filter((e) => e.kind === "user");
   const work = () => ws.events.filter((e) => e.kind !== "user" && e.kind !== "done");
   const done = () => ws.events.find((e) => e.kind === "done");
 
   return (
-    <aside class="chat-panel" style={{ "--c": account().color }}>
-      <Switch>
-        <Match when={tab() === "chat"}>
+    <aside class="chat-panel" classList={{ docked: props.docked }} style={{ "--c": account().color }}>
           <Show when={real()}>
-            <ConvTabsBar pid={project().id} view={view()} onView={go} extCount={new Set(extEvents().map((e) => e.session)).size} slim={props.slim} />
+            <ConvTabsBar pid={project().id} view={view()} onView={go} extCount={new Set(extEvents().map((e) => e.session)).size} slim={props.slim} docked={props.docked} />
           </Show>
-          <Show when={memSeen() && real()}>
-            <div class="chat-scroll mem-scroll" classList={{ hidden: !mem() }}>
-              <MemoryPanel pid={project().id} onClose={() => setMem(false)} />
-            </div>
-          </Show>
-          <Show when={convos() && real() && !mem()}>
+          <Show when={convos() && real()}>
             <div class="chat-scroll">
               <Conversations onClose={() => setConvos(false)} />
             </div>
@@ -602,9 +668,9 @@ export default function ChatPanel(props: { slim?: boolean }) {
             </div>
           </Show>
           <Show when={focusOn()}>
-            <FocusGrid pid={project().id} onLevel={() => setTab("access")} />
+            <FocusGrid pid={project().id} onLevel={() => openAccess(project().id)} />
           </Show>
-          <div class="chat-scroll" ref={scroller} data-target="chat" classList={{ hidden: ((convos() || mem()) && real()) || view() === "act" || focusOn() }}>
+          <div class="chat-scroll" ref={scroller} onScroll={follow} data-target="chat" classList={{ hidden: (convos() && real()) || view() === "act" || focusOn() }}>
             <Show when={ext() && real()}>
               <div class="ext-head pop-in">
                 <span class="ext-head-icon"><Eye size={15} /></span>
@@ -618,7 +684,7 @@ export default function ChatPanel(props: { slim?: boolean }) {
             <Show
               when={project().demo}
               fallback={
-                <Show when={(seenAgent() && shown().length > 0) || (!ext() && (chatOf(key()).busy || chatOf(key()).error))} fallback={<Show when={!ext()} fallback={<div class="chat-empty ext-empty"><strong>{tx("Nada rodando por fora agora")}</strong><span>{tx("Abra o Claude nesta pasta pelo Terminal ou pelo editor e ele aparece aqui.")}</span></div>}><RealIdle onAccess={() => setTab("access")} onConvos={() => setConvos(true)} /></Show>}>
+                <Show when={(seenAgent() && shown().length > 0) || (!ext() && (chatOf(key()).busy || chatOf(key()).error))} fallback={<Show when={!ext()} fallback={<div class="chat-empty ext-empty"><strong>{tx("Nada rodando por fora agora")}</strong><span>{tx("Abra o Claude nesta pasta pelo Terminal ou pelo editor e ele aparece aqui.")}</span></div>}><Show when={!waking()} fallback={<div class="chat-empty chat-waking"><Loader2 size={14} class="spin" /> {tx("Abrindo a conversa…")}</div>}><RealIdle onAccess={() => openAccess(project().id)} onConvos={() => setConvos(true)} /></Show></Show>}>
                   <RealConversation events={shown} tail={!ext()} />
                 </Show>
               }
@@ -652,23 +718,15 @@ export default function ChatPanel(props: { slim?: boolean }) {
               <Show when={done()}>
                 {(d) => (
                   <div class="bubble agent pop-in">
-                    <strong>{d().title}.</strong> {tx("{detail}. Quer ver os dados reais do disco em Computador → Espaço e memória?", { detail: d().detail })}
+                    <strong>{d().title}.</strong> {tx("{detail}. Quer ver os dados reais do disco em Computador → Uso da máquina?", { detail: d().detail })}
                   </div>
                 )}
               </Show>
             </Show>
           </div>
           <Show when={!focusOn() && (view() === "chat" || view() === "hist")} fallback={<Show when={ext()}><p class="ext-note">{tx("Sessões do Claude abertas fora do Veocode nesta pasta (Terminal, editor, app do Claude). Aqui é só para acompanhar: para conversar, use uma aba sua.")}</p></Show>}>
-            <Composer onLevel={() => setTab("access")} />
+            <Composer onLevel={() => openAccess(project().id)} />
           </Show>
-        </Match>
-        <Match when={tab() === "access"}>
-          <div class="chat-scroll">
-            <button class="back-link" onClick={() => setTab("chat")}><ArrowLeft size={14} /> {tx("Voltar para a conversa")}</button>
-            <AccessLevel projectId={project().id} />
-          </div>
-        </Match>
-      </Switch>
     </aside>
   );
 }

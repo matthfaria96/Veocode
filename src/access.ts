@@ -123,10 +123,11 @@ export function setCap(id: string, cap: string, rule: Rule | null) {
 export const applyAccess = (id: string) => run(id, () => invoke<AccessReport>("access_apply", { projectId: id }));
 export const removeAccess = (id: string) => run(id, () => invoke<AccessReport>("access_remove", { projectId: id }));
 
-export async function openClaude(id: string) {
+/** Abre o Claude Code no Terminal, na pasta do projeto; com `resume`, continuando aquela conversa. */
+export async function openClaude(id: string, resume?: string) {
   try {
-    await invoke("open_claude", { projectId: id });
-    showToast(tx("Abrindo o Claude Code no Terminal…"));
+    await invoke("open_claude", { projectId: id, resume: resume ?? null });
+    showToast(resume ? tx("Continuando a conversa no Terminal…") : tx("Abrindo o Claude Code no Terminal…"));
   } catch (e) {
     showToast(errMsg(e));
   }

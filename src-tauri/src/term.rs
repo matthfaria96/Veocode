@@ -14,6 +14,10 @@
 //!
 //! A saída vai para a tela pelo evento "term-output" e também fica guardada (últimos 256 KB)
 //! para a tela redesenhar o terminal quando volta para o projeto.
+//!
+//! Serviços (aba Ambiente): um terminal que, em vez de esperar comandos, roda um só (o
+//! `npm run dev` do back, por exemplo) na pasta dele. Parar ou reiniciar encerra tudo o que ele
+//! abriu naquele terminal (o node embaixo do npm também), para a porta ficar livre.
 
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
 use serde::Serialize;
@@ -26,6 +30,7 @@ use tauri::{AppHandle, Emitter};
 
 const KEEP: usize = 256 * 1024;
 pub const MAX_PER_PROJECT: usize = 6;
+pub const MAX_SERVICES: usize = 8;
 
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -36,6 +41,9 @@ pub struct TermInfo {
     pub shell: String,
     pub cwd: String,
     pub alive: bool,
+    /// serviço que roda nele (a chave da aba Ambiente); None = shell normal
+    pub service: Option<String>,
+    pub cmd: Option<String>,
 }
 
 struct Term {
@@ -45,6 +53,9 @@ struct Term {
     child: Box<dyn Child + Send + Sync>,
     out: Arc<Mutex<VecDeque<u8>>>,
     alive: Arc<AtomicBool>,
+    /// como foi aberto (para reiniciar um serviço igual) e o tamanho de agora
+    args: OpenArgs,
+    size: (u16, u16),
 }
 
 #[derive(Default)]
@@ -53,6 +64,16 @@ pub struct Terms {
     data: PathBuf,
 }
 
+/// Um serviço: o comando e a pasta (já conferida: dentro da do projeto).
+#[derive(Clone)]
+pub struct Run {
+    pub key: String,
+    pub name: String,
+    pub cmd: String,
+    pub dir: PathBuf,
+}
+
+#[derive(Clone)]
 pub struct OpenArgs {
     pub project_id: String,
     pub project_name: String,
@@ -61,6 +82,7 @@ pub struct OpenArgs {
     pub claude_dir: Option<PathBuf>,
     pub cols: u16,
     pub rows: u16,
+    pub run: Option<Run>,
 }
 
 #[derive(Serialize, Clone)]
@@ -87,6 +109,60 @@ fn shell() -> (String, Vec<String>) {
     }
     let sh = std::env::var("SHELL").ok().filter(|s| Path::new(s).is_file()).unwrap_or_else(|| if cfg!(target_os = "macos") { "/bin/zsh".into() } else { "/bin/bash".into() });
     (sh, vec!["-l".into()])
+}
+
+/// Argumentos para o shell rodar um comando só, com a configuração da pessoa carregada (o PATH
+/// do nvm, por exemplo, costuma estar no .zshrc).
+fn run_args(login: &[String], cmd: &str) -> Vec<String> {
+    let mut a = login.to_vec();
+    if cfg!(windows) {
+        a.extend(["-Command".into(), cmd.into()]);
+    } else {
+        a.extend(["-i".into(), "-c".into(), cmd.into()]);
+    }
+    a
+}
+
+/// Encerra tudo o que roda no terminal (pelo nome do tty): primeiro pedindo, depois à força.
+/// Espera até 3 s para a porta do servidor ficar livre antes de um reinício.
+fn kill_all(tty: Option<&Path>, pid: Option<u32>) {
+    #[cfg(unix)]
+    {
+        let _ = pid;
+        let Some(name) = tty.and_then(|t| t.to_str()).map(|t| t.trim_start_matches("/dev/").to_string()).filter(|t| !t.is_empty()) else { return };
+        // `ps -t` (o pgrep -t do macOS não acha nada)
+        let me = std::process::id().to_string();
+        let pids = || -> Vec<String> {
+            std::process::Command::new("ps")
+                .args(["-t", &name, "-o", "pid="])
+                .output()
+                .map(|o| String::from_utf8_lossy(&o.stdout).split_whitespace().filter(|p| *p != me && p.parse::<u32>().is_ok_and(|n| n > 1)).map(String::from).collect())
+                .unwrap_or_default()
+        };
+        let signal = |sig: &str, list: &[String]| {
+            let _ = std::process::Command::new("kill").arg(sig).args(list).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).status();
+        };
+        let first = pids();
+        if first.is_empty() {
+            return;
+        }
+        signal("-TERM", &first);
+        for _ in 0..30 {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            if pids().is_empty() {
+                return;
+            }
+        }
+        signal("-KILL", &pids());
+    }
+    #[cfg(windows)]
+    {
+        let _ = tty;
+        if let Some(pid) = pid.filter(|p| *p > 4) {
+            use std::os::windows::process::CommandExt;
+            let _ = std::process::Command::new("taskkill").args(["/PID", &pid.to_string(), "/T", "/F"]).creation_flags(0x0800_0000).status();
+        }
+    }
 }
 
 fn short_name(shell: &str) -> String {
@@ -167,7 +243,7 @@ impl Terms {
     fn command(&self, sh: &str, args: &[String], base: &str, a: &OpenArgs) -> CommandBuilder {
         let mut cmd = CommandBuilder::new(sh);
         cmd.args(args);
-        cmd.cwd(&a.root);
+        cmd.cwd(a.run.as_ref().map(|r| &r.dir).unwrap_or(&a.root));
         cmd.env("TERM", "xterm-256color");
         cmd.env("COLORTERM", "truecolor");
         cmd.env("TERM_PROGRAM", "Veocode");
@@ -204,13 +280,28 @@ impl Terms {
     }
 
     pub fn open(&self, app: AppHandle, a: OpenArgs) -> Result<TermInfo, String> {
-        let taken: Vec<String> = self.list(&a.project_id).into_iter().map(|t| t.name).collect();
-        if taken.len() >= MAX_PER_PROJECT {
-            return Err(crate::trf!("Cada projeto abre até {MAX_PER_PROJECT} terminais. Feche um antes.", "Each project opens up to {MAX_PER_PROJECT} terminals. Close one first."));
-        }
-        let (sh, args) = shell();
+        let all = self.list(&a.project_id);
+        let (services, shells): (Vec<TermInfo>, Vec<TermInfo>) = all.into_iter().partition(|t| t.service.is_some());
+        let (sh, login) = shell();
         let base = short_name(&sh);
-        let name = (1..).map(|n| format!("{base} {n}")).find(|n| !taken.contains(n)).unwrap_or_else(|| base.clone());
+        let (name, args) = match &a.run {
+            Some(r) => {
+                if services.iter().any(|t| t.alive && t.service.as_deref() == Some(&r.key)) {
+                    return Err(crate::trf!("{} já está rodando.", "{} is already running.", r.name));
+                }
+                if services.len() >= MAX_SERVICES {
+                    return Err(crate::trf!("Cada projeto roda até {MAX_SERVICES} serviços. Pare um antes.", "Each project runs up to {MAX_SERVICES} services. Stop one first."));
+                }
+                (r.name.clone(), run_args(&login, &r.cmd))
+            }
+            None => {
+                if shells.len() >= MAX_PER_PROJECT {
+                    return Err(crate::trf!("Cada projeto abre até {MAX_PER_PROJECT} terminais. Feche um antes.", "Each project opens up to {MAX_PER_PROJECT} terminals. Close one first."));
+                }
+                let taken: Vec<String> = shells.into_iter().map(|t| t.name).collect();
+                ((1..).map(|n| format!("{base} {n}")).find(|n| !taken.contains(n)).unwrap_or_else(|| base.clone()), login)
+            }
+        };
 
         let pty = native_pty_system()
             .openpty(PtySize { rows: a.rows.max(4), cols: a.cols.max(20), pixel_width: 0, pixel_height: 0 })
@@ -222,7 +313,8 @@ impl Terms {
         let writer = pty.master.take_writer().map_err(|e| e.to_string())?;
 
         let id = format!("t{}", NEXT.fetch_add(1, Ordering::SeqCst));
-        let info = TermInfo { id: id.clone(), project_id: a.project_id.clone(), name, shell: sh.clone(), cwd: a.root.to_string_lossy().into(), alive: true };
+        let cwd = a.run.as_ref().map(|r| &r.dir).unwrap_or(&a.root).to_string_lossy().into();
+        let info = TermInfo { id: id.clone(), project_id: a.project_id.clone(), name, shell: sh.clone(), cwd, alive: true, service: a.run.as_ref().map(|r| r.key.clone()), cmd: a.run.as_ref().map(|r| r.cmd.clone()) };
         let out = Arc::new(Mutex::new(VecDeque::with_capacity(KEEP)));
         let alive = Arc::new(AtomicBool::new(true));
 
@@ -252,7 +344,8 @@ impl Terms {
             });
         }
 
-        self.map.lock().map_err(|e| e.to_string())?.insert(id, Term { info: info.clone(), writer, master: pty.master, child, out, alive });
+        let size = (a.cols, a.rows);
+        self.map.lock().map_err(|e| e.to_string())?.insert(id, Term { info: info.clone(), writer, master: pty.master, child, out, alive, args: a, size });
         Ok(info)
     }
 
@@ -263,8 +356,9 @@ impl Terms {
     }
 
     pub fn resize(&self, id: &str, cols: u16, rows: u16) -> Result<(), String> {
-        let m = self.map.lock().map_err(|e| e.to_string())?;
-        let t = m.get(id).ok_or("terminal fechado")?;
+        let mut m = self.map.lock().map_err(|e| e.to_string())?;
+        let t = m.get_mut(id).ok_or("terminal fechado")?;
+        t.size = (cols, rows);
         t.master.resize(PtySize { rows: rows.max(4), cols: cols.max(20), pixel_width: 0, pixel_height: 0 }).map_err(|e| e.to_string())
     }
 
@@ -281,10 +375,39 @@ impl Terms {
     pub fn close(&self, id: &str) {
         let t = self.map.lock().ok().and_then(|mut m| m.remove(id));
         if let Some(mut t) = t {
+            // serviço: o servidor embaixo do npm também (senão a porta fica ocupada)
+            if t.info.service.is_some() {
+                kill_all(t.master.tty_name().as_deref(), t.child.process_id());
+            }
             let _ = t.child.kill();
             // soltar o mestre fecha o pseudo-terminal (o shell recebe SIGHUP)
             drop(t.master);
         }
+    }
+
+    /// Para e roda de novo o mesmo serviço, num terminal novo do mesmo tamanho.
+    pub fn restart(&self, app: AppHandle, id: &str) -> Result<TermInfo, String> {
+        let (mut args, (cols, rows)) = {
+            let m = self.map.lock().map_err(|e| e.to_string())?;
+            let t = m.get(id).ok_or(crate::i18n::tr("Esse terminal já foi fechado.", "That terminal was already closed."))?;
+            if t.args.run.is_none() {
+                return Err(crate::i18n::tr("Só serviços reiniciam.", "Only services restart.").into());
+            }
+            (t.args.clone(), t.size)
+        };
+        self.close(id);
+        args.cols = cols;
+        args.rows = rows;
+        self.open(app, args)
+    }
+
+    /// pid do shell de cada serviço rodando (para achar as portas que ele abriu).
+    pub fn service_pids(&self, project: &str) -> Vec<(String, u32)> {
+        let Ok(m) = self.map.lock() else { return vec![] };
+        m.values()
+            .filter(|t| t.info.project_id == project && t.info.service.is_some() && t.alive.load(Ordering::SeqCst))
+            .filter_map(|t| Some((t.info.id.clone(), t.child.process_id()?)))
+            .collect()
     }
 
     pub fn close_project(&self, project: &str) {
@@ -316,6 +439,32 @@ mod tests {
         assert!(carry.is_empty());
         let mut bad = vec![b'o', 0xff, b'k'];
         assert_eq!(take_utf8(&mut bad), "o\u{fffd}k");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn stopping_a_service_ends_what_it_started() {
+        // como o npm: um shell que abre um filho (o servidor) e espera
+        let pty = native_pty_system().openpty(PtySize { rows: 20, cols: 80, pixel_width: 0, pixel_height: 0 }).unwrap();
+        let mut cmd = CommandBuilder::new("/bin/sh");
+        cmd.args(["-c", "sleep 61 & sleep 62; wait"]);
+        let mut child = pty.slave.spawn_command(cmd).unwrap();
+        drop(pty.slave);
+        let tty = pty.master.tty_name().expect("tty");
+        let name = tty.to_string_lossy().trim_start_matches("/dev/").to_string();
+        let running = || std::process::Command::new("ps").args(["-t", &name, "-o", "pid="]).output().map(|o| String::from_utf8_lossy(&o.stdout).split_whitespace().count()).unwrap_or(0);
+        for _ in 0..50 {
+            if running() >= 3 {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        assert!(running() >= 3, "o shell e os dois sleep deviam estar rodando");
+        let started = std::time::Instant::now();
+        kill_all(Some(&tty), child.process_id());
+        assert_eq!(running(), 0, "sobrou processo no terminal");
+        assert!(started.elapsed() < std::time::Duration::from_secs(4));
+        let _ = child.wait();
     }
 
     #[cfg(unix)]
@@ -355,7 +504,7 @@ mod tests {
         let root = base.join("meu projeto");
         std::fs::create_dir_all(&root).unwrap();
         let terms = Terms::new(base.join("dados"));
-        let a = OpenArgs { project_id: "p42".into(), project_name: "meu projeto".into(), root: root.clone(), claude_dir: Some(base.join("conta-b")), cols: 120, rows: 20 };
+        let a = OpenArgs { project_id: "p42".into(), project_name: "meu projeto".into(), root: root.clone(), claude_dir: Some(base.join("conta-b")), cols: 120, rows: 20, run: None };
         let (sh, args) = shell();
         let cmd = terms.command(&sh, &args, &short_name(&sh), &a);
         let pty = native_pty_system().openpty(PtySize { rows: 20, cols: 200, pixel_width: 0, pixel_height: 0 }).unwrap();

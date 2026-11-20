@@ -569,6 +569,30 @@ pub fn project_procs(sys: &mut System, root: &std::path::Path) -> Vec<ProjProc> 
     out
 }
 
+/// Portas em escuta de cada árvore de processos (raiz = o shell de um serviço da aba Ambiente).
+pub fn tree_ports(sys: &mut System, roots: &[(String, u32)]) -> HashMap<String, Vec<u16>> {
+    refresh(sys);
+    let ports = listening_ports();
+    let procs = sys.processes();
+    let mut out: HashMap<String, Vec<u16>> = HashMap::new();
+    for (pid, list) in &ports {
+        let mut cur = Some(Pid::from_u32(*pid));
+        for _ in 0..24 {
+            let Some(c) = cur else { break };
+            if let Some((id, _)) = roots.iter().find(|(_, r)| *r == c.as_u32()) {
+                out.entry(id.clone()).or_default().extend(list.iter().copied());
+                break;
+            }
+            cur = procs.get(&c).and_then(|p| p.parent());
+        }
+    }
+    for v in out.values_mut() {
+        v.sort_unstable();
+        v.dedup();
+    }
+    out
+}
+
 /// Encerra um grupo da lista do projeto (e só desta lista: nada de fora da pasta).
 pub fn kill_in_project(sys: &mut System, root: &std::path::Path, pid: u32) -> Result<(), String> {
     let list = project_procs(sys, root);

@@ -15,6 +15,9 @@ export interface TermInfo {
   shell: string;
   cwd: string;
   alive: boolean;
+  /** serviço da aba Ambiente que roda nele (null = shell normal) */
+  service?: string | null;
+  cmd?: string | null;
 }
 
 interface State {
@@ -103,6 +106,36 @@ export async function closeTerm(pid: string, id: string) {
 }
 
 export const setActiveTerm = (pid: string, id: string) => setTerms("active", pid, id);
+
+/** Terminal aberto fora do painel (um serviço da aba Ambiente): entra na lista do projeto. */
+export function addTerm(pid: string, t: TermInfo) {
+  setTerms(produce((s) => {
+    s.byProject[pid] = [...(s.byProject[pid] ?? []).filter((x) => x.id !== t.id), t];
+    if (!s.active[pid]) s.active[pid] = t.id;
+  }));
+}
+
+/** Serviço reiniciado: o terminal novo entra no lugar do velho (e na frente, se ele estava). */
+export function replaceTerm(pid: string, oldId: string, t: TermInfo) {
+  sink?.dispose(oldId);
+  early.delete(oldId);
+  setTerms(produce((s) => {
+    const list = s.byProject[pid] ?? [];
+    s.byProject[pid] = list.some((x) => x.id === oldId) ? list.map((x) => (x.id === oldId ? t : x)) : [...list, t];
+    if (!s.active[pid] || s.active[pid] === oldId) s.active[pid] = t.id;
+  }));
+}
+
+/** A lista do Rust sem montar nenhum terminal (a aba Ambiente só precisa saber o que roda). */
+export async function syncTermList(pid: string) {
+  if (!isTauri || terms.loaded[pid]) return;
+  try {
+    const list = await listTerms(pid);
+    if (!terms.loaded[pid]) setTerms("byProject", pid, list);
+  } catch {
+    /* fica a lista de antes */
+  }
+}
 
 /** Projeto removido: os terminais dele já foram fechados no Rust; aqui só some da tela. */
 export function forgetProject(pid: string) {

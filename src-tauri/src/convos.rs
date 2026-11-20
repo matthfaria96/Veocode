@@ -17,7 +17,7 @@ use std::time::UNIX_EPOCH;
 
 /// Quantas conversas a lista mostra e quantos passos aparecem ao retomar.
 pub const MAX_LISTED: usize = 40;
-pub const MAX_STEPS: usize = 60;
+pub const MAX_STEPS: usize = 600;
 const PEEK: u64 = 256 * 1024;
 
 #[derive(Debug, Serialize, Clone, PartialEq)]
@@ -36,6 +36,11 @@ pub struct Convo {
     pub bytes: u64,
     /// tokens que a conversa carrega hoje (o que o Claude relê a cada mensagem)
     pub context: Option<u64>,
+    /// primeira mensagem da conversa (uuid): uma bifurcação (`--fork-session`) copia as
+    /// mensagens com os mesmos uuids, então conversas com a mesma raiz são ramos uma da outra
+    pub root: Option<String>,
+    /// quando a conversa nasceu (ms desde 1970; 0 se não der para saber)
+    pub created: i64,
 }
 
 /// Ids vêm da tela: só letras, números, '-' e '_' (nada de caminho).
@@ -105,7 +110,20 @@ fn origin_label(entry: &str) -> String {
 }
 
 /// Título e último pedido de uma sessão. `None`: sessão sem nenhum pedido (só registros internos).
-pub fn claude_info(file: &Path) -> Option<(String, Option<String>, Option<String>)> {
+pub struct ClaudeInfo {
+    pub title: String,
+    pub last_prompt: Option<String>,
+    pub origin: Option<String>,
+    pub root: Option<String>,
+    pub created: i64,
+}
+
+fn ts_ms(v: &Value) -> Option<i64> {
+    let t = v.get("timestamp")?.as_str()?;
+    chrono::DateTime::parse_from_rfc3339(t).ok().map(|d| d.timestamp_millis())
+}
+
+pub fn claude_info(file: &Path) -> Option<ClaudeInfo> {
     let tail = peek(file, true);
     let (mut custom, mut ai, mut summary, mut last) = (None, None, None, None);
     for v in &tail {
@@ -122,10 +140,17 @@ pub fn claude_info(file: &Path) -> Option<(String, Option<String>, Option<String
     let head = peek(file, false);
     let first = head.iter().find_map(text_of_user);
     let origin = head.iter().chain(tail.iter()).find_map(|v| v.get("entrypoint").and_then(Value::as_str)).map(origin_label);
+    // raiz: a primeira mensagem da conversa principal (pedido ou resposta)
+    let root_entry = head
+        .iter()
+        .filter(|v| v.get("isSidechain").and_then(Value::as_bool) != Some(true))
+        .find(|v| matches!(v.get("type").and_then(Value::as_str), Some("user" | "assistant")) && v.get("uuid").and_then(Value::as_str).is_some());
+    let root = root_entry.and_then(|v| v.get("uuid").and_then(Value::as_str)).map(String::from);
+    let created = root_entry.and_then(ts_ms).unwrap_or(0);
     let title = custom.or(ai).or(summary).or_else(|| first.clone()).or_else(|| last.clone())?;
     // último pedido só ajuda se não repetir o título
     let last = last.filter(|l| one_line(l, 120) != one_line(&title, 120));
-    Some((one_line(&title, 90), last.map(|l| one_line(&l, 120)), origin))
+    Some(ClaudeInfo { title: one_line(&title, 90), last_prompt: last.map(|l| one_line(&l, 120)), origin, root, created })
 }
 
 /// Sessões do Claude deste projeto em todas as contas (mais recentes primeiro).
@@ -186,10 +211,13 @@ pub fn claude_sessions(root: &Path, accounts: &[(String, PathBuf)]) -> Vec<Convo
         if out.len() >= MAX_LISTED {
             break;
         }
-        let Some((title, last_prompt, origin)) = claude_info(&p) else { continue };
+        let Some(info) = claude_info(&p) else { continue };
         let bytes = fs::metadata(&p).map(|m| m.len()).unwrap_or(0);
         let context = last_context(&p);
-        out.push(Convo { id, kind: "claude".into(), account, title, last_prompt, origin, updated, bytes, context });
+        // nascimento do arquivo: entre conversas com a mesma raiz, a mais antiga é a original
+        // (a bifurcação copia as mensagens com a data delas)
+        let born = fs::metadata(&p).and_then(|m| m.created()).ok().and_then(|t| t.duration_since(UNIX_EPOCH).ok()).map(|d| d.as_millis() as i64);
+        out.push(Convo { id, kind: "claude".into(), account, title: info.title, last_prompt: info.last_prompt, origin: info.origin, updated, bytes, context, root: info.root, created: born.unwrap_or(info.created) });
     }
     out
 }
@@ -270,7 +298,7 @@ pub fn api_list(dir: &Path) -> Vec<Convo> {
         .filter_map(|e| {
             let m: ApiMeta = serde_json::from_slice(&fs::read(e.path()).ok()?).ok()?;
             let bytes = fs::metadata(dir.join(format!("{}.json", m.id))).map(|x| x.len()).ok()?;
-            valid_id(&m.id).then(|| Convo { id: m.id, kind: "api".into(), account: m.account, title: m.title, last_prompt: m.last_prompt, origin: None, updated: m.updated, bytes, context: None })
+            valid_id(&m.id).then(|| Convo { id: m.id, kind: "api".into(), account: m.account, title: m.title, last_prompt: m.last_prompt, origin: None, updated: m.updated, bytes, context: None, root: None, created: 0 })
         })
         .collect();
     out.sort_by(|a, b| b.updated.cmp(&a.updated));
@@ -357,6 +385,29 @@ mod tests {
         assert_eq!(one.origin.as_deref(), Some("Terminal"));
         assert_eq!(one.account, "conta");
         assert_eq!(list.iter().find(|c| c.id == "bbbb-2").unwrap().title, "Meu nome");
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn forks_share_the_root() {
+        let d = tmp("forks");
+        let root = Path::new("/projetos/app");
+        let dir = claude_dir(&d, root);
+        fs::create_dir_all(&dir).unwrap();
+        let entry = |ty: &str, uuid: &str, ts: &str, t: &str| json!({"type":ty,"uuid":uuid,"timestamp":ts,"message":{"role":ty,"content":t}}).to_string();
+        let a1 = entry("user", "u-1", "2026-11-20T04:45:11.969Z", "alpha");
+        let a2 = entry("assistant", "a-1", "2026-11-20T04:45:19.728Z", "ok");
+        // o original e o ramo começam com as mesmas mensagens (mesmos uuids e datas)
+        fs::write(dir.join("orig-1.jsonl"), [a1.clone(), a2.clone()].join("\n") + "\n").unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        fs::write(dir.join("ramo-2.jsonl"), [a1, a2, entry("user", "u-2", "2026-11-20T04:45:30.028Z", "beta")].join("\n") + "\n").unwrap();
+        fs::write(dir.join("outra-3.jsonl"), entry("user", "x-1", "2026-11-20T05:00:00.000Z", "outra coisa") + "\n").unwrap();
+        let list = claude_sessions(root, &[("conta".into(), d.clone())]);
+        let get = |id: &str| list.iter().find(|c| c.id == id).unwrap();
+        assert_eq!(get("orig-1").root.as_deref(), Some("u-1"));
+        assert_eq!(get("ramo-2").root.as_deref(), Some("u-1"));
+        assert_eq!(get("outra-3").root.as_deref(), Some("x-1"));
+        assert!(get("orig-1").created > 0 && get("orig-1").created <= get("ramo-2").created);
         let _ = fs::remove_dir_all(&d);
     }
 

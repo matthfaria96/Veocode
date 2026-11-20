@@ -1,12 +1,17 @@
 // Modo IA, à direita: o que a IA está fazendo por baixo da conversa. O app rodando no navegador
 // (ou num tamanho de celular), os comandos e servidores do projeto, os subagentes e a atividade.
-import { Activity, Bot, ChevronRight, Crosshair, ExternalLink, FileText, Globe, Monitor, RotateCw, Smartphone, Square, SquareTerminal, X } from "lucide-solid";
+import { Activity, Bot, ChevronRight, Crosshair, ExternalLink, Eye, FileText, Footprints, Globe, Monitor, RotateCw, Smartphone, Square, SquareTerminal, X } from "lucide-solid";
 import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch } from "solid-js";
 import { api, formatSize } from "../api";
 import { follow, setFollow } from "../agentFeed";
 import { debugTab, setDebugOpen, setDebugTab, type DebugTab } from "../layoutMode";
 import { portsOf, procsLoaded, procsOf, stopProc, watchProcs, type ProjProc } from "../projProcs";
 import { currentProject, ws, type ActivityEvent } from "../store";
+import { chatOf } from "../chat";
+import { tabsOf } from "../convTabs";
+import { histOf } from "../convHist";
+import { chatPane, showChatPane } from "./ChatPanel";
+import TrailPanel from "./TrailPanel";
 import ActivityIcon, { kindColor } from "./ActivityIcon";
 import { ActivityTimeline } from "./BottomPanel";
 import Editor from "./Editor";
@@ -114,7 +119,7 @@ function Subagents() {
 
 // ------------------------------------------------------------------ comandos
 
-function Commands(props: { onOpenPort: (port: number) => void }) {
+export function Commands(props: { onOpenPort: (port: number) => void; portTitle?: string }) {
   const pid = () => currentProject().id;
   const runs = createMemo(() => ws.events.filter((e) => e.kind === "run").slice(-40));
   const [showOut, setShowOut] = createSignal(false);
@@ -129,7 +134,7 @@ function Commands(props: { onOpenPort: (port: number) => void }) {
         </header>
         <Show when={procsLoaded(pid())} fallback={<div class="dbg-hint"><span class="spinner inline" /> {tx("Lendo os processos…")}</div>}>
           <Show when={procsOf(pid()).length} fallback={<div class="dbg-hint">{tx("Nada rodando aqui agora. Servidores de dev, builds e testes que a IA (ou você) abrir nesta pasta aparecem aqui.")}</div>}>
-            <For each={procsOf(pid())}>{(p) => <ProcRow p={p} onOpenPort={props.onOpenPort} />}</For>
+            <For each={procsOf(pid())}>{(p) => <ProcRow p={p} onOpenPort={props.onOpenPort} portTitle={props.portTitle} />}</For>
           </Show>
         </Show>
       </section>
@@ -175,7 +180,7 @@ function Commands(props: { onOpenPort: (port: number) => void }) {
   );
 }
 
-function ProcRow(props: { p: ProjProc; onOpenPort: (port: number) => void }) {
+function ProcRow(props: { p: ProjProc; onOpenPort: (port: number) => void; portTitle?: string }) {
   const [stopping, setStopping] = createSignal(false);
   return (
     <div class="proc-row" classList={{ server: props.p.ports.length > 0 }}>
@@ -183,7 +188,7 @@ function ProcRow(props: { p: ProjProc; onOpenPort: (port: number) => void }) {
       <span class="proc-main">
         <code title={props.p.cmd}>{props.p.cmd}</code>
         <small>
-          <For each={props.p.ports}>{(port) => <button class="port-chip" title={tx("Abrir no navegador do painel")} onClick={() => props.onOpenPort(port)}>:{port}</button>}</For>
+          <For each={props.p.ports}>{(port) => <button class="port-chip" title={props.portTitle ?? tx("Abrir no navegador do painel")} onClick={() => props.onOpenPort(port)}>:{port}</button>}</For>
           <span>{dur(props.p.runSecs)}</span>
           <span>· {formatSize(props.p.mem)}</span>
           <Show when={props.p.agent}><span>· {tx("aberto por {agent}", { agent: props.p.agent })}</span></Show>
@@ -299,6 +304,81 @@ function Browser(props: { focusPort: number | null }) {
   );
 }
 
+// ------------------------------------------------------------------ fora do Veocode
+
+/** Sessões do Claude nesta pasta que não são de nenhuma aba do Veocode (Terminal, editor, app do Claude). */
+function extSessions(pid: string) {
+  const owned = new Set(tabsOf(pid).map((t) => chatOf(t.key).session ?? t.session).filter(Boolean));
+  const by = new Map<string, ActivityEvent[]>();
+  for (const e of ws.events) {
+    if (e.agent === "disco" || e.tab || !e.session || owned.has(e.session)) continue;
+    by.set(e.session, [...(by.get(e.session) ?? []), e]);
+  }
+  const hist = histOf(pid);
+  return [...by.entries()]
+    .map(([id, steps]) => {
+      const h = hist.find((x) => x.id === id);
+      const last = steps[steps.length - 1];
+      const first = steps.find((x) => x.kind === "user");
+      return { id, steps, last, running: steps.some((x) => x.status === "running"), title: h?.title ?? first?.title ?? tx("Sessão do Claude"), origin: h?.origin ?? null };
+    })
+    .sort((a, b) => Number(b.running) - Number(a.running) || b.last.id - a.last.id);
+}
+
+const [extOpen, setExtOpen] = createSignal((() => {
+  try {
+    return localStorage.getItem("veocode.ai.extOpen") !== "0";
+  } catch {
+    return true;
+  }
+})());
+
+/** Embaixo da Atividade: o Claude rodando nesta pasta por fora do Veocode. Só aparece quando há. */
+function OutsideStrip() {
+  const list = createMemo(() => extSessions(currentProject().id));
+  const toggle = () => {
+    setExtOpen(!extOpen());
+    try {
+      localStorage.setItem("veocode.ai.extOpen", extOpen() ? "1" : "0");
+    } catch {
+      /* sem armazenamento */
+    }
+  };
+  const where = (o: string | null) => (!o ? tx("por fora") : o === "Terminal" ? tx("no Terminal") : o === "app do Claude" ? tx("no app do Claude") : o === "SDK" ? tx("por um programa") : tx("no {h}", { h: o }));
+  return (
+    <Show when={list().length}>
+      <section class="ext-strip" classList={{ open: extOpen() }}>
+        <button class="ext-strip-head" aria-expanded={extOpen()} onClick={toggle} title={tx("Claude rodando nesta pasta pelo Terminal, editor ou app do Claude. Só para acompanhar.")}>
+          <ChevronRight size={12} class="ext-chev" />
+          <Eye size={13} />
+          <span>{tx("Fora do Veocode")}</span>
+          <i class="dbg-badge" classList={{ live: list().some((x) => x.running) }}>{list().length}</i>
+          <span class="dbg-spacer" />
+          <span class="link-btn" role="link" onClick={(e) => (e.stopPropagation(), showChatPane(chatPane() === "ext" ? "chat" : "ext"))}>{chatPane() === "ext" ? tx("Voltar para a conversa") : tx("Ver como conversa")}</span>
+        </button>
+        <Show when={extOpen()}>
+          <div class="ext-list">
+            <For each={list()}>
+              {(x) => (
+                <button class="ext-row" classList={{ running: x.running }} onClick={() => showChatPane("ext")} title={tx("Ver no meio, como conversa")}>
+                  <span class="ext-dot" />
+                  <span class="ext-main">
+                    <strong>{x.title}</strong>
+                    <small>
+                      {where(x.origin)} · <span style={{ color: kindColor[x.last.kind] }}><ActivityIcon kind={x.last.kind} size={10} /></span> {x.last.title}
+                    </small>
+                  </span>
+                  <small class="ext-time">{x.running ? <span class="spinner inline" /> : x.last.time.slice(0, 5)}</small>
+                </button>
+              )}
+            </For>
+          </div>
+        </Show>
+      </section>
+    </Show>
+  );
+}
+
 // ------------------------------------------------------------------ o painel
 
 export default function DebugPane() {
@@ -318,6 +398,7 @@ export default function DebugPane() {
     { id: "procs", label: () => tx("Comandos"), icon: SquareTerminal },
     { id: "subs", label: () => tx("Subagentes"), icon: Bot },
     { id: "activity", label: () => tx("Atividade"), icon: Activity },
+    { id: "trail", label: () => tx("Rastro"), icon: Footprints },
   ];
   const badge = (id: DebugTab) => (id === "procs" ? runningCmds() || procsOf(pid()).filter((p) => p.ports.length).length : id === "subs" ? runningSubs() : 0);
 
@@ -350,7 +431,13 @@ export default function DebugPane() {
           <Match when={debugTab() === "browser"}><Browser focusPort={focusPort()} /></Match>
           <Match when={debugTab() === "procs"}><Commands onOpenPort={openPort} /></Match>
           <Match when={debugTab() === "subs"}><Subagents /></Match>
-          <Match when={debugTab() === "activity"}><ActivityTimeline /></Match>
+          <Match when={debugTab() === "activity"}>
+            <div class="act-split">
+              <ActivityTimeline />
+              <OutsideStrip />
+            </div>
+          </Match>
+          <Match when={debugTab() === "trail"}><div class="side-scroll"><TrailPanel /></div></Match>
           <Match when={debugTab() === "file" && hasFile()}><Editor /></Match>
         </Switch>
       </div>

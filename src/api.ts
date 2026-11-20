@@ -77,6 +77,8 @@ export const api = {
   },
 
   reveal: (absPath: string) => (isTauri ? revealItemInDir(absPath) : needsApp()),
+  /** Abre a pasta do projeto no VS Code. */
+  openInVscode: (projectId: string): Promise<void> => (isTauri ? invoke("open_in_vscode", { projectId }) : needsApp()),
 
   /** Abre um link (só http/https) no navegador padrão. */
   openUrl: (url: string) => (isTauri ? openUrl(url) : Promise.resolve(void window.open(url, "_blank", "noopener"))),

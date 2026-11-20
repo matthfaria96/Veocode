@@ -1,27 +1,5 @@
-// Modo da tela Projetos: "simples" (um projeto por vez, troca pelo nome no topo) ou
-// "avancado" (uma coluna com todos os projetos ao lado da árvore de arquivos). Lembrado
-// neste computador.
+// Como a tela Projetos fica: modo Código ou IA, painéis abertos e tamanhos. Lembrado neste computador.
 import { createSignal } from "solid-js";
-
-export type WsMode = "simples" | "avancado";
-const KEY = "veocode.workspace.mode";
-const first = (): WsMode => {
-  try {
-    return localStorage.getItem(KEY) === "avancado" ? "avancado" : "simples";
-  } catch {
-    return "simples";
-  }
-};
-const [mode, setModeRaw] = createSignal<WsMode>(first());
-export const wsMode = mode;
-export function setWsMode(m: WsMode) {
-  setModeRaw(m);
-  try {
-    localStorage.setItem(KEY, m);
-  } catch {
-    /* sem armazenamento: só não lembra */
-  }
-}
 
 const remember = (k: string, v: string) => {
   try {
@@ -76,24 +54,24 @@ export function setProjMode(m: ProjMode) {
   remember("veocode.ws.view", m);
 }
 
-/** Terminal do modo Código: aberto ou não, embaixo ou à direita, e o tamanho de cada lado. */
-export type TermAt = "bottom" | "right";
-const [termAt, setTermAtRaw] = createSignal<TermAt>(recall("veocode.code.termAt") === "right" ? "right" : "bottom");
+/** Terminal do modo Código: embaixo do editor ou como aba do painel da direita (nunca nos dois). */
+export type TermAt = "bottom" | "side";
+const savedAt = recall("veocode.code.termAt");
+const [termAt, setTermAtRaw] = createSignal<TermAt>(savedAt === "side" || savedAt === "right" ? "side" : "bottom");
 export { termAt };
 export const setTermAt = (v: TermAt) => (setTermAtRaw(v), remember("veocode.code.termAt", v));
+/** Aberto embaixo (no painel da direita, quem manda é a aba do painel). */
 export const [termOpen, setTermOpen] = createSignal(false);
 const size = (k: string, d: number, lo: number, hi: number) => {
   const n = Number(recall(k));
   return n >= lo && n <= hi ? n : d;
 };
 const [termH, setTermHRaw] = createSignal(size("veocode.code.termH", 260, 120, 2000));
-const [termW, setTermWRaw] = createSignal(size("veocode.code.termW", 460, 260, 2000));
-export { termH, termW };
+export { termH };
 export const setTermH = (v: number, save = false) => (setTermHRaw(v), save && remember("veocode.code.termH", String(v)));
-export const setTermW = (v: number, save = false) => (setTermWRaw(v), save && remember("veocode.code.termW", String(v)));
 
 /** Painel de depuração do modo IA (à direita): aberto, largura e a aba da frente. */
-export type DebugTab = "browser" | "procs" | "subs" | "activity" | "file";
+export type DebugTab = "browser" | "procs" | "subs" | "activity" | "trail" | "file";
 const [debugOpen, setDebugOpenRaw] = createSignal(recall("veocode.ai.debug") !== "0");
 export { debugOpen };
 export const setDebugOpen = (v: boolean) => (setDebugOpenRaw(v), remember("veocode.ai.debug", v ? "1" : "0"));
@@ -101,6 +79,43 @@ const [debugW, setDebugWRaw] = createSignal(size("veocode.ai.debugW", 440, 320, 
 export { debugW };
 export const setDebugW = (v: number, save = false) => (setDebugWRaw(v), save && remember("veocode.ai.debugW", String(v)));
 const savedTab = recall("veocode.ai.debugTab");
-const [debugTab, setDebugTabRaw] = createSignal<DebugTab>(savedTab === "procs" || savedTab === "subs" || savedTab === "activity" ? savedTab : "browser");
+const [debugTab, setDebugTabRaw] = createSignal<DebugTab>(savedTab === "procs" || savedTab === "subs" || savedTab === "activity" || savedTab === "trail" ? savedTab : "browser");
 export { debugTab };
 export const setDebugTab = (v: DebugTab) => (setDebugTabRaw(v), v !== "file" && remember("veocode.ai.debugTab", v));
+
+/** Painel da direita do modo Código (abre e fecha pelo ícone ao lado do terminal): o Git, a
+ *  conversa com a IA (como o Claude Code ao lado do código no VS Code) e, se você pôs ele aqui,
+ *  o terminal. Aberto, largura e aba lembrados. O resto (comandos, atividade, rastro) é do modo IA. */
+export type CodeSideTab = "git" | "chat" | "env" | "term";
+const [codeSideOpen, setCodeSideOpenRaw] = createSignal(recall("veocode.code.side") === "1");
+export { codeSideOpen };
+export const setCodeSideOpen = (v: boolean) => (setCodeSideOpenRaw(v), remember("veocode.code.side", v ? "1" : "0"));
+const [codeSideW, setCodeSideWRaw] = createSignal(size("veocode.code.sideW", 400, 300, 1200));
+export { codeSideW };
+export const setCodeSideW = (v: number, save = false) => (setCodeSideWRaw(v), save && remember("veocode.code.sideW", String(v)));
+const savedSide = recall("veocode.code.sideTab");
+const [codeSideTab, setCodeSideTabRaw] = createSignal<CodeSideTab>(savedSide === "chat" || savedSide === "env" || (savedSide === "term" && termAt() === "side") ? savedSide : "git");
+export { codeSideTab };
+export const setCodeSideTab = (v: CodeSideTab) => (setCodeSideTabRaw(v), remember("veocode.code.sideTab", v));
+
+/** O terminal está na tela agora (embaixo aberto, ou a aba dele no painel da direita). */
+export const termShown = () => (termAt() === "bottom" ? termOpen() : codeSideOpen() && codeSideTab() === "term");
+/** ⌘J: mostra ou esconde o terminal onde ele mora. */
+export function toggleTerm() {
+  if (termAt() === "bottom") return setTermOpen(!termOpen());
+  if (termShown()) return setCodeSideOpen(false);
+  setCodeSideTab("term");
+  setCodeSideOpen(true);
+}
+/** Muda o terminal de lugar (fica aberto no lugar novo). */
+export function moveTerm(to: TermAt) {
+  setTermAt(to);
+  if (to === "side") {
+    setTermOpen(false);
+    setCodeSideTab("term");
+    setCodeSideOpen(true);
+  } else {
+    setTermOpen(true);
+    if (codeSideTab() === "term") setCodeSideTab("git");
+  }
+}

@@ -243,10 +243,10 @@ function EditorHome() {
           </>
         }
       >
-        <p>{tx("Abra um arquivo na árvore para editar, ou veja o que mudou na aba Git.")}</p>
+        <p>{tx("Abra um arquivo na árvore para editar, ou veja o que mudou no painel Git, à direita.")}</p>
         <div class="eh-tips">
           <span style={{ "--i": 0 }}><FileText size={14} /> {tx("Abra um arquivo")} <em>{tx("na árvore à esquerda")}</em></span>
-          <span style={{ "--i": 1 }}><GitCompareArrows size={14} /> {tx("Veja o que mudou")} <em>{tx("na aba Git")}</em></span>
+          <span style={{ "--i": 1 }}><GitCompareArrows size={14} /> {tx("Veja o que mudou e faça o commit")} <kbd>⌥⌘B</kbd></span>
           <span style={{ "--i": 2 }}><SquareTerminal size={14} /> {tx("Terminal")} <kbd>⌘J</kbd></span>
           <span style={{ "--i": 3 }}><Search size={14} /> {tx("Busque qualquer coisa")} <kbd>⌘K</kbd></span>
         </div>

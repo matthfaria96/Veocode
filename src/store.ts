@@ -218,7 +218,7 @@ export function pushEvent(e: Omit<ActivityEvent, "id" | "time" | "status"> & { s
   delete e.at;
   const time = now.toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit", second: "2-digit" });
   const ev: ActivityEvent = { status: "running", ...e, id, time };
-  setWs("events", (list) => [...list, ev].slice(-400));
+  setWs("events", (list) => [...list, ev].slice(-4000));
   return id;
 }
 export function finishEvent(id: number, detail?: string) {

@@ -1,7 +1,7 @@
 // Visão dos limites do plano do Claude (5 horas e semana): anel com a porcentagem, barras com
 // a hora em que zera, o aviso no chat quando o limite bate e a troca de conta com confirmação.
 import { ArrowRightLeft, Hourglass, RefreshCw } from "lucide-solid";
-import { createSignal, For, onCleanup, Show } from "solid-js";
+import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import { accountById, accts } from "../accounts";
 import { chatOf } from "../chat";
 import { activeKey, continueFresh } from "../convTabs";
@@ -112,36 +112,61 @@ function PopRow(props: { label: string; w: Win | null }) {
   );
 }
 
-/** Anel do uso do plano na caixa de mensagem (como no app do Claude): passando o mouse, 5 h e semana. */
+/** Uso do plano na caixa de mensagem: anel com a porcentagem; um clique abre (e fecha) o
+ *  quadro com 5 horas, semana e quando cada um zera. */
 export function UsageRing(props: { id: string; small?: boolean }) {
   useClock();
   const a = () => accountById(props.id);
   const l = () => limits[props.id];
   const p = () => peak(props.id);
-  const [spin, setSpin] = createSignal(false);
+  const [open, setOpen] = createSignal(false);
+  const [busy, setBusy] = createSignal(false);
+  let wrap!: HTMLSpanElement;
   const again = async () => {
-    setSpin(true);
+    setBusy(true);
     await loadLimits(props.id, true);
-    setSpin(false);
+    setBusy(false);
   };
+  createEffect(() => {
+    if (!open()) return;
+    void loadLimits(props.id);
+    const down = (e: MouseEvent) => !wrap.contains(e.target as Node) && setOpen(false);
+    const key = (e: KeyboardEvent) => e.key === "Escape" && (e.stopPropagation(), setOpen(false));
+    window.addEventListener("mousedown", down, true);
+    window.addEventListener("keydown", key, true);
+    onCleanup(() => (window.removeEventListener("mousedown", down, true), window.removeEventListener("keydown", key, true)));
+  });
   return (
     <Show when={a().provider === "claude"}>
-      <button class="usage-ring" classList={{ empty: !p(), small: props.small, spin: spin() }} aria-label={p() ? tx("Uso do plano: {v}%", { v: Math.round(p()!.pct) }) : tx("Uso do plano")} onClick={() => void again()}>
-        <LimitRing pct={p()?.pct ?? 0} size={props.small ? 16 : 18} bare />
-        <div class="usage-pop" role="tooltip">
-          <header>
-            <b>{tx("Uso do plano")}</b>
-            <small>{a().label}</small>
-          </header>
-          <Show when={p()} fallback={<p class="up-empty">{l()?.error ?? tx("Lendo o uso da conta…")}</p>}>
-            <PopRow label={tx("Limite de 5 horas")} w={l()!.fiveHour} />
-            <PopRow label={tx("Semanal · todos os modelos")} w={l()!.week} />
-            <For each={l()!.models}>{([m, w]) => <PopRow label={tx("Semanal · {m}", { m })} w={w} />}</For>
-          </Show>
-          <Show when={l()?.note}><p class="up-note">{l()!.note}</p></Show>
-          <footer>{l() ? tx("Atualizado {v} · clique para ler de novo", { v: (tick(), agoText(l()!.at)) }) : tx("Clique para ler agora")}</footer>
-        </div>
-      </button>
+      <span class="usage-wrap" ref={wrap}>
+        <button
+          class="usage-ring"
+          classList={{ empty: !p(), small: props.small, on: open() }}
+          aria-expanded={open()}
+          aria-label={p() ? tx("Uso do plano: {v}%", { v: Math.round(p()!.pct) }) : tx("Uso do plano")}
+          title={open() ? undefined : p() ? tx("Uso do plano: {v}% · clique para ver", { v: Math.round(p()!.pct) }) : tx("Uso do plano · clique para ver")}
+          onClick={() => setOpen(!open())}
+        >
+          <LimitRing pct={p()?.pct ?? 0} size={props.small ? 14 : 16} bare />
+          <Show when={p()}><b class={`usage-pct t-${toneOf(p()!.pct)}`}>{Math.round(p()!.pct)}%</b></Show>
+        </button>
+        <Show when={open()}>
+          <div class="usage-pop pop-in" role="dialog" aria-label={tx("Uso do plano")}>
+            <header>
+              <b>{tx("Uso do plano")}</b>
+              <small>{a().label}</small>
+              <button class="icon-btn tiny" classList={{ spinning: busy() }} title={tx("Ler de novo (não gasta tokens)")} onClick={() => void again()}><RefreshCw size={11} /></button>
+            </header>
+            <Show when={p()} fallback={<p class="up-empty">{l()?.error ?? tx("Lendo o uso da conta…")}</p>}>
+              <PopRow label={tx("Limite de 5 horas")} w={l()!.fiveHour} />
+              <PopRow label={tx("Semanal · todos os modelos")} w={l()!.week} />
+              <For each={l()!.models}>{([m, w]) => <PopRow label={tx("Semanal · {m}", { m })} w={w} />}</For>
+            </Show>
+            <Show when={l()?.note}><p class="up-note">{l()!.note}</p></Show>
+            <footer>{l() ? tx("Atualizado {v}", { v: (tick(), agoText(l()!.at)) }) : tx("Lendo…")}</footer>
+          </div>
+        </Show>
+      </span>
     </Show>
   );
 }

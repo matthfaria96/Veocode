@@ -5,6 +5,7 @@ mod apiagent;
 mod chat;
 mod context;
 mod convos;
+mod envs;
 mod inventory;
 mod accounts;
 mod files;
@@ -281,7 +282,7 @@ async fn list_files(state: State<'_, AppState>, project_id: String) -> Result<Ve
     blocking(move || files::all_files(&root, 20_000)).await?
 }
 
-// ---------------------------------------------------------------- Git e GitHub (só leitura)
+// ---------------------------------------------------------------- Git e GitHub
 
 #[tauri::command]
 async fn git_status(state: State<'_, AppState>, project_id: String) -> Result<git::Status, String> {
@@ -308,6 +309,47 @@ async fn git_fetch(state: State<'_, AppState>, project_id: String) -> Result<git
     let root = state.root_of(&project_id)?;
     blocking(move || {
         git::fetch(&root)?;
+        git::status(&root)
+    })
+    .await?
+}
+
+/// Põe ou tira arquivos do próximo commit (caminhos relativos à raiz do repositório).
+#[tauri::command]
+async fn git_stage(state: State<'_, AppState>, project_id: String, paths: Vec<String>, on: bool) -> Result<git::Status, String> {
+    let root = state.root_of(&project_id)?;
+    blocking(move || {
+        git::stage(&root, &paths, on)?;
+        git::status(&root)
+    })
+    .await?
+}
+
+#[tauri::command]
+async fn git_commit(state: State<'_, AppState>, project_id: String, message: String, all: bool) -> Result<git::Status, String> {
+    let root = state.root_of(&project_id)?;
+    blocking(move || {
+        git::commit(&root, &message, all)?;
+        git::status(&root)
+    })
+    .await?
+}
+
+#[tauri::command]
+async fn git_push(state: State<'_, AppState>, project_id: String) -> Result<git::Status, String> {
+    let root = state.root_of(&project_id)?;
+    blocking(move || {
+        git::push(&root)?;
+        git::status(&root)
+    })
+    .await?
+}
+
+#[tauri::command]
+async fn git_pull(state: State<'_, AppState>, project_id: String) -> Result<git::Status, String> {
+    let root = state.root_of(&project_id)?;
+    blocking(move || {
+        git::pull(&root)?;
         git::status(&root)
     })
     .await?
@@ -560,13 +602,38 @@ fn access_preview(level: u8, overrides: std::collections::BTreeMap<String, acces
 
 /// Abre o Claude Code no projeto, com a conta dele.
 #[tauri::command(async)]
-fn open_claude(state: State<'_, AppState>, project_id: String) -> Result<(), String> {
+fn open_claude(state: State<'_, AppState>, project_id: String, resume: Option<String>) -> Result<(), String> {
     let p = state.store.lock().map_err(|e| e.to_string())?.get(&project_id).cloned().ok_or(crate::i18n::tr("projeto não encontrado", "project not found"))?;
     let a = state.accounts.lock().map_err(|e| e.to_string())?.get(&p.account_id).cloned().ok_or(crate::i18n::tr("conta não encontrada", "account not found"))?;
     if a.provider != Provider::Claude {
         return Err(crate::trf!("{} não é uma conta do Claude. Troque a conta do projeto para abrir o Claude Code.", "{} isn't a Claude account. Change the project's account to open Claude Code.", a.label));
     }
-    accounts::claude::open_terminal(&a, Some(std::path::Path::new(&p.path)))
+    accounts::claude::open_terminal(&a, Some(std::path::Path::new(&p.path)), resume.as_deref())
+}
+
+/// Abre a pasta do projeto no VS Code.
+#[tauri::command(async)]
+fn open_in_vscode(state: State<'_, AppState>, project_id: String) -> Result<(), String> {
+    let root = state.root_of(&project_id)?;
+    #[cfg(target_os = "macos")]
+    {
+        let ok = std::process::Command::new("open").args(["-b", "com.microsoft.VSCode"]).arg(&root).status().map(|s| s.success()).unwrap_or(false);
+        if ok {
+            return Ok(());
+        }
+    }
+    if let Some(code) = crate::xray::util::which("code") {
+        let mut c = std::process::Command::new(code);
+        c.arg(&root);
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            c.creation_flags(0x0800_0000);
+        }
+        c.spawn().map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+    Err(crate::i18n::tr("Não achei o VS Code neste computador.", "Couldn't find VS Code on this computer.").into())
 }
 
 // ---------------------------------------------------------------- Eventos do agente
@@ -724,15 +791,21 @@ async fn attach_info(paths: Vec<String>) -> Result<Vec<attach::Staged>, String> 
     blocking(move || paths.iter().take(20).map(|p| attach::info(p)).collect()).await?
 }
 
-#[tauri::command(async)]
-fn term_open(app: AppHandle, state: State<'_, AppState>, project_id: String, cols: u16, rows: u16) -> Result<term::TermInfo, String> {
+/// Pasta, nome e conta do projeto para abrir um terminal (shell ou serviço) nele.
+fn term_args(state: &AppState, project_id: String, cols: u16, rows: u16) -> Result<term::OpenArgs, String> {
     let p = state.store.lock().map_err(|e| e.to_string())?.get(&project_id).cloned().ok_or(crate::i18n::tr("projeto não encontrado", "project not found"))?;
     let root = PathBuf::from(&p.path);
     chat::project_root_ok(&root)?;
     let account = state.accounts.lock().map_err(|e| e.to_string())?.get(&p.account_id).cloned();
     // só contas do Claude com pasta própria mudam o CLAUDE_CONFIG_DIR; as outras usam a padrão
     let claude_dir = account.filter(|a| a.provider == Provider::Claude && a.config_dir.is_some()).map(|a| accounts::claude::config_dir(&a));
-    state.terms.open(app, term::OpenArgs { project_id, project_name: p.name.clone(), root, claude_dir, cols, rows })
+    Ok(term::OpenArgs { project_id, project_name: p.name.clone(), root, claude_dir, cols, rows, run: None })
+}
+
+#[tauri::command(async)]
+fn term_open(app: AppHandle, state: State<'_, AppState>, project_id: String, cols: u16, rows: u16) -> Result<term::TermInfo, String> {
+    let args = term_args(&state, project_id, cols, rows)?;
+    state.terms.open(app, args)
 }
 
 #[tauri::command]
@@ -755,9 +828,68 @@ fn term_buffer(state: State<'_, AppState>, id: String) -> Result<String, String>
     state.terms.buffer(&id)
 }
 
-#[tauri::command]
+// parar um serviço espera ele soltar a porta (até 3 s): fora da thread da tela
+#[tauri::command(async)]
 fn term_close(state: State<'_, AppState>, id: String) {
     state.terms.close(&id);
+}
+
+// ---------------------------------------------------------------- Ambiente (perfis do .env e serviços)
+
+#[tauri::command]
+async fn env_list(state: State<'_, AppState>, project_id: String) -> Result<envs::EnvList, String> {
+    let root = state.root_of(&project_id)?;
+    blocking(move || envs::list(&root)).await
+}
+
+/// Deixa ativa uma opção de um grupo do .env (as outras do grupo ficam comentadas).
+#[tauri::command]
+async fn env_switch(state: State<'_, AppState>, project_id: String, file: String, group: String, line: usize) -> Result<envs::EnvList, String> {
+    let root = state.root_of(&project_id)?;
+    blocking(move || envs::switch(&root, &file, &group, line)).await?
+}
+
+#[tauri::command]
+async fn services_detect(state: State<'_, AppState>, project_id: String) -> Result<Vec<envs::ServiceSpec>, String> {
+    let root = state.root_of(&project_id)?;
+    blocking(move || envs::detect(&root)).await
+}
+
+/// Roda um serviço num terminal do projeto, na pasta dele.
+#[tauri::command(async)]
+#[allow(clippy::too_many_arguments)]
+fn service_start(app: AppHandle, state: State<'_, AppState>, project_id: String, key: String, name: String, cmd: String, dir: String, cols: u16, rows: u16) -> Result<term::TermInfo, String> {
+    let mut args = term_args(&state, project_id, cols, rows)?;
+    let cmd = cmd.trim().to_string();
+    let name = name.trim().chars().take(40).collect::<String>();
+    if cmd.is_empty() || cmd.len() > 1000 || cmd.contains(['\n', '\r']) || name.is_empty() || key.is_empty() || key.len() > 200 {
+        return Err(crate::i18n::tr("serviço inválido", "invalid service").into());
+    }
+    // a pasta do serviço tem de estar dentro da do projeto
+    let real_root = args.root.canonicalize().map_err(|e| e.to_string())?;
+    let real_dir = args.root.join(dir.trim_matches('/')).canonicalize().map_err(|_| crate::trf!("A pasta {dir} não existe neste projeto.", "The {dir} folder doesn't exist in this project."))?;
+    if !real_dir.starts_with(&real_root) || !real_dir.is_dir() {
+        return Err(crate::i18n::tr("A pasta do serviço precisa estar dentro do projeto.", "The service folder needs to be inside the project.").into());
+    }
+    args.run = Some(term::Run { key, name, cmd, dir: real_dir });
+    state.terms.open(app, args)
+}
+
+#[tauri::command(async)]
+fn term_restart(app: AppHandle, state: State<'_, AppState>, id: String) -> Result<term::TermInfo, String> {
+    state.terms.restart(app, &id)
+}
+
+/// Portas abertas por cada serviço rodando (id do terminal → portas).
+#[tauri::command]
+async fn service_ports(state: State<'_, AppState>, project_id: String) -> Result<HashMap<String, Vec<u16>>, String> {
+    let roots = state.terms.service_pids(&project_id);
+    if roots.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let mut guard = state.sys.lock().map_err(|e| e.to_string())?;
+    let sys = guard.as_mut().ok_or(crate::i18n::tr("não deu para ler os processos do sistema", "couldn't read the system processes"))?;
+    Ok(xray::procs::tree_ports(sys, &roots))
 }
 
 #[tauri::command(async)]
@@ -798,8 +930,6 @@ async fn chat_conversations(state: State<'_, AppState>, project_id: String) -> R
     .await?;
     items.sort_by(|a, b| b.updated.cmp(&a.updated));
     items.truncate(convos::MAX_LISTED);
-    #[cfg(debug_assertions)]
-    eprintln!("[convos] {project_id}: {} conversas, atual {current:?}: {:?}", items.len(), items.iter().map(|c| (&c.kind, &c.account, &c.title, &c.origin)).collect::<Vec<_>>());
     Ok(ConvoList { items, current })
 }
 
@@ -820,9 +950,7 @@ async fn chat_open(state: State<'_, AppState>, project_id: String, kind: String,
         return Err(crate::trf!("Esta conversa é da conta {}. Troque a conta para continuar nela.", "This conversation belongs to the {} account. Switch accounts to continue it.", owner.label));
     }
     let chats = state.chats.clone();
-    #[cfg(debug_assertions)]
-    let shown = id.clone();
-    let r = blocking(move || {
+    blocking(move || {
         if kind == "claude" {
             if owner.provider != Provider::Claude {
                 return Err(crate::i18n::tr("conversa inválida", "invalid conversation").to_string());
@@ -844,10 +972,39 @@ async fn chat_open(state: State<'_, AppState>, project_id: String, kind: String,
             Ok(evs)
         }
     })
-    .await?;
-    #[cfg(debug_assertions)]
-    eprintln!("[convos] abrir {shown}: {:?}", r.as_ref().map(|e| e.iter().map(|x| format!("{}:{}", x.kind, x.title.chars().take(40).collect::<String>())).collect::<Vec<_>>()));
-    r
+    .await?
+}
+
+/// Bifurca uma conversa do Claude numa aba: o próximo pedido dela sai de uma cópia da sessão
+/// `parent` (inteira, ou até a entrada `at`). Devolve o fim da conversa de origem para a tela.
+#[tauri::command]
+async fn chat_fork(state: State<'_, AppState>, project_id: String, parent: String, account: String, at: Option<String>) -> Result<Vec<agent::AgentEvent>, String> {
+    if !convos::valid_id(&parent) || at.as_deref().is_some_and(|a| !a.is_empty() && !convos::valid_id(a)) {
+        return Err(crate::i18n::tr("conversa inválida", "invalid conversation").into());
+    }
+    let owner = state.accounts.lock().map_err(|e| e.to_string())?.get(&account).cloned().ok_or(crate::i18n::tr("A conta desta conversa não existe mais no Veocode.", "This conversation's account no longer exists in Veocode."))?;
+    if owner.provider != Provider::Claude {
+        return Err(crate::i18n::tr("Só dá para bifurcar conversas do Claude.", "Only Claude conversations can be forked.").into());
+    }
+    let (current, root) = if project_id == livre::ID {
+        (state.free_account()?.id, livre::dir(&state.data_dir))
+    } else {
+        let p = state.store.lock().map_err(|e| e.to_string())?.get(chat::base_project(&project_id)).cloned().ok_or(crate::i18n::tr("projeto não encontrado", "project not found"))?;
+        (p.account_id.clone(), PathBuf::from(&p.path))
+    };
+    if current != account {
+        return Err(crate::trf!("Esta conversa é da conta {}. Troque a conta para continuar nela.", "This conversation belongs to the {} account. Switch accounts to continue it.", owner.label));
+    }
+    let chats = state.chats.clone();
+    blocking(move || {
+        let file = convos::claude_dir(&accounts::claude::config_dir(&owner), &root).join(format!("{parent}.jsonl"));
+        if !file.is_file() {
+            return Err(crate::i18n::tr("Essa sessão do Claude não existe mais.", "That Claude session no longer exists.").to_string());
+        }
+        chats.fork(&project_id, &account, &parent, at.as_deref())?;
+        Ok(agent::read_session(&root, &account, &file, convos::MAX_STEPS))
+    })
+    .await?
 }
 
 /// Apaga uma conversa anterior: o arquivo dela vai para a Lixeira (dá para recuperar lá).
@@ -1259,7 +1416,12 @@ pub fn run() {
             git_fetch,
             git_github,
             git_commit_files,
+            git_stage,
+            git_commit,
+            git_push,
+            git_pull,
             git_commit_diff,
+            chat_fork,
             git_file_diff,
             settings_get,
             i18n_set,
@@ -1270,6 +1432,7 @@ pub fn run() {
             access_apply,
             access_remove,
             open_claude,
+            open_in_vscode,
             access_preview,
             agent_poll,
             chat_send,
@@ -1345,7 +1508,13 @@ pub fn run() {
             term_write,
             term_resize,
             term_buffer,
-            term_close
+            term_close,
+            term_restart,
+            env_list,
+            env_switch,
+            services_detect,
+            service_start,
+            service_ports
         ])
         .build(tauri::generate_context!())
         .expect("erro ao iniciar o Veocode")

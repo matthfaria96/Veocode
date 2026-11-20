@@ -156,8 +156,8 @@ function Conversations(props: { onClose: () => void }) {
         <button class="convos-refresh inline" onClick={() => refetch()}>{tx("Atualizar")}</button>
       </div>
       <Show when={!data.loading} fallback={<div class="convos-empty"><span class="spinner" /> {tx("Lendo os históricos…")}</div>}>
-        <Show when={data()?.items.length} fallback={<div class="convos-empty">{isTauri ? tx("Nenhuma conversa guardada ainda. Cada conversa aqui fica salva para você voltar nela depois.") : tx("No navegador as conversas não ficam guardadas: abra o app.")}</div>}>
-          <For each={data()!.items}>
+        <Show when={data.latest?.items.length} fallback={<div class="convos-empty">{isTauri ? tx("Nenhuma conversa guardada ainda. Cada conversa aqui fica salva para você voltar nela depois.") : tx("No navegador as conversas não ficam guardadas: abra o app.")}</div>}>
+          <For each={data.latest!.items}>
             {(c, i) => {
               const key = `${c.kind}:${c.id}`;
               const exists = () => accts.list.some((x) => x.id === c.account);
@@ -165,20 +165,20 @@ function Conversations(props: { onClose: () => void }) {
                 <ConvoRow
                   c={c}
                   i={i()}
-                  current={data()?.current === key}
+                  current={data.latest?.current === key}
                   locked={!exists()}
                   opening={opening() === key}
                   disabled={!!opening() || !exists() || livre.busy}
                   title={exists() ? (c.account === freeAccountId() ? tx("Continuar esta conversa") : tx("Continuar (troca para a conta {label})", { label: accountById(c.account).label })) : tx("A conta desta conversa não existe mais")}
                   onOpen={() => open(c)}
-                  onDelete={async () => (await deleteConvos(LIVRE, [c], data()?.current ?? null)) && refetch()}
+                  onDelete={async () => (await deleteConvos(LIVRE, [c], data.latest?.current ?? null)) && refetch()}
                 />
               );
             }}
           </For>
           <div class="convos-foot">
-            <button class="convos-clear" disabled={livre.busy} onClick={async () => (await deleteConvos(LIVRE, [...data()!.items], data()?.current ?? null)) && refetch()}>
-              {tx("Apagar todas ({length})", { length: data()!.items.length })}
+            <button class="convos-clear" disabled={livre.busy} onClick={async () => (await deleteConvos(LIVRE, [...data.latest!.items], data.latest?.current ?? null)) && refetch()}>
+              {tx("Apagar todas ({length})", { length: data.latest!.items.length })}
             </button>
           </div>
         </Show>

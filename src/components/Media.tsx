@@ -1,7 +1,7 @@
 // Imagens na tela: faixa "Imagens novas" no chat, visualizador em tela cheia, prévia no
 // editor e miniaturas nas mensagens enviadas.
 import { ChevronLeft, ChevronRight, ExternalLink, FileCode2, FolderOpen, ImageIcon, Paperclip, X } from "lucide-solid";
-import { createEffect, createResource, createSignal, For, on, onCleanup, Show } from "solid-js";
+import { createEffect, createResource, createSignal, For, on, onCleanup, Show, Suspense } from "solid-js";
 import { Portal } from "solid-js/web";
 import { api, formatSize } from "../api";
 import { addPaths } from "../attachments";
@@ -156,11 +156,14 @@ export function ImageView(props: { pid: string; path: string; size: number }) {
         <button class="link-btn" onClick={() => api.openEntry(props.pid, props.path).catch(err)}><ExternalLink size={12} /> {tx("Abrir com o programa padrão")}</button>
       </div>
       <div class="img-view-stage" classList={{ fit: fit() }}>
-        <Show when={!url.error} fallback={<div class="viewer-msg">{String(url.error?.message ?? url.error)}</div>}>
-          <Show when={url()} fallback={<span class="spinner" />}>
-            <img class="checker" src={url()!} alt={props.path} onLoad={(e) => setDims(`${e.currentTarget.naturalWidth}×${e.currentTarget.naturalHeight}`)} onDblClick={() => openViewer(props.pid, props.path)} />
+        {/* a imagem chegando não esconde o resto da tela */}
+        <Suspense fallback={<span class="spinner" />}>
+          <Show when={!url.error} fallback={<div class="viewer-msg">{String(url.error?.message ?? url.error)}</div>}>
+            <Show when={url()} fallback={<span class="spinner" />}>
+              <img class="checker" src={url()!} alt={props.path} onLoad={(e) => setDims(`${e.currentTarget.naturalWidth}×${e.currentTarget.naturalHeight}`)} onDblClick={() => openViewer(props.pid, props.path)} />
+            </Show>
           </Show>
-        </Show>
+        </Suspense>
       </div>
     </div>
   );

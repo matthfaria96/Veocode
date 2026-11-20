@@ -39,8 +39,8 @@ export default function CommandPalette() {
           if (ctxPanel() !== k) setTimeout(() => toggleCtx(k), 60);
         } }]
       : []),
-    { label: tx("Liberar espaço: caches e históricos das IAs"), hint: tx("Computador → Espaço e memória"), icon: () => <HardDrive size={15} />, run: () => setView("system") },
-    { label: tx("Ver programas e máquinas virtuais que as IAs usam"), hint: tx("Computador → Espaço e memória"), icon: () => <HardDrive size={15} />, run: () => setView("system") },
+    { label: tx("Liberar espaço: caches e históricos das IAs"), hint: tx("Computador → Uso da máquina"), icon: () => <HardDrive size={15} />, run: () => setView("system") },
+    { label: tx("Ver programas e máquinas virtuais que as IAs usam"), hint: tx("Computador → Uso da máquina"), icon: () => <HardDrive size={15} />, run: () => setView("system") },
     { label: tx("Trocar conta de um projeto"), hint: tx("Contas e IAs"), icon: () => <Bot size={15} />, run: () => setView("accounts") },
     { label: tx("Visão geral: todos os projetos com as conversas ao vivo"), hint: tx("Visão geral"), icon: () => <LayoutDashboard size={15} />, run: () => setView("board") },
     { label: tx("Chat livre: conversar sem projeto"), hint: tx("Chat livre"), icon: () => <MessagesSquare size={15} />, run: () => setView("livre") },

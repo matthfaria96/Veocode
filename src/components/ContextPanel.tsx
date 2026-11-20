@@ -1,18 +1,39 @@
-// Painel do contexto da conversa: quanto da janela do Claude está ocupado, por quê, e o botão
-// para compactar. Abre pelo medidor na barra das conversas (ou pela paleta de comandos).
-import { ChevronDown, Gauge, RefreshCw, Shrink, Sparkles, X } from "lucide-solid";
-import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+// Contexto da conversa: quanto da janela do Claude está ocupado, por quê, e o botão para
+// compactar. Abre numa janela por cima de tudo, pelo selo na caixa de mensagem (ou pela paleta).
+import { ChevronDown, Gauge, RefreshCw, Shrink, Sparkles } from "lucide-solid";
+import { createMemo, createSignal, For, Show } from "solid-js";
 import { chatOf, compactChat } from "../chat";
-import { continueFresh } from "../convTabs";
-import { ctxColor, ctxName, ctxOf, isBuffer, isDeferred, isFree, isStale, measure, setCtxPanel, type CtxGroup } from "../contextInfo";
+import { continueFresh, fmtTokens, weightOf } from "../convTabs";
+import { ctxColor, ctxName, ctxOf, ctxPanel, isBuffer, isDeferred, isFree, isStale, measure, toggleCtx, windowOf, type CtxGroup } from "../contextInfo";
 import { niceModel } from "../chatPrefs";
+import { closeModal } from "../modals";
+import Modal, { ModalSection } from "./Modal";
 import { dec, tx, txn } from "../i18n";
-
 /** "141.3k" / "141,3 mil" — curto, com uma casa. */
 export const kTok = (n: number) => (n >= 1_000_000 ? `${dec(n / 1_000_000)}M` : n >= 1000 ? `${dec(n / 1000)}k` : String(n));
 
+/** Selo na caixa de mensagem: quanto a conversa carrega. Abre a janela do contexto. */
+export function ContextChip(props: { k: string }) {
+  // tamanho ao vivo (cada resposta) ou, antes da primeira, o da última medição
+  const ctx = () => chatOf(props.k).context ?? ctxOf(props.k).data?.used ?? null;
+  return (
+    <button
+      class={`composer-chip ctx-chip ${weightOf(ctx())}`}
+      classList={{ on: ctxPanel() === props.k, bare: !ctx() }}
+      aria-haspopup="dialog"
+      title={ctx() ? tx("Esta conversa carrega {v} tokens. Cada mensagem manda tudo de novo para o Claude (com desconto de cache enquanto você está ativo). Clique para ver o que ocupa a janela e compactar.", { v: fmtTokens(ctx()!) }) : tx("Contexto da conversa: o que ocupa a janela do Claude")}
+      onClick={() => toggleCtx(props.k)}
+    >
+      <Gauge size={12} />
+      <Show when={ctx()} fallback={<span>{tx("Contexto")}</span>}>
+        <span>{fmtTokens(ctx()!)}</span>
+        <Show when={windowOf(props.k)}>{(w) => <small class="ctx-chip-pct">{Math.min(100, Math.round((ctx()! / w()) * 100))}%</small>}</Show>
+      </Show>
+    </button>
+  );
+}
+
 export function ContextPanel(props: { pid: string; k: string }) {
-  let el!: HTMLDivElement;
   const e = () => ctxOf(props.k);
   const d = () => e().data;
   const chat = () => chatOf(props.k);
@@ -24,52 +45,58 @@ export function ContextPanel(props: { pid: string; k: string }) {
   const free = () => d()?.categories.find((c) => isFree(c.name));
   const buffer = () => d()?.categories.find((c) => isBuffer(c.name));
   const level = () => (pct() >= 80 ? "high" : pct() >= 55 ? "mid" : "low");
+  const tone = () => (level() === "high" ? "var(--err)" : level() === "mid" ? "var(--warn)" : "var(--ok)");
   const busy = () => chat().busy;
 
-  const close = () => setCtxPanel(null);
-  onMount(() => {
-    const down = (ev: MouseEvent) => {
-      const t = ev.target as HTMLElement;
-      if (!el.contains(t) && !t.closest(".conv-ctx")) close();
-    };
-    const key = (ev: KeyboardEvent) => ev.key === "Escape" && close();
-    setTimeout(() => window.addEventListener("mousedown", down), 0);
-    window.addEventListener("keydown", key);
-    onCleanup(() => (window.removeEventListener("mousedown", down), window.removeEventListener("keydown", key)));
-  });
-
   return (
-    <div class="ctx-panel pop-in" ref={el} role="dialog" aria-label={tx("Contexto da conversa")}>
-      <div class="ctx-head">
-        <Gauge size={14} />
-        <b>{tx("Contexto")}</b>
-        <Show when={d()?.model}><small class="ctx-model">{niceModel(d()!.model!)}</small></Show>
-        <span class="ctx-sp" />
-        <button class="icon-btn small" title={tx("Medir de novo")} disabled={e().loading} onClick={() => void measure(props.k)}>
-          <RefreshCw size={12} class={e().loading ? "spin" : ""} />
-        </button>
-        <button class="icon-btn small" title={tx("Fechar")} onClick={close}><X size={12} /></button>
-      </div>
-
+    <Modal
+      icon={Gauge}
+      tone={tone()}
+      title={tx("Contexto da conversa")}
+      sub={tx("Quanto da janela do Claude esta conversa ocupa. Cada mensagem manda tudo isso de novo.")}
+      onClose={closeModal}
+      aside={
+        <>
+          <Show when={d()?.model}><span class="modal-pill">{niceModel(d()!.model!)}</span></Show>
+          <button class="icon-btn small" title={tx("Medir de novo")} disabled={e().loading} onClick={() => void measure(props.k)}>
+            <RefreshCw size={13} class={e().loading ? "spin" : ""} />
+          </button>
+        </>
+      }
+      note={tx("Compactar resume a conversa até aqui e libera espaço. O Claude continua de onde parou, mas esquece os detalhes.")}
+      actions={
+        <>
+          <button class="ghost-btn small" disabled={!chat().session} title={tx("Abre outra aba com um resumo desta já na caixa")} onClick={() => (closeModal(), continueFresh(props.pid, props.k))}>
+            <Sparkles size={12} /> {tx("Nova com resumo")}
+          </button>
+          <button class="primary-btn small" disabled={busy() || !chat().session} title={!chat().session ? tx("A conversa ainda não começou") : busy() ? tx("Espere o Claude terminar") : ""} onClick={() => (closeModal(), void compactChat(props.k))}>
+            <Shrink size={12} /> {tx("Compactar conversa")}
+          </button>
+        </>
+      }
+    >
       <Show when={d()} fallback={
-        <div class="ctx-empty">
+        <div class="modal-hero ctx-empty">
           <Show when={e().error} fallback={<><span class="spinner" /> {tx("Medindo a conversa… leva alguns segundos e não gasta tokens.")}</>}>
             <span class="ctx-err">{e().error}</span>
           </Show>
         </div>
       }>
-        <div class="ctx-top">
-          <span class={`ctx-pct ${level()}`}>{tx("{v}% usado", { v: Math.round(pct()) })}</span>
-          <small>{kTok(used())} / {kTok(d()!.total)}</small>
-          <Show when={e().loading}><span class="spinner" /></Show>
-          <Show when={!e().loading && isStale(props.k)}><small class="ctx-old" title={tx("A conversa mudou depois da medição")}>{tx("desatualizado")}</small></Show>
-        </div>
-        <div class="ctx-bar" role="img" aria-label={tx("{v}% usado", { v: Math.round(pct()) })}>
-          <For each={cats()}>{(c) => <i style={{ width: `${(c.tokens / d()!.total) * 100}%`, background: ctxColor(c.name) }} title={`${ctxName(c.name)} · ${kTok(c.tokens)}`} />}</For>
-          <span class="ctx-bar-free" />
-          <Show when={buffer()}>{(b) => <i class="ctx-bar-buf" style={{ width: `${(b().tokens / d()!.total) * 100}%` }} title={`${ctxName(b().name)} · ${kTok(b().tokens)}`} />}</Show>
+        <div class="modal-hero ctx-hero">
+          <div class="ctx-top">
+            <span class={`ctx-pct ${level()}`}>{tx("{v}% usado", { v: Math.round(pct()) })}</span>
+            <small>{kTok(used())} / {kTok(d()!.total)}</small>
+            <Show when={e().loading}><span class="spinner" /></Show>
+            <Show when={!e().loading && isStale(props.k)}><small class="ctx-old" title={tx("A conversa mudou depois da medição")}>{tx("desatualizado")}</small></Show>
+          </div>
+          <div class="ctx-bar" role="img" aria-label={tx("{v}% usado", { v: Math.round(pct()) })}>
+            <For each={cats()}>{(c) => <i style={{ width: `${(c.tokens / d()!.total) * 100}%`, background: ctxColor(c.name) }} title={`${ctxName(c.name)} · ${kTok(c.tokens)}`} />}</For>
+            <span class="ctx-bar-free" />
+            <Show when={buffer()}>{(b) => <i class="ctx-bar-buf" style={{ width: `${(b().tokens / d()!.total) * 100}%` }} title={`${ctxName(b().name)} · ${kTok(b().tokens)}`} />}</Show>
+          </div>
         </div>
 
+        <ModalSection title={tx("O que ocupa a janela")} />
         <div class="ctx-cats">
           <For each={cats()}>
             {(c) => (
@@ -114,24 +141,13 @@ export function ContextPanel(props: { pid: string; k: string }) {
         </div>
 
         <Show when={(d()?.groups.length ?? 0) > 0}>
+          <ModalSection title={tx("Por dentro")} info={tx("clique para abrir")} />
           <div class="ctx-groups">
             <For each={d()!.groups}>{(g) => <CtxGroupRow g={g} />}</For>
           </div>
         </Show>
       </Show>
-
-      <div class="ctx-actions">
-        <p>{tx("Compactar resume a conversa até aqui e libera espaço. O Claude continua de onde parou, mas esquece os detalhes.")}</p>
-        <div class="ctx-btns">
-          <button class="primary-btn small" disabled={busy() || !chat().session} title={!chat().session ? tx("A conversa ainda não começou") : busy() ? tx("Espere o Claude terminar") : ""} onClick={() => (close(), void compactChat(props.k))}>
-            <Shrink size={12} /> {tx("Compactar conversa")}
-          </button>
-          <button class="ghost-btn small" disabled={!chat().session} title={tx("Abre outra aba com um resumo desta já na caixa")} onClick={() => (close(), continueFresh(props.pid, props.k))}>
-            <Sparkles size={12} /> {tx("Nova com resumo")}
-          </button>
-        </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 

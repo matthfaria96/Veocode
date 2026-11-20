@@ -5,12 +5,15 @@ import { invoke } from "@tauri-apps/api/core";
 import { createStore, produce } from "solid-js/store";
 import { isTauri } from "./api";
 import { ask } from "./dialogs";
-import { chatOf, chats, listConversations, newChat, ofChat, onChatSession, openConversation, setChatMeta, setInput, stopChat, type Convo } from "./chat";
+import { chatOf, chats, forkInto, newChat, ofChat, onChatSession, openConversation, setChatMeta, setInput, stopChat, type Convo } from "./chat";
 import { projects, setWs, showToast, ws } from "./store";
 import { setMemoryText } from "./memoryStore";
+import { histFind, loadHist } from "./convHist";
+import { customName, setCustomName } from "./forks";
 import { locale, tx } from "./i18n";
 
-export type ConvTab = { key: string; title: string; session?: string | null; account?: string };
+/** `at`: quando a aba nasceu (a lista ordena por isso enquanto ela não tem mensagens). */
+export type ConvTab = { key: string; title: string; session?: string | null; account?: string; at?: number };
 type ProjectTabs = { list: ConvTab[]; active: string };
 
 const KEY = "veocode.convtabs";
@@ -19,11 +22,24 @@ const MAX_RUNNING = 4;
 const MAX_TABS = 8;
 
 const load = (): Record<string, ProjectTabs> => {
+  let all: Record<string, ProjectTabs> = {};
   try {
-    return JSON.parse(localStorage.getItem(KEY) ?? "{}") ?? {};
+    all = JSON.parse(localStorage.getItem(KEY) ?? "{}") ?? {};
   } catch {
     return {};
   }
+  // conversa que nunca mandou nada (um ramo não enviado, uma "nova" esquecida) não volta ao
+  // reabrir o app, como no Claude; a aba principal do projeto fica sempre
+  for (const [pid, pt] of Object.entries(all)) {
+    if (!Array.isArray(pt?.list)) {
+      delete all[pid];
+      continue;
+    }
+    pt.list = pt.list.filter((t) => t.key === pid || t.session);
+    if (!pt.list.length) pt.list = [{ key: pid, title: "Conversa" }];
+    if (!pt.list.some((t) => t.key === pt.active)) pt.active = pt.list[0].key;
+  }
+  return all;
 };
 const [tabs, setTabs] = createStore<Record<string, ProjectTabs>>(load());
 const save = () => {
@@ -66,13 +82,30 @@ export function selectTab(pid: string, key: string) {
   void wake(pid, key);
 }
 
-/** Aba reaberta depois de fechar o app: a conversa dela volta (a sessão do Claude continua). */
+/**
+ * Põe a conversa da aba na tela: ao reabrir o app (a sessão do Claude continua) e ao voltar para
+ * o projeto (a tela do projeto recomeça vazia, mas a aba ainda sabe qual conversa é a dela).
+ */
 async function wake(pid: string, key: string) {
   const t = tabsOf(pid).find((x) => x.key === key);
   const p = projects.find((x) => x.id === pid);
-  if (!isTauri || !t?.session || !p || p.demo || chatOf(key).session) return;
+  if (!isTauri || !t || !p || p.demo) return;
+  const c = chatOf(key);
+  // já está na tela, ou trabalhando agora (o que chega continua aparecendo)
+  if (c.busy || ws.events.some((e) => e.tab === key)) return;
+  // ramo que ainda não mandou nada: a original volta para a tela
+  if (c.fork) {
+    void forkInto(key, c.fork.parent, t.account ?? p.accountId, c.fork.at);
+    return;
+  }
+  if (c.conv?.kind === "api") {
+    await openConversation(key, { id: c.conv.id, kind: "api", account: t.account ?? p.accountId, title: c.conv.title, lastPrompt: null, origin: null, updated: 0, bytes: 0 }, true);
+    return;
+  }
+  const session = c.session ?? t.session;
+  if (!session) return;
   if (t.account && t.account !== p.accountId) return;
-  const ok = await openConversation(key, { id: t.session, kind: "claude", account: p.accountId, title: t.title, lastPrompt: null, origin: null, updated: 0, bytes: 0 }, true);
+  const ok = await openConversation(key, { id: session, kind: "claude", account: p.accountId, title: t.title, lastPrompt: null, origin: null, updated: 0, bytes: 0 }, true);
   // a sessão sumiu (apagada pelo Terminal ou pela lista): a aba recomeça vazia
   if (!ok && !chatOf(key).busy) {
     setTabs(pid, "list", (x) => x.key === key, "session", null);
@@ -80,29 +113,68 @@ async function wake(pid: string, key: string) {
     return;
   }
   // tamanho e idade da conversa, para avisar antes da 1ª mensagem se ela vai sair cara
-  const c = (await listConversations(pid).catch(() => null))?.items.find((x) => x.id === t.session);
-  if (c && chatOf(key).context == null) setChatMeta(key, c.context ?? null, c.updated || null);
+  await loadHist(pid, 60_000);
+  const h = histFind(pid, session);
+  if (h && chatOf(key).context == null) setChatMeta(key, h.context ?? null, h.updated || null);
 }
 /** Ao abrir o projeto: acorda a aba que estava na frente (depois da 1ª leitura do histórico). */
 export const wakeActive = (pid: string) => void window.setTimeout(() => void wake(pid, activeKey(pid)), 1200);
 
 const running = (pid: string) => tabsOf(pid).filter((t) => chatOf(t.key).busy).length;
 
+/** Aba sem nada: sem sessão, sem mensagens na tela, sem texto na caixa e parada. */
+export const isBlankTab = (key: string) => {
+  const c = chatOf(key);
+  return !c.session && !c.conv && !c.fork && !c.busy && !c.input.trim() && !ws.events.some((e) => ofChat(key, e));
+};
+/** Aba que pode receber outra conversa no lugar (como no Claude): parada e sem pergunta pendente. */
+const idle = (key: string) => {
+  const c = chatOf(key);
+  return !c.busy && !c.perms.length && !c.input.trim();
+};
+
+/**
+ * Abre uma aba nova. Cada aba é uma conversa carregada (pode trabalhar enquanto você olha outra).
+ * No limite, a aba parada mais antiga sai (a conversa dela continua na lista).
+ */
 export function newTab(pid: string, title = "Nova conversa"): string | null {
   ensure(pid);
   if (tabsOf(pid).length >= MAX_TABS) {
-    showToast(tx("Até {MAX_TABS} conversas abertas por projeto: conclua ou feche uma", { MAX_TABS }));
-    return null;
+    const old = tabsOf(pid).find((t) => t.key !== activeKey(pid) && idle(t.key) && !chatOf(t.key).fork);
+    if (!old) {
+      showToast(tx("Até {MAX_TABS} conversas trabalhando ou esperando você por projeto: termine ou pare uma", { MAX_TABS }));
+      return null;
+    }
+    void newChat(old.key);
+    setTabs(pid, "list", (l) => l.filter((t) => t.key !== old.key));
   }
   if (running(pid) >= MAX_RUNNING) showToast(tx("{MAX_RUNNING} conversas já estão trabalhando: cada uma gasta do limite da conta", { MAX_RUNNING }));
   const key = `${pid}~${Date.now().toString(36)}`;
   const account = projects.find((x) => x.id === pid)?.accountId;
   setTabs(pid, produce((t: ProjectTabs) => {
-    t.list.push({ key, title, account });
+    t.list.push({ key, title, account, at: Date.now() });
     t.active = key;
   }));
   save();
   return key;
+}
+
+/** Conversa nova: se a da frente já está em branco, é ela mesma. */
+export function startConversation(pid: string): string | null {
+  ensure(pid);
+  const cur = activeKey(pid);
+  if (isBlankTab(cur)) {
+    setTabs(pid, "list", (t) => t.key === cur, produce((t: ConvTab) => ((t.title = "Nova conversa"), (t.session = null), (t.at = Date.now()))));
+    save();
+    return cur;
+  }
+  // outra aba em branco esperando: vai para ela
+  const blank = tabsOf(pid).find((t) => isBlankTab(t.key));
+  if (blank) {
+    selectTab(pid, blank.key);
+    return blank.key;
+  }
+  return newTab(pid);
 }
 
 export function renameTab(pid: string, key: string, title: string) {
@@ -110,6 +182,14 @@ export function renameTab(pid: string, key: string, title: string) {
   if (!clean) return;
   setTabs(pid, "list", (t) => t.key === key, "title", clean);
   save();
+  const s = chatOf(key).session ?? tabsOf(pid).find((t) => t.key === key)?.session;
+  if (s) setCustomName(s, clean);
+}
+
+/** Renomear pela lista: a aba (se estiver aberta) e o nome guardado da conversa. */
+export function renameConversation(pid: string, session: string | null, key: string | null, title: string) {
+  if (key) renameTab(pid, key, title);
+  else if (session) setCustomName(session, title);
 }
 
 /** O primeiro pedido dá nome à aba (enquanto ela tiver o nome padrão). */
@@ -146,17 +226,57 @@ export async function closeTab(pid: string, key: string) {
   await drop(pid, key);
 }
 
-/** Retoma uma conversa do histórico numa aba (a que já está aberta, se tiver). */
-export async function openInTab(pid: string, c: Convo) {
-  const open = tabsOf(pid).find((t) => t.session === c.id || chatOf(t.key).conv?.id === c.id);
-  if (open) return selectTab(pid, open.key);
-  // aba vazia na frente: usa ela
+/**
+ * Retoma uma conversa do histórico (como no Claude: ela aparece no lugar da da frente).
+ * Já carregada numa aba: vai até ela. A da frente parada: a conversa entra no lugar dela.
+ * A da frente trabalhando ou esperando você: abre ao lado, sem atrapalhar.
+ */
+export async function openInTab(pid: string, c: Convo): Promise<boolean> {
+  const open = tabsOf(pid).find((t) => chatOf(t.key).session === c.id || t.session === c.id || chatOf(t.key).conv?.id === c.id);
+  if (open) {
+    selectTab(pid, open.key);
+    return true;
+  }
   const cur = activeTab(pid);
-  const empty = cur && !chatOf(cur.key).session && !chatOf(cur.key).conv && !chatOf(cur.key).busy && !ws.events.some((e) => ofChat(cur.key, e));
-  const key = empty ? cur.key : newTab(pid, c.title.slice(0, 42));
-  if (!key) return;
-  renameTab(pid, key, c.title.slice(0, 42));
-  await openConversation(key, c);
+  const reuse = cur && idle(cur.key) && !chatOf(cur.key).fork;
+  const key = reuse ? cur.key : newTab(pid, c.title.slice(0, 42));
+  if (!key) return false;
+  const ok = await openConversation(key, c);
+  if (!ok) {
+    // não abriu: a aba nova some; a reaproveitada continua como estava
+    if (!reuse) await drop(pid, key);
+    return false;
+  }
+  setTabs(pid, "list", (t) => t.key === key, produce((t: ConvTab) => {
+    t.title = (customName(c.id) ?? c.title).slice(0, 60);
+    t.session = c.kind === "claude" ? c.id : null;
+    t.account = c.account;
+  }));
+  save();
+  return true;
+}
+
+/**
+ * Bifurca uma conversa do Claude numa aba nova: inteira (`at` vazio) ou a partir de um pedido
+ * (`at` = âncora dele; o texto dele volta para a caixa para você mudar). A original não muda.
+ */
+export async function forkConversation(pid: string, parent: { session: string; account: string; title: string }, at?: { anchor: string; text: string }) {
+  // do primeiro pedido: é uma conversa nova com o texto na caixa
+  if (at && at.anchor === "") {
+    const k = startConversation(pid);
+    if (k) setInput(k, at.text);
+    return k;
+  }
+  const key = newTab(pid, tx("{v} (ramo)", { v: (customName(parent.session) ?? parent.title).slice(0, 44) }));
+  if (!key) return null;
+  const ok = await forkInto(key, parent.session, parent.account, at?.anchor ?? null);
+  if (!ok) {
+    await drop(pid, key);
+    return null;
+  }
+  if (at) setInput(key, at.text);
+  requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>(".chat-panel .composer textarea")?.focus());
+  return key;
 }
 
 // ---------------------------------------------------------------- resumo (feito aqui, sem gastar tokens)

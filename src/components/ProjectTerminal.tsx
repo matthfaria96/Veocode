@@ -1,4 +1,4 @@
-import { Bot, FolderOpen, Plus, SquareTerminal, X } from "lucide-solid";
+import { Bot, FolderOpen, Plus, Server, SquareTerminal, X } from "lucide-solid";
 import { createEffect, For, on, onCleanup, onMount, Show, type JSX } from "solid-js";
 import { accountById } from "../accounts";
 import { isTauri, prettyPath } from "../api";
@@ -57,10 +57,15 @@ export default function ProjectTerminal(props: { tools?: JSX.Element }) {
         <div class="pterm-bar">
           <For each={list()}>
             {(t) => (
-              <div class="pterm-tab" classList={{ on: active() === t.id, dead: !t.alive }} onClick={() => setActiveTerm(pid(), t.id)} title={t.alive ? tx("{shell} em {cwd}", { shell: t.shell, cwd: t.cwd }) : tx("O shell terminou")}>
-                <span class="pterm-dot" />
+              <div
+                class="pterm-tab"
+                classList={{ on: active() === t.id, dead: !t.alive, svc: !!t.service }}
+                onClick={() => setActiveTerm(pid(), t.id)}
+                title={t.service ? (t.alive ? tx("Serviço: {cmd} em {cwd}", { cmd: t.cmd ?? "", cwd: t.cwd }) : tx("O serviço parou: reinicie pela aba Ambiente")) : t.alive ? tx("{shell} em {cwd}", { shell: t.shell, cwd: t.cwd }) : tx("O shell terminou")}
+              >
+                <Show when={t.service} fallback={<span class="pterm-dot" />}><Server size={11} class="pterm-svc" /></Show>
                 <span>{t.name}</span>
-                <button title={tx("Fechar este terminal")} onClick={(e) => (e.stopPropagation(), closeTerm(pid(), t.id))}><X size={11} /></button>
+                <button title={t.service ? tx("Parar o serviço e fechar") : tx("Fechar este terminal")} onClick={(e) => (e.stopPropagation(), closeTerm(pid(), t.id))}><X size={11} /></button>
               </div>
             )}
           </For>

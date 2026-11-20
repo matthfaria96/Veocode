@@ -18,6 +18,7 @@ import { handleLivre, LIVRE, newLivre } from "./livre";
 import { confirmAction } from "./dialogs";
 import { feedChat, feedUser } from "./feeds";
 import { tx } from "./i18n";
+import { markForkBorn, setForkParent } from "./forks";
 
 export interface PermissionAsk {
   requestId: string;
@@ -45,6 +46,8 @@ interface ProjectChat {
   /** tokens que a conversa carrega (relidos a cada mensagem) e quando ela mexeu por último */
   context: number | null;
   lastAt: number | null;
+  /** bifurcação esperando o 1º pedido: a conversa de onde sai e quando o pedido foi mandado */
+  fork: { parent: string; at: string | null; sentAt?: number } | null;
 }
 
 /** Conversa anterior do projeto (sessão do Claude ou conversa com API guardada pelo Veocode). */
@@ -59,6 +62,10 @@ export interface Convo {
   bytes: number;
   /** tokens que a conversa carrega (o Claude relê isso a cada mensagem) */
   context?: number | null;
+  /** primeira mensagem (uuid): conversas com a mesma raiz são ramos uma da outra */
+  root?: string | null;
+  /** quando a conversa nasceu (ms) */
+  created?: number;
 }
 
 type ChatEvent =
@@ -74,7 +81,7 @@ type ChatEvent =
   | { kind: "limits"; account: string; limits: Limits }
   | { kind: "error"; message: string };
 
-const blank = (): ProjectChat => ({ busy: false, draft: "", perms: [], error: null, input: "", attach: false, conv: null, session: null, context: null, lastAt: null });
+const blank = (): ProjectChat => ({ busy: false, draft: "", perms: [], error: null, input: "", attach: false, conv: null, session: null, context: null, lastAt: null, fork: null });
 
 /** Projeto de uma chave de conversa ("projeto" ou "projeto~aba"). */
 const baseOf = (key: string) => key.split("~")[0];
@@ -89,13 +96,17 @@ export const projectChat = (pid: string): ProjectChat => {
 };
 /** Algum Claude deste projeto está trabalhando? */
 export const anyBusy = (pid: string) => keysOf(pid).some((k) => chats[k].busy);
-/** Eventos que pertencem a esta conversa. */
+/** Eventos que pertencem a esta conversa: os marcados com a aba dela, ou (sem aba) os da sessão dela.
+ *  Um ramo começa com as mensagens da original marcadas com a aba dele: elas não aparecem na original. */
 export const ofChat = (key: string, e: { tab?: string; session?: string; agent: string }) =>
-  e.agent !== "disco" && (e.tab === key || (!!e.session && e.session === chats[key]?.session));
+  e.agent !== "disco" && (e.tab ? e.tab === key : !!e.session && e.session === chats[key]?.session);
 
 // a aba guarda a sessão para reabrir depois (convTabs.ts registra aqui, sem import circular)
 let sessionHook: ((key: string, session: string) => void) | null = null;
 export const onChatSession = (f: (key: string, session: string) => void) => (sessionHook = f);
+// resposta terminou (a lista de conversas marca como não lida se você não estava olhando)
+let doneHook: ((key: string) => void) | null = null;
+export const onChatDone = (f: (key: string) => void) => (doneHook = f);
 export const [chats, setChats] = createStore<Record<string, ProjectChat>>({});
 
 export const chatOf = (pid: string): ProjectChat => chats[pid] ?? blank();
@@ -120,6 +131,9 @@ let compactEchoes = 0;
 export const compactShown = () => (compactEchoes > 0 ? (compactEchoes--, true) : false);
 
 /** Para o agentFeed: esse pedido/resposta já está na tela? (consome a marca) */
+/** Sessão do Claude aberta inteira numa aba (pela lista ou ao reabrir o app). */
+export const openedWhole = (session: string) => Object.values(chats).some((c) => c.conv?.kind === "claude" && c.conv.id === session);
+
 export function alreadyShown(kind: "user" | "say", id: string, text: string) {
   if (kind === "say" && sayKeys.delete(id)) return true;
   const n = norm(text);
@@ -148,13 +162,21 @@ function handle(pid: string, e: ChatEvent) {
   const here = projectId() === baseOf(pid);
   const acc = accountOf(pid);
   switch (e.kind) {
-    case "session":
+    case "session": {
+      // bifurcação: a sessão nova é o ramo (a original fica intacta)
+      const fork = chats[pid].fork;
+      if (fork && e.sessionId !== fork.parent) {
+        setForkParent(e.sessionId, fork.parent);
+        markForkBorn(e.sessionId, (fork.sentAt ?? Date.now()) - 1000);
+      }
       setChats(pid, produce((c) => {
         c.session = e.sessionId;
         c.lastAt = Date.now();
+        if (fork && e.sessionId !== fork.parent) c.fork = null;
       }));
       sessionHook?.(pid, e.sessionId);
       return;
+    }
     case "usage":
       setChats(pid, produce((c) => {
         c.context = e.context;
@@ -210,6 +232,7 @@ function handle(pid: string, e: ChatEvent) {
         c.perms = [];
         c.lastAt = Date.now();
       }));
+      doneHook?.(pid);
       if (here) {
         setWs("running", anyBusy(baseOf(pid)));
         // o Claude registra o "Terminou" no histórico; para as APIs, registramos aqui
@@ -254,6 +277,7 @@ export async function sendChat(pid: string, rewind?: string) {
     x.draft = "";
     x.error = null;
     x.input = "";
+    if (x.fork && !x.fork.sentAt) x.fork.sentAt = Date.now();
   }));
   clearAtts(pid);
   echoes.push({ text: norm(text), at: Date.now() });
@@ -349,6 +373,7 @@ export async function newChat(pid: string) {
     c.perms = [];
     c.error = null;
     c.conv = null;
+    c.fork = null;
   }));
   if (projectId() === baseOf(pid)) {
     // só os passos desta conversa saem da tela (as outras abas continuam)
@@ -399,6 +424,11 @@ export async function deleteConvos(pid: string, list: Convo[], current: string |
     if (pid === LIVRE) await newLivre();
     else await newChat(pid);
   }
+  // conversas apagadas que estavam carregadas numa aba: a aba recomeça em branco
+  if (pid !== LIVRE) {
+    const gone = new Set(list.map((c) => c.id));
+    for (const k of keysOf(pid)) if (!chats[k].busy && (gone.has(chats[k].session ?? "") || gone.has(chats[k].conv?.id ?? ""))) await newChat(k);
+  }
   showToast(failed ? tx("{done} apagada(s). Uma não deu: {failed}", { done, failed }) : one ? tx("Pronto, a conversa foi para a Lixeira.") : tx("Pronto, {done} conversas foram para a Lixeira.", { done }));
   return done;
 }
@@ -417,9 +447,11 @@ export async function openConversation(pid: string, c: Convo, quiet = false): Pr
       x.perms = [];
       x.error = null;
       x.conv = { kind: c.kind, id: c.id, title: c.title };
+      x.fork = null;
     }));
-    // a conversa que estava nesta aba sai da tela; as outras abas e o disco ficam
-    const mine = new Set(ws.events.filter((e) => ofChat(pid, e)).map((e) => e.id));
+    // a conversa que estava nesta aba sai da tela; as outras abas e o disco ficam. O pedaço
+    // desta sessão que o leitor de fundo já trouxe (o fim dela) dá lugar ao histórico inteiro
+    const mine = new Set(ws.events.filter((e) => ofChat(pid, e) || (c.kind === "claude" && !e.tab && e.session === c.id)).map((e) => e.id));
     setChats(pid, produce((x) => {
       x.session = c.kind === "claude" ? c.id : null;
       x.context = c.context ?? null;
@@ -427,8 +459,6 @@ export async function openConversation(pid: string, c: Convo, quiet = false): Pr
     }));
     if (c.kind === "claude") sessionHook?.(pid, c.id);
     if (projectId() !== baseOf(pid)) return true;
-    // reabrindo a aba ao abrir o projeto: se o histórico já trouxe os passos, não repete
-    if (quiet && c.kind === "claude" && ws.events.some((e) => e.session === c.id)) return true;
     setWs("events", (l) => l.filter((e) => !mine.has(e.id)));
     setWs("running", anyBusy(baseOf(pid)));
     setSeenAgent(true);
@@ -436,6 +466,41 @@ export async function openConversation(pid: string, c: Convo, quiet = false): Pr
     return true;
   } catch (e) {
     if (!quiet) showToast(errMsg(e));
+    return false;
+  }
+}
+
+/**
+ * Bifurca uma conversa do Claude nesta aba (`key`): o próximo pedido sai de uma cópia da sessão
+ * `parent`, inteira ou até antes do pedido com a âncora `at`. A original não muda. As mensagens
+ * da original entram na tela marcadas com esta aba (não aparecem duas vezes na original).
+ */
+export async function forkInto(key: string, parent: string, account: string, at: string | null): Promise<boolean> {
+  ensure(key);
+  if (chats[key].busy) return false;
+  try {
+    const evs = await invoke<AgentEvent[]>("chat_fork", { projectId: key, parent, account, at });
+    setChats(key, produce((x) => {
+      x.draft = "";
+      x.perms = [];
+      x.error = null;
+      x.conv = null;
+      x.session = null;
+      x.context = null;
+      x.lastAt = Date.now();
+      x.fork = { parent, at };
+    }));
+    setForkParent(key, parent);
+    if (projectId() !== baseOf(key)) return true;
+    const mine = new Set(ws.events.filter((e) => ofChat(key, e)).map((e) => e.id));
+    setWs("events", (l) => l.filter((e) => !mine.has(e.id)));
+    setSeenAgent(true);
+    // até o ponto escolhido: do pedido com essa âncora em diante fica de fora
+    const cut = at ? evs.findIndex((e) => e.kind === "user" && e.anchor === at) : -1;
+    for (const e of cut >= 0 ? evs.slice(0, cut) : evs) feedAgentEvent({ ...e, session: "", tab: key });
+    return true;
+  } catch (e) {
+    showToast(errMsg(e));
     return false;
   }
 }

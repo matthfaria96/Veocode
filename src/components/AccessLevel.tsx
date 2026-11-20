@@ -6,12 +6,15 @@ import { accountById, providers } from "../accounts";
 import { api, isTauri, prettyPath } from "../api";
 import { projects, showToast } from "../store";
 import ConfirmDialog from "./ConfirmDialog";
+import Modal, { ModalSection } from "./Modal";
+import { closeModal } from "../modals";
 import { tx } from "../i18n";
 
 const ruleIcon = { permitido: Check, pergunta: CircleHelp, bloqueado: Ban } as const;
 const order: Rule[] = ["permitido", "pergunta", "bloqueado"];
 
-/** Nível de acesso de um projeto: régua, o que cada coisa vira no Claude Code e o arquivo gravado. */
+/** Nível de acesso de um projeto: régua, o que cada coisa vira no Claude Code e o arquivo gravado.
+ *  Abre numa janela por cima de tudo, pelo selo do nível na caixa de mensagem. */
 export default function AccessLevel(props: { projectId: string }) {
   const project = () => projects.find((p) => p.id === props.projectId)!;
   const report = () => acc.reports[props.projectId];
@@ -29,9 +32,37 @@ export default function AccessLevel(props: { projectId: string }) {
   createEffect(on(() => props.projectId, (id) => loadAccess(id)));
 
   const pick = (cap: string, r: Rule, from: Rule) => setCap(props.projectId, cap, r === from ? null : r);
+  // resumo à direita do título: vale de verdade ou não
+  const status = () =>
+    !real() ? { text: tx("Simulação"), tone: "" } : state() === "aplicado" ? { text: tx("Valendo"), tone: "ok" } : state() === "naoAplicado" ? { text: tx("Ainda não vale"), tone: "warn" } : state() === "alterado" ? { text: tx("Mexido fora"), tone: "warn" } : null;
 
   return (
+    <Modal
+      icon={ShieldCheck}
+      tone={lvl().color}
+      title={tx("Nível de acesso")}
+      sub={tx("O que a IA pode fazer em {name} sem pedir licença.", { name: project().name })}
+      onClose={closeModal}
+      aside={<Show when={status()}>{(st) => <span class={`modal-pill ${st().tone}`}>{st().text}</span>}</Show>}
+      note={tx("Bloqueado sempre vence. Cada linha pode ser ajustada sem mudar o nível.")}
+      actions={
+        <Show when={real()}>
+          <Show when={state() === "aplicado" || state() === "alterado"}>
+            <button class="icon-btn" title={tx("Mostrar o arquivo")} onClick={() => api.reveal(report()!.file).catch((e) => showToast(String(e)))}>
+              <FolderOpen size={14} />
+            </button>
+            <button class="icon-btn" title={tx("Tirar as regras do Veocode deste projeto")} onClick={() => setConfirmRemove(true)}>
+              <Undo2 size={14} />
+            </button>
+          </Show>
+          <button class="ghost-btn small" disabled={!isClaude()} title={isClaude() ? tx("Abre o Terminal com o Claude Code nesta pasta, usando a conta do projeto") : tx("Só para contas do Claude")} onClick={() => openClaude(props.projectId)}>
+            <TerminalSquare size={13} /> {tx("Abrir o Claude aqui")}
+          </button>
+        </Show>
+      }
+    >
     <div class="access">
+      <div class="modal-hero access-hero" style={{ "--c": lvl().color }}>
       <div class="access-scale" style={{ "--c": lvl().color, "--i": project().access }}>
         <span class="access-thumb" />
         <For each={accessLevels}>
@@ -57,6 +88,7 @@ export default function AccessLevel(props: { projectId: string }) {
             <small class="mode-chip">{tx("Claude começa em: {v}", { v: modeText[report()!.mode] ?? report()!.mode })}</small>
           </Show>
         </div>
+      </div>
       </div>
 
       {/* ---------------- vale de verdade? */}
@@ -119,6 +151,7 @@ export default function AccessLevel(props: { projectId: string }) {
       </Show>
 
       {/* ---------------- capacidades */}
+      <ModalSection title={tx("O que a IA pode fazer")} info={tx("permitido, pergunta ou bloqueado")} />
       <div class="perm-list">
         <div class="perm fixed">
           <div class="perm-text">
@@ -195,23 +228,6 @@ export default function AccessLevel(props: { projectId: string }) {
         <pre class="rules-preview slide-in">{report()!.preview}</pre>
       </Show>
 
-      {/* ---------------- ações */}
-      <Show when={real()}>
-        <div class="access-actions">
-          <button class="ghost-btn" disabled={!isClaude()} title={isClaude() ? tx("Abre o Terminal com o Claude Code nesta pasta, usando a conta do projeto") : tx("Só para contas do Claude")} onClick={() => openClaude(props.projectId)}>
-            <TerminalSquare size={14} /> {tx("Abrir o Claude aqui")}
-          </button>
-          <Show when={state() === "aplicado" || state() === "alterado"}>
-            <button class="icon-btn" title={tx("Mostrar o arquivo")} onClick={() => api.reveal(report()!.file).catch((e) => showToast(String(e)))}>
-              <FolderOpen size={14} />
-            </button>
-            <button class="icon-btn" title={tx("Tirar as regras do Veocode deste projeto")} onClick={() => setConfirmRemove(true)}>
-              <Undo2 size={14} />
-            </button>
-          </Show>
-        </div>
-      </Show>
-
       <Show when={confirmRemove()}>
         <ConfirmDialog
           title={tx("Tirar as regras do Veocode?")}
@@ -227,5 +243,6 @@ export default function AccessLevel(props: { projectId: string }) {
         </ConfirmDialog>
       </Show>
     </div>
+    </Modal>
   );
 }

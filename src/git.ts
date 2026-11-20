@@ -6,8 +6,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { createSignal } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import { isTauri } from "./api";
-import { setProjMode } from "./layoutMode";
-import { projects } from "./store";
+import { setCodeSideOpen, setCodeSideTab, setDebugOpen, setDebugTab, setProjMode } from "./layoutMode";
+import { projectId, projects } from "./store";
+import { openAccess } from "./modals";
 import { defaultFileContent, fileContents } from "./data/mock";
 import { tx, txn } from "./i18n";
 
@@ -145,7 +146,10 @@ interface Entry {
   ghLoading: boolean;
   /** quando o GitHub foi lido (ms) */
   ghAt: number;
+  /** ação rodando agora (preparar, commit, enviar, baixar) */
+  acting: GitAction | null;
 }
+export type GitAction = "stage" | "commit" | "push" | "pull";
 
 interface State {
   byProject: Record<string, Entry>;
@@ -155,18 +159,20 @@ interface State {
 /** Aba aberta no painel da direita (Agente, Acesso ou Git); a barra lateral também abre a do Git. */
 /** Aba do chat (conversa ou nível de acesso). */
 export const [gitTab, setChatTab] = createSignal<"chat" | "access">("chat");
-/** Aba da lateral da tela Projetos: arquivos, Git ou Rastro. */
-export const [sideTab, setSideTab] = createSignal<"files" | "git" | "trail">("files");
-/** Abre a aba pedida no lugar certo (Git e Rastro ficam na lateral; conversa e nível, no chat). */
+/** Abre a aba pedida no lugar certo: o Git no painel da direita do modo Código, os arquivos na
+ *  lateral dele; a conversa, o nível de acesso e o Rastro, no modo IA. */
 export function setGitTab(t: "chat" | "access" | "trail" | "git" | "files") {
-  // arquivos, Git e Rastro moram no modo Código; a conversa e o nível de acesso, no modo IA
-  if (t === "git" || t === "trail" || t === "files") (setSideTab(t), setProjMode("code"));
+  if (t === "access") (setChatTab("chat"), setProjMode("ai"), openAccess(projectId()));
+  else if (t === "git") (setCodeSideTab("git"), setCodeSideOpen(true), setProjMode("code"));
+  // o Rastro (o que a IA deixou) mora no painel do modo IA
+  else if (t === "trail") (setDebugTab("trail"), setDebugOpen(true), setProjMode("ai"));
+  else if (t === "files") setProjMode("code");
   else (setChatTab(t), setProjMode("ai"));
 }
 
 export const [git, setGit] = createStore<State>({ byProject: {}, summaries: {} });
 
-const entry = (pid: string): Entry => git.byProject[pid] ?? { status: null, error: "", loading: false, fetching: false, gh: null, ghLoading: false, ghAt: 0 };
+const entry = (pid: string): Entry => git.byProject[pid] ?? { status: null, error: "", loading: false, fetching: false, gh: null, ghLoading: false, ghAt: 0, acting: null };
 const patch = (pid: string, p: Partial<Entry>) => setGit("byProject", pid, { ...entry(pid), ...p });
 export const gitOf = (pid: string) => entry(pid);
 
@@ -196,6 +202,40 @@ export async function fetchGit(pid: string): Promise<string | null> {
     patch(pid, { fetching: false });
     return msg(e);
   }
+}
+
+/** Roda uma ação do git (sempre por um clique) e devolve o erro, se houve. A tela atualiza com o status novo. */
+async function act(pid: string, what: GitAction, cmd: string, args: Record<string, unknown> = {}): Promise<string | null> {
+  if (entry(pid).acting) return tx("Espere o git terminar o que está fazendo");
+  if (!real(pid)) return tx("Na simulação o git não muda. Adicione uma pasta sua para usar de verdade.");
+  patch(pid, { acting: what });
+  try {
+    const s = await invoke<GitStatus>(cmd, { projectId: pid, ...args });
+    patch(pid, { status: s, error: "", acting: null });
+    setGit("summaries", pid, toSummary(s));
+    return null;
+  } catch (e) {
+    patch(pid, { acting: null });
+    void loadGit(pid, true);
+    return msg(e);
+  }
+}
+/** Põe (on) ou tira arquivos do próximo commit. Caminhos como o status mostra (da raiz do repositório). */
+export const stageFiles = (pid: string, paths: string[], on: boolean) => act(pid, "stage", "git_stage", { paths, on });
+/** Commit; `all` prepara tudo antes (quando nada foi preparado à mão). */
+export const commitGit = (pid: string, message: string, all: boolean) => act(pid, "commit", "git_commit", { message, all });
+export const pushGit = (pid: string) => act(pid, "push", "git_push");
+export const pullGit = (pid: string) => act(pid, "pull", "git_pull");
+
+/** Mensagem do commit sendo escrita, por projeto (trocar de aba ou de projeto não perde). */
+const [drafts, setDrafts] = createStore<Record<string, string>>({});
+export const commitDraft = (pid: string) => drafts[pid] ?? "";
+export const setCommitDraft = (pid: string, v: string) => setDrafts(pid, v);
+
+/** Quanto há para resolver: mudanças sem commit, commits para enviar e para baixar. */
+export function pendingOf(pid: string) {
+  const s = git.summaries[pid];
+  return { changed: s?.changed ?? 0, ahead: s?.ahead ?? 0, behind: s?.behind ?? 0, conflicts: s?.conflicts ?? 0, repo: !!s?.repo };
 }
 
 export async function loadGithub(pid: string, force = false) {

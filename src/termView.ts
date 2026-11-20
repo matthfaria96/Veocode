@@ -90,12 +90,14 @@ setSink({
   write(id, data) {
     const l = live.get(id);
     if (l) return l.xt.write(data);
+    // um serviço pode rodar horas sem ninguém olhar: fica só o fim
     const w = waiting.get(id) ?? [];
     w.push(data);
-    waiting.set(id, w);
+    waiting.set(id, w.length > 600 ? w.slice(-400) : w);
   },
   exit(id) {
-    live.get(id)?.xt.write(tx("\r\n\u001b[90m[o shell terminou: feche esta aba ou abra outra]\u001b[0m\r\n"));
+    const service = Object.values(terms.byProject).some((l) => l.some((t) => t.id === id && t.service));
+    live.get(id)?.xt.write(service ? tx("\r\n\u001b[90m[o serviço parou: reinicie pela aba Ambiente]\u001b[0m\r\n") : tx("\r\n\u001b[90m[o shell terminou: feche esta aba ou abra outra]\u001b[0m\r\n"));
   },
   dispose(id) {
     const l = live.get(id);
@@ -128,6 +130,8 @@ export async function loadExisting(pid: string) {
     for (const t of list) {
       if (live.has(t.id)) continue;
       const l = create(t.id);
+      // o que o Rust guardou já inclui o que estava esperando aqui
+      waiting.delete(t.id);
       l.xt.write(await invoke<string>("term_buffer", { id: t.id }).catch(() => ""));
     }
     setTerms(produce((s) => {
@@ -142,7 +146,14 @@ export async function loadExisting(pid: string) {
 
 /** Põe o terminal no painel, ajusta ao tamanho e redesenha (pode ter ficado fora da tela). */
 export function mount(id: string, into: HTMLElement) {
-  const l = live.get(id) ?? create(id);
+  let l = live.get(id);
+  if (!l) {
+    // aberto fora do painel (um serviço): o que ele já mostrou estava esperando
+    l = create(id);
+    const w = waiting.get(id);
+    if (w) l.xt.write(w.join(""));
+    waiting.delete(id);
+  }
   attach(l, into);
   l.xt.refresh(0, l.xt.rows - 1);
   l.xt.focus();

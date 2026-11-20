@@ -289,7 +289,7 @@ pub fn status(a: &Account, cache: &mut UsageCache) -> AccountStatus {
 /// Abre um terminal já apontado para a pasta da conta, rodando `claude`.
 /// O login acontece lá, com o próprio Claude Code — o Veocode não vê senha nem token.
 pub fn open_login(a: &Account) -> Result<(), String> {
-    open_terminal(a, None)
+    open_terminal(a, None, None)
 }
 
 // ---------------------------------------------------------------- login pelo navegador
@@ -383,7 +383,12 @@ pub fn cancel_login(id: &str) {
 
 /// Abre um terminal com o Claude Code usando a pasta desta conta. Com `cwd`, já dentro do
 /// projeto (o Claude lê o .claude/settings.local.json de lá, onde está o nível de acesso).
-pub fn open_terminal(a: &Account, cwd: Option<&Path>) -> Result<(), String> {
+/// `resume`: id de uma sessão para continuar (`claude --resume <id>`); só letras, números e "-".
+pub fn open_terminal(a: &Account, cwd: Option<&Path>, resume: Option<&str>) -> Result<(), String> {
+    let resume = resume.filter(|r| !r.is_empty());
+    if resume.is_some_and(|r| !r.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') || r.len() > 80) {
+        return Err(crate::i18n::tr("conversa inválida", "invalid conversation").into());
+    }
     let claude = crate::xray::util::which("claude").ok_or(
         crate::i18n::tr("Não achei o comando `claude`. Instale o Claude Code (https://claude.com/claude-code) e tente de novo.", "Couldn't find the `claude` command. Install Claude Code (https://claude.com/claude-code) and try again."),
     )?;
@@ -405,7 +410,10 @@ pub fn open_terminal(a: &Account, cwd: Option<&Path>) -> Result<(), String> {
         script += &format!("echo {}\n", q(&crate::trf!("Veocode · conta: {}", "Veocode · account: {}", a.label)));
         script += &format!("echo {}\n", q(&crate::trf!("Pasta: {cwd_s}", "Folder: {cwd_s}")));
         script += crate::i18n::tr("echo 'Se o Claude pedir login, digite /login.'\necho\n", "echo 'If Claude asks you to sign in, type /login.'\necho\n");
-        script += &format!("cd {} || exit 1\nexec {}\n", q(&cwd_s), q(&claude));
+        match resume {
+            Some(r) => script += &format!("cd {} || exit 1\nexec {} --resume {}\n", q(&cwd_s), q(&claude), q(r)),
+            None => script += &format!("cd {} || exit 1\nexec {}\n", q(&cwd_s), q(&claude)),
+        }
         let file = std::env::temp_dir().join(format!("veocode-claude-{}.command", a.id));
         fs::write(&file, script).map_err(|e| e.to_string())?;
         use std::os::unix::fs::PermissionsExt;
@@ -418,6 +426,9 @@ pub fn open_terminal(a: &Account, cwd: Option<&Path>) -> Result<(), String> {
     {
         let mut c = std::process::Command::new("cmd");
         c.args(["/c", "start", "Veocode - Claude", "cmd", "/k"]).arg(&claude);
+        if let Some(r) = resume {
+            c.args(["--resume", r]);
+        }
         if a.config_dir.is_some() {
             c.env("CLAUDE_CONFIG_DIR", &dir_s);
         }

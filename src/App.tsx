@@ -1,8 +1,13 @@
-import { createEffect, lazy, Match, on, onCleanup, onMount, Show, Suspense, Switch } from "solid-js";
+import { createEffect, ErrorBoundary, lazy, Match, on, onCleanup, onMount, Show, Suspense, Switch } from "solid-js";
+import { ViewCrash } from "./components/ViewCrash";
+import { newConversationHere } from "./components/ConvSidebar";
+import { projMode } from "./layoutMode";
+import { newEntry } from "./fileActions";
 import { acc, loadAccess } from "./access";
 import TitleBar from "./components/TitleBar";
 import Rail from "./components/Rail";
 import Dialogs from "./components/Dialogs";
+import ChatModals from "./components/ChatModals";
 import CloseProjectHost from "./components/CloseProject";
 import { MediaViewer } from "./components/Media";
 import { trackMedia } from "./media";
@@ -14,13 +19,13 @@ import Livre from "./views/Livre";
 import Board from "./views/Board";
 import { loadSettings } from "./settings";
 import { watchLanguage } from "./i18n";
-import { helpOpen, loadProjects, paletteOpen, projectId, setHelpOpen, setPaletteOpen, setView, showToast, toast, view } from "./store";
+import { helpOpen, loadProjects, paletteOpen, setHelpOpen, setPaletteOpen, setView, showToast, toast, view } from "./store";
 import { loadSummaries } from "./git";
 import { api } from "./api";
 import { handleFsChange } from "./realProject";
 import { refreshProcs } from "./xray";
 import { loadAccounts, refreshStatuses } from "./accounts";
-import { newChat, startChatEvents } from "./chat";
+import { startChatEvents } from "./chat";
 import { newLivre } from "./livre";
 import { startTermEvents } from "./terminal";
 import { startNotices } from "./attention";
@@ -53,14 +58,16 @@ export default function App() {
     if (e.key === "Escape") setPaletteOpen(false);
     // ⌘1…5 trocam de tela; ⌘N começa uma conversa nova onde você está
     if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
-      const views = ["board", "workspace", "livre", "accounts", "inventory"] as const;
+      const views = ["board", "workspace", "livre", "accounts", "system"] as const;
       const n = Number(e.key);
       if (n >= 1 && n <= views.length) {
         e.preventDefault();
         setView(views[n - 1]);
       } else if (e.key.toLowerCase() === "n" && (view() === "workspace" || view() === "livre")) {
         e.preventDefault();
-        void (view() === "livre" ? newLivre() : newChat(projectId()));
+        if (view() === "livre") void newLivre();
+        else if (projMode() === "code") void newEntry("", false);
+        else newConversationHere();
       }
     }
     // F1 (ou ? fora de campos de texto) abre a ajuda na tela atual
@@ -129,6 +136,7 @@ export default function App() {
       <div class="app-body">
         <Rail />
         <main class="stage">
+          <ErrorBoundary fallback={(err, reset) => <ViewCrash err={err} reset={reset} />}>
           <Suspense>
           <Switch>
             <Match when={view() === "workspace"}>
@@ -154,6 +162,7 @@ export default function App() {
             </Match>
           </Switch>
           </Suspense>
+          </ErrorBoundary>
         </main>
       </div>
       <Show when={helpOpen()}>
@@ -162,6 +171,7 @@ export default function App() {
       <Show when={paletteOpen()}>
         <CommandPalette />
       </Show>
+      <ChatModals />
       <Dialogs />
       <SwitchAccountDialog />
       <CloseProjectHost />
