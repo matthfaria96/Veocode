@@ -1,4 +1,4 @@
-import { AlertTriangle, Brain, Eye, ArrowLeft, Ban, Check, ChevronDown, FileCode2, History, Loader2, Maximize2, MessageSquarePlus, Pencil, Paperclip, Plus, SendHorizontal, Shrink, ShieldCheck, Square, TerminalSquare, X } from "lucide-solid";
+import { AlertTriangle, ArrowUp, Brain, Eye, ArrowLeft, Ban, Check, ChevronDown, FileCode2, History, Loader2, Maximize2, MessageSquarePlus, Pencil, Paperclip, Plus, SendHorizontal, Shrink, ShieldCheck, Square, TerminalSquare, X } from "lucide-solid";
 import { createEffect, createMemo, createSignal, For, Match, on, Show, Switch } from "solid-js";
 import { accessLevels } from "../data/mock";
 import { accountById } from "../accounts";
@@ -28,6 +28,7 @@ import ActivityIcon, { kindColor } from "./ActivityIcon";
 import { AgentChipButton, AgentMenu } from "./AgentMenu";
 import MsgTools, { focusComposer } from "./MsgTools";
 import Markdown from "./Markdown";
+import Thinking from "./Thinking";
 import { tx, txn } from "../i18n";
 import { gridFit, spanOf, useWidth } from "../gridFit";
 
@@ -379,7 +380,7 @@ function ChatTail(props: { k?: string }) {
   return (
     <>
       <Show when={chat().busy && !chat().perms.length}>
-        <Show when={chat().draft} fallback={<div class="typing pop-in" style={{ "--c": a().color }}><span /><span /><span /></div>}>
+        <Show when={chat().draft} fallback={<Thinking color={a().color} />}>
           <div class="bubble agent say streaming" style={{ "--c": a().color }}>{chat().draft.replace(/\*\*/g, "")}</div>
         </Show>
       </Show>
@@ -512,7 +513,7 @@ function Composer(props: { onLevel: () => void; k?: string; compact?: boolean })
           when={chat().busy}
           fallback={
             <button class="send-btn" disabled={!demo() && !chat().input.trim() && !attsOf(k()).length} title={tx("Enviar (Enter)")} onClick={send}>
-              <SendHorizontal size={14} />
+              <ArrowUp size={16} stroke-width={2.4} />
             </button>
           }
         >
@@ -648,7 +649,6 @@ export default function ChatPanel(props: { slim?: boolean; docked?: boolean }) {
     () => shown()[shown().length - 1]?.kind === "user",
   );
 
-  const userMsgs = () => ws.events.filter((e) => e.kind === "user");
   const work = () => ws.events.filter((e) => e.kind !== "user" && e.kind !== "done");
   const done = () => ws.events.find((e) => e.kind === "done");
 
@@ -692,29 +692,8 @@ export default function ChatPanel(props: { slim?: boolean; docked?: boolean }) {
               <Show when={ws.events.length === 0}>
                 <div class="chat-empty">{ws.paused ? tx("Simulação parada: aperte Assistir (em cima do editor) para ver um agente de exemplo trabalhando.") : tx("O agente de exemplo vai começar em instantes…")}</div>
               </Show>
-              <For each={userMsgs()}>{(m) => <div class="bubble user pop-in">{m.title}</div>}</For>
-              <Show when={work().length > 0}>
-                <div class="work-card pop-in">
-                  <div class="work-head">
-                    <span class="work-dot" classList={{ live: ws.running }} />
-                    {ws.running ? tx("Trabalhando…") : tx("Concluído")}
-                    <small>{tx("{length} passos", { length: work().length })}</small>
-                  </div>
-                  <For each={work()}>
-                    {(e) => (
-                      <div class="work-row slide-in" classList={{ running: e.status === "running" }}>
-                        <span class="work-icon" style={{ color: kindColor[e.kind] }}>
-                          <ActivityIcon kind={e.kind} />
-                        </span>
-                        <span class="work-title">{e.title}</span>
-                        <Show when={e.status === "running"} fallback={<small class="work-detail">{e.detail}</small>}>
-                          <span class="spinner" />
-                        </Show>
-                      </div>
-                    )}
-                  </For>
-                </div>
-              </Show>
+              <RealConversation events={() => ws.events} tail={false} />
+              <Show when={!ws.paused && ws.running && ws.events.length > 0 && work().length === 0}><Thinking color={account().color} /></Show>
               <Show when={done()}>
                 {(d) => (
                   <div class="bubble agent pop-in">

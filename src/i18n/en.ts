@@ -2130,6 +2130,7 @@ const en: Record<string, string> = {
   "Linhas que entraram e saíram desde o último commit": "Lines added and removed since the last commit",
   "Revisar tudo": "Review all",
   "Ver todas as mudanças numa tela só, um arquivo embaixo do outro": "See every change on one screen, one file below the other",
+  "Pensando…": "Thinking…",
 };
 
 export default en;

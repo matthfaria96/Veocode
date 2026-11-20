@@ -1,4 +1,5 @@
-import { AlertTriangle, ArrowLeft, Ban, Check, Eye, History, HardDrive, MessageSquarePlus, MessagesSquare, Paperclip, SendHorizontal, ShieldCheck, Square, X } from "lucide-solid";
+import { AlertTriangle, ArrowLeft, ArrowUp, Ban, Check, Eye, History, HardDrive, MessageSquarePlus, MessagesSquare, Paperclip, ShieldCheck, Square, X } from "lucide-solid";
+import Thinking from "../components/Thinking";
 import { createEffect, createResource, createSignal, For, Match, on, onMount, Show, Switch } from "solid-js";
 import { accountById, accts } from "../accounts";
 import type { ActivityEvent } from "../store";
@@ -238,7 +239,7 @@ export default function Livre() {
             <For each={livre.items}>{(it) => <Message item={it} />}</For>
           </Show>
           <Show when={livre.busy && !livre.perms.length}>
-            <Show when={livre.draft} fallback={<div class="typing pop-in" style={{ "--c": a().color }}><span /><span /><span /></div>}>
+            <Show when={livre.draft} fallback={<Thinking color={a().color} />}>
               <div class="livre-msg agent streaming" style={{ "--c": a().color }}>
                 <ProviderMark id={a().id} size={22} />
                 <div class="livre-say"><Markdown text={livre.draft} /></div>
@@ -319,7 +320,7 @@ export default function Livre() {
                 when={livre.busy}
                 fallback={
                   <button class="send-btn" title={tx("Enviar (Enter)")} disabled={!livre.input.trim() && !attsOf(LIVRE).length} onClick={send}>
-                    <SendHorizontal size={14} />
+                    <ArrowUp size={16} stroke-width={2.4} />
                   </button>
                 }
               >

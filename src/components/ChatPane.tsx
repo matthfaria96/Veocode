@@ -1,10 +1,11 @@
 import { dismissable } from "../dismiss";
-import { AlertTriangle, ArrowLeftRight, Ban, Check, ChevronDown, Layers, Maximize2, MessageSquarePlus, Minimize2, MoreHorizontal, PanelRightOpen, Paperclip, Pin, GripVertical, GitBranch, Sparkles, SendHorizontal, ShieldCheck, Square, X } from "lucide-solid";
+import { AlertTriangle, ArrowLeftRight, Ban, Check, ChevronDown, Layers, Maximize2, MessageSquarePlus, Minimize2, MoreHorizontal, PanelRightOpen, Paperclip, Pin, GripVertical, GitBranch, Sparkles, ArrowUp, ShieldCheck, Square, X } from "lucide-solid";
 import { createEffect, createMemo, createSignal, For, on, Show } from "solid-js";
 import { accountById } from "../accounts";
 import { closePane, isPinned, maximized, panes, projectState, replacePane, setMaximized, swapPanes, togglePin } from "../board";
 import { attsOf, dropPid, pasteFiles, pickFiles } from "../attachments";
 import AttachBar from "./AttachBar";
+import Thinking from "./Thinking";
 import { activeKey, nameFromPrompt, tabsOf } from "../convTabs";
 import { setFocusMode } from "../layoutMode";
 import { MicButton } from "./Mic";
@@ -189,7 +190,7 @@ export default function ChatPane(props: { pid: string; index: number; span?: num
             </For>
           </Show>
           <Show when={chat().busy && !chat().perms.length}>
-            <Show when={chat().draft} fallback={<div class="typing" style={{ "--c": a().color }}><span /><span /><span /></div>}>
+            <Show when={chat().draft} fallback={<Thinking color={a().color} />}>
               <div class="bubble agent say streaming" style={{ "--c": a().color }}>{chat().draft.replace(/\*\*/g, "")}</div>
             </Show>
           </Show>
@@ -244,7 +245,7 @@ export default function ChatPane(props: { pid: string; index: number; span?: num
         <MicButton target={ck()} compact />
         <Show
           when={chat().busy}
-          fallback={<button class="send-btn" disabled={!chat().input.trim() && !attsOf(ck()).length} title={tx("Enviar (Enter)")} onClick={send}><SendHorizontal size={14} /></button>}
+          fallback={<button class="send-btn" disabled={!chat().input.trim() && !attsOf(ck()).length} title={tx("Enviar (Enter)")} onClick={send}><ArrowUp size={15} stroke-width={2.4} /></button>}
         >
           <button class="send-btn stop" title={tx("Parar (Esc)")} onClick={() => void stopChat(ck())}><Square size={12} /></button>
         </Show>
