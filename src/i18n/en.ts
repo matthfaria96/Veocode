@@ -1349,6 +1349,7 @@ const en: Record<string, string> = {
   "Arquivos mudados": "Files changed",
   "Passos das IAs em todos os projetos, hora a hora, nas últimas 24 h": "AI steps across all projects, hour by hour, over the last 24 h",
   "24 h atrás": "24 h ago",
+  "há {n} h": "{n} h ago",
   "Comece por aqui": "Start here",
   "Achamos estas pastas onde você já usou o Claude. Um clique e ela vira projeto.": "We found these folders where you've already used Claude. One click and it becomes a project.",
   "Escolha uma pasta do seu computador para trabalhar com a IA.": "Choose a folder on your computer to work on with the AI.",

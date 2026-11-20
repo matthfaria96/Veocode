@@ -1,6 +1,6 @@
-import { Activity, ArrowUpRight, FolderMinus, Maximize, FolderOpen, FolderPlus, GitBranch, GripVertical, Hand, LayoutGrid, MoreHorizontal, Plus, Sparkles, SquareArrowOutUpRight, Zap } from "lucide-solid";
+import { ArrowUpRight, FolderMinus, Maximize, FolderOpen, FolderPlus, GripVertical, Hand, LayoutGrid, MoreHorizontal, Plus, SquareArrowOutUpRight } from "lucide-solid";
 import { askCloseProject } from "../components/CloseProject";
-import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, Index, on, onCleanup, onMount, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import { accountById } from "../accounts";
 import { api, isTauri } from "../api";
@@ -172,54 +172,75 @@ export default function Board() {
       }
       return close ? `${d} L ${W} ${H} L 0 ${H} Z` : d;
     };
-    const tiles = () => [
-      { label: tx("Projetos"), value: real().length, icon: FolderPlus, color: "#8b7bff" },
-      { label: tx("Trabalhando agora"), value: working(), icon: Zap, color: "#34d399", live: working() > 0 },
-      { label: tx("Esperando você"), value: asking(), icon: Hand, color: "#fbbf24", live: asking() > 0 },
-      { label: tx("Passos da IA hoje"), value: steps(), icon: Activity, color: "#38bdf8" },
-      { label: tx("Arquivos mudados"), value: changed(), icon: GitBranch, color: "#f472b6" },
+    // Os números ficam num array fixo: cada cartão nasce uma vez e só o valor muda
+    // (antes o array era recriado a cada leitura e os cartões sumiam e voltavam).
+    const stats: { label: () => string; value: () => number; tone?: "ok" | "warn" }[] = [
+      { label: () => tx("Projetos"), value: () => real().length },
+      { label: () => tx("Trabalhando agora"), value: working, tone: "ok" },
+      { label: () => tx("Esperando você"), value: asking, tone: "warn" },
+      { label: () => tx("Passos da IA hoje"), value: steps },
+      { label: () => tx("Arquivos mudados"), value: changed },
     ];
+    const tone = () => (asking() ? "warn" : working() ? "ok" : "idle");
+    const date = () => {
+      const d = today();
+      return d.charAt(0).toUpperCase() + d.slice(1);
+    };
+    // leitura do gráfico ao passar o mouse
+    const [hover, setHover] = createSignal<number | null>(null);
+    const pointAt = (i: number) => {
+      const h = hours();
+      const max = Math.max(1, ...h);
+      return { x: (i / 23) * 100, y: ((H - 6 - (h[i] / max) * (H - 14)) / H) * 100 };
+    };
+    const onMove = (e: PointerEvent) => {
+      const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      setHover(Math.max(0, Math.min(23, Math.round(((e.clientX - r.left) / r.width) * 23))));
+    };
     return (
       <section class="home-hero">
-        <span class="cx-orb a" />
-        <span class="cx-orb b" />
         <div class="home-hero-top">
           <div class="home-hello">
-            <small class="cx-eyebrow"><Sparkles size={12} /> {today()}</small>
+            <span class="home-date">{date()}</span>
             <h1>{greet()}</h1>
-            <p>{line()}</p>
+            <p class="home-status" data-tone={tone()}><i />{line()}</p>
           </div>
-          <div class="home-chart" title={tx("Passos das IAs em todos os projetos, hora a hora, nas últimas 24 h")}>
-            <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
-              <defs>
-                <linearGradient id="home-area" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stop-color="var(--accent)" stop-opacity="0.45" />
-                  <stop offset="100%" stop-color="var(--accent)" stop-opacity="0" />
-                </linearGradient>
-                <linearGradient id="home-line" x1="0" y1="0" x2="1" y2="0">
-                  <stop offset="0%" stop-color="#38bdf8" />
-                  <stop offset="100%" stop-color="#a78bfa" />
-                </linearGradient>
-              </defs>
-              <path d={path(true)} fill="url(#home-area)" class="home-area" />
-              <path d={path(false)} fill="none" stroke="url(#home-line)" stroke-width="2.2" class="home-line" vector-effect="non-scaling-stroke" />
-            </svg>
-            <div class="home-chart-axis"><span>{tx("24 h atrás")}</span><span>12 h</span><span>{tx("agora")}</span></div>
+          <div class="home-chart" title={tx("Passos das IAs em todos os projetos, hora a hora, nas últimas 24 h")} onPointerMove={onMove} onPointerLeave={() => setHover(null)}>
+            <div class="home-chart-plot">
+              <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
+                <defs>
+                  <linearGradient id="home-area" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stop-color="var(--accent)" stop-opacity="0.16" />
+                    <stop offset="100%" stop-color="var(--accent)" stop-opacity="0" />
+                  </linearGradient>
+                </defs>
+                <line x1="0" x2={W} y1={H - 0.5} y2={H - 0.5} class="home-base" vector-effect="non-scaling-stroke" />
+                <path d={path(true)} fill="url(#home-area)" class="home-area" />
+                <path d={path(false)} fill="none" class="home-line" vector-effect="non-scaling-stroke" />
+              </svg>
+              <Show when={hover() !== null}>
+                <span class="home-guide" style={{ left: `${pointAt(hover()!).x}%` }} />
+                <span class="home-dot" style={{ left: `${pointAt(hover()!).x}%`, top: `${pointAt(hover()!).y}%` }} />
+              </Show>
+            </div>
+            <div class="home-chart-axis" classList={{ reading: hover() !== null }}>
+              <span>{tx("24 h atrás")}</span><span>12 h</span><span>{tx("agora")}</span>
+              <Show when={hover() !== null}>
+                <span class="home-readout" classList={{ end: hover()! > 18, start: hover()! < 5 }} style={{ left: `${pointAt(hover()!).x}%` }}>
+                  <b>{txn(hours()[hover()!], "{n} passo", "{n} passos")}</b> · {hover() === 23 ? tx("agora") : tx("há {n} h", { n: 23 - hover()! })}
+                </span>
+              </Show>
+            </div>
           </div>
         </div>
-        <div class="home-tiles">
-          <For each={tiles()}>
-            {(t, i) => (
-              <div class="home-tile" classList={{ live: !!t.live }} style={{ "--k": t.color, "--i": i() }}>
-                <span class="home-tile-icon"><t.icon size={15} /></span>
-                <div>
-                  <strong><CountUp value={t.value} /></strong>
-                  <small>{t.label}</small>
-                </div>
-              </div>
-            )}
-          </For>
-        </div>
+        <dl class="home-stats">
+          {stats.map((s) => (
+            <div class="home-stat" data-tone={s.tone} classList={{ live: !!s.tone && s.value() > 0 }}>
+              <dt>{s.tone && <i />}{s.label()}</dt>
+              <dd><CountUp value={s.value()} ms={600} /></dd>
+            </div>
+          ))}
+        </dl>
       </section>
     );
   }
@@ -504,7 +525,7 @@ function DayStrip(props: { id: string }) {
     <Show when={total() > 0}>
       <div class="day-strip" title={tx("Passos da IA em cada hora das últimas 24 h (a última barra é a hora atual)")}>
         <div class="day-bars" aria-hidden="true">
-          <For each={hours()}>{(n, i) => <span classList={{ now: i() === 23, zero: !n }} style={{ height: `${n ? Math.max(12, (n / max()) * 100) : 6}%` }} />}</For>
+          <Index each={hours()}>{(n, i) => <span classList={{ now: i === 23, zero: !n() }} style={{ height: `${n() ? Math.max(12, (n() / max()) * 100) : 6}%` }} />}</Index>
         </div>
         <small>{txn(total(), "{n} passo nas últimas 24 h · mais movimento por volta das {busiest}", "{n} passos nas últimas 24 h · mais movimento por volta das {busiest}", { busiest: busiest() })}</small>
       </div>
