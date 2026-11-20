@@ -1,6 +1,6 @@
 import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
-import { Check, CircleHelp, FolderOpen, Keyboard, Languages, Monitor, Moon, PanelBottom, Palette, Sun, Waves } from "lucide-solid";
+import { Check, CircleHelp, FolderOpen, Keyboard, Languages, Monitor, Moon, Palette, PanelRight, Sun, Waves } from "lucide-solid";
 import { createResource, For, Show, type JSX } from "solid-js";
 import { api, isTauri, prettyPath } from "../api";
 import { setHelpOpen, showToast } from "../store";
@@ -85,14 +85,12 @@ function LangPreview(props: { tag: JSX.Element; lines: string[] }) {
 }
 
 function PanelPreview(props: { open: boolean }) {
+  // o modo Código em miniatura: o editor e, à direita, o painel com a aba Terminal
   return (
-    <div class="set-preview panel-preview">
-      <span class="pp-bubble right" />
-      <span class="pp-bubble" />
-      <span class="pp-bubble right short" />
-      <span class="pp-box" />
+    <div class="set-preview panel-preview side">
+      <span class="pp-code"><i /><i /><i class="short" /><i /><i class="short" /></span>
       <Show when={props.open}>
-        <span class="pp-panel"><i /><i /><i /></span>
+        <span class="pp-panel"><b /><i /><i /><i /></span>
       </Show>
     </div>
   );
@@ -190,7 +188,7 @@ export default function Settings() {
         </div>
       </Section>
 
-      <Section icon={<PanelBottom size={15} />} title={tx("Terminal no modo Código")} desc={tx("O terminal embaixo (ou à direita) dos arquivos, na tela Projetos. Abre e fecha pelo botão ao lado das abas ou com ⌘J.")} delay={120}>
+      <Section icon={<PanelRight size={15} />} title={tx("Terminal no modo Código")} desc={tx("O terminal fica no painel da direita do modo Código, numa aba ao lado do Git. Abre e fecha pelo botão ao lado das abas ou com ⌘J.")} delay={120}>
         <div class="set-cards" role="radiogroup" aria-label={tx("Terminal no modo Código")}>
           <Choice value="fechado" current={settings.bottomPanel ? "aberto" : "fechado"} title={tx("Começa fechado")} desc={tx("Mais espaço para o código. Quando quiser o terminal, é um clique.")} onPick={() => updateSettings({ bottomPanel: false })}>
             <PanelPreview open={false} />

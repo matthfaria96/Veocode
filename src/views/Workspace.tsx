@@ -1,16 +1,14 @@
-import { ChevronDown, Code2, FilePlus, FlaskConical, FolderMinus, FolderPlus, FolderSearch, GitBranch, MessagesSquare, PanelLeft, PanelRight, Pause, Play, RefreshCw, SquareTerminal, X } from "lucide-solid";
+import { ChevronDown, Code2, FilePlus, FlaskConical, FolderMinus, FolderPlus, FolderSearch, GitBranch, MessagesSquare, PanelLeft, PanelRight, Pause, Play, RefreshCw, SquareTerminal } from "lucide-solid";
 import { askCloseProject } from "../components/CloseProject";
 import { ProjectIcon } from "../components/icons";
-import { createEffect, createSignal, For, lazy, on, onCleanup, onMount, Show, Suspense } from "solid-js";
+import { createEffect, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
 import { accessLevels } from "../data/mock";
 import { accountById } from "../accounts";
 import { git, gitWords, loadSummaries, setGitTab } from "../git";
 import CodeSide, { GitCount } from "../components/CodeSide";
-import { absPathOf, addProjectFromPicker, currentProject, projectId, projects, resetWorkspace, setProjectId, setWs, showToast, ws } from "../store";
+import { absPathOf, addProjectFromPicker, currentProject, isDiffTab, projectId, projects, resetWorkspace, setProjectId, setWs, showToast, ws } from "../store";
 import ConvSidebar from "../components/ConvSidebar";
 import DebugPane from "../components/DebugPane";
-// o xterm só carrega quando o terminal abre
-const ProjectTerminal = lazy(() => import("../components/ProjectTerminal"));
 import { startAgentSim } from "../sim/agentSim";
 import { dismissable } from "../dismiss";
 import { newEntry } from "../fileActions";
@@ -24,7 +22,7 @@ import Editor from "../components/Editor";
 import ChatPanel from "../components/ChatPanel";
 import AgentCursors from "../components/AgentCursors";
 import { ProviderMark } from "../components/ui";
-import { closeSheets, codeSideOpen, codeSideW, debugOpen, debugW, focusMode, leftSheet, moveTerm, narrowLeft, projMode, setCodeSideOpen, setCodeSideW, setDebugOpen, setDebugW, setLeftSheet, setProjMode, setTermH, setTermOpen, sheetOpen, termAt, termH, termOpen, termShown, toggleTerm } from "../layoutMode";
+import { closeSheets, codeSideOpen, codeSideW, debugOpen, debugW, focusMode, leftSheet, narrowLeft, narrowRight, projMode, reviewWide, setCodeSideOpen, setCodeSideW, setDebugOpen, setDebugW, setLeftSheet, setProjMode, setReviewWide, sheetOpen, showTerm, termShown, toggleTerm } from "../layoutMode";
 
 import { tx } from "../i18n";
 
@@ -55,7 +53,7 @@ function ModeSwitch() {
       <button role="radio" aria-checked={projMode() === "ai"} classList={{ on: projMode() === "ai" }} onClick={() => setProjMode("ai")} title={tx("IA: conversas, e ao lado o app rodando, comandos e subagentes (⌘E alterna)")}>
         <MessagesSquare size={13} /><span>{tx("IA")}</span>
       </button>
-      <button role="radio" aria-checked={projMode() === "code"} classList={{ on: projMode() === "code" }} onClick={() => setProjMode("code")} title={tx("Código: árvore de arquivos, editor e terminal; Git e Rastro no painel da direita (⌘E alterna)")}>
+      <button role="radio" aria-checked={projMode() === "code"} classList={{ on: projMode() === "code" }} onClick={() => setProjMode("code")} title={tx("Código: árvore de arquivos e editor; Git, terminal e Ambiente no painel da direita (⌘E alterna)")}>
         <Code2 size={13} /><span>{tx("Código")}</span>
       </button>
       <span class="view-thumb" style={{ transform: `translateX(${projMode() === "code" ? 100 : 0}%)` }} />
@@ -98,21 +96,26 @@ export default function Workspace() {
     if (abs) api.reveal(abs).catch((e) => showToast(String(e)));
   };
 
-  // ⌘E troca de modo; ⌘J (ou ⌃`) abre e fecha o terminal no modo Código
+  // ⌘E troca de modo; ⌘J (ou ⌃`) abre e fecha o terminal (painel da direita) no modo Código
   onMount(() => {
     const key = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey;
-      if (e.key === "Escape" && sheetOpen() && !document.querySelector(".modal-backdrop, .palette-backdrop")) {
+      const overlay = !!document.querySelector(".modal-backdrop, .palette-backdrop");
+      if (e.key === "Escape" && sheetOpen() && !overlay) {
         closeSheets();
+      } else if (e.key === "Escape" && wide() && !overlay) {
+        setReviewWide(false);
       } else if (mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "e") {
         e.preventDefault();
         setProjMode(projMode() === "code" ? "ai" : "code");
       } else if (projMode() === "code" && mod && e.altKey && !e.shiftKey && (e.key.toLowerCase() === "b" || e.code === "KeyB")) {
         e.preventDefault();
-        setCodeSideOpen(!codeSideOpen());
+        if (wide()) (setReviewWide(false), setCodeSideOpen(true));
+        else setCodeSideOpen(!codeSideOpen());
       } else if (projMode() === "code" && ((mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "j") || (e.ctrlKey && (e.key === "`" || e.code === "Backquote")))) {
         e.preventDefault();
-        toggleTerm();
+        if (wide()) (setReviewWide(false), showTerm());
+        else toggleTerm();
       }
     };
     window.addEventListener("keydown", key);
@@ -132,16 +135,16 @@ export default function Workspace() {
     const max = Math.min(1200, window.innerWidth - 640);
     startDrag(e, "x", (d) => setCodeSideW(Math.round(Math.max(300, Math.min(max, w0 - d)))), () => setCodeSideW(codeSideW(), true));
   };
-  const dragTerm = (e: PointerEvent) => {
-    const h0 = termH();
-    startDrag(e, "y", (d) => setTermH(Math.round(Math.max(120, Math.min(window.innerHeight - 220, h0 - d)))), () => setTermH(termH(), true));
-  };
-  const bottomTerm = () => termAt() === "bottom" && termOpen();
+  // comparação ampliada: só vale com um diff ou commit na frente, no modo Código
+  const wide = () => code() && reviewWide() && isDiffTab(ws.activeFile);
+  createEffect(on(() => isDiffTab(ws.activeFile), (d) => !d && setReviewWide(false), { defer: true }));
+  // janela estreita: o Git é uma gaveta por cima; ao abrir uma comparação ela sai da frente
+  createEffect(on(() => ws.activeFile, (f) => code() && narrowRight() && isDiffTab(f) && setCodeSideOpen(false), { defer: true }));
 
   return (
     <div
       class="workspace"
-      classList={{ "ws-code": code(), "ws-ai": !code(), "debug-off": !debugOpen(), "cside-on": code() && codeSideOpen(), focus: !code() && focusMode() && isTauri && !p().demo, resizing: dragging(), "left-sheet": narrowLeft() && leftSheet() }}
+      classList={{ "ws-code": code(), "ws-ai": !code(), "debug-off": !debugOpen(), "cside-on": code() && codeSideOpen() && !wide(), "review-wide": wide(), focus: !code() && focusMode() && isTauri && !p().demo, resizing: dragging(), "left-sheet": narrowLeft() && leftSheet() }}
       style={{ "--debug-w": `${debugW()}px`, "--cside-w": `${codeSideW()}px` }}
       ref={root}
     >
@@ -264,42 +267,25 @@ export default function Workspace() {
         }
       >
         <>
-        <section class="code-main" classList={{ "term-on": bottomTerm() }} style={{ "--term-h": `${termH()}px` }}>
+        <section class="code-main">
           <NarrowBar code name={p().name} />
           <div class="code-stage">
             <Editor
               tools={
                 <>
-                  <button class="icon-btn small" classList={{ on: termShown() }} title={termShown() ? tx("Esconder o terminal (⌘J)") : tx("Mostrar o terminal (⌘J)")} onClick={toggleTerm}>
+                  <button class="icon-btn small" classList={{ on: termShown() && !wide() }} title={termShown() && !wide() ? tx("Esconder o terminal (⌘J)") : tx("Terminal desta pasta, no painel da direita (⌘J)")} onClick={() => (wide() ? (setReviewWide(false), showTerm()) : toggleTerm())}>
                     <SquareTerminal size={14} />
                   </button>
-                  <button class="icon-btn small side-toggle" classList={{ on: codeSideOpen() }} title={codeSideOpen() ? tx("Esconder o painel da direita (⌥⌘B)") : tx("Mostrar o painel da direita: Git, conversa com a IA e terminal (⌥⌘B)")} onClick={() => setCodeSideOpen(!codeSideOpen())}>
+                  <button class="icon-btn small side-toggle" classList={{ on: codeSideOpen() && !wide() }} title={codeSideOpen() && !wide() ? tx("Esconder o painel da direita (⌥⌘B)") : tx("Mostrar o painel da direita: Git, terminal e Ambiente (⌥⌘B)")} onClick={() => (wide() ? (setReviewWide(false), setCodeSideOpen(true)) : setCodeSideOpen(!codeSideOpen()))}>
                     <PanelRight size={14} />
-                    <Show when={!codeSideOpen()}><GitCount pid={p().id} /></Show>
+                    <Show when={!codeSideOpen() || wide()}><GitCount pid={p().id} /></Show>
                   </button>
                 </>
               }
             />
           </div>
-          <Show when={bottomTerm()}>
-            <div class="term-split" onPointerDown={dragTerm} onDblClick={() => setTermH(260, true)} title={tx("Arraste para mudar o tamanho")} />
-            <section class="code-term">
-              <Suspense fallback={<div class="pterm-empty"><span class="spinner" /> {tx("Carregando o terminal…")}</div>}>
-                <ProjectTerminal
-                  tools={
-                    <>
-                      <button class="icon-btn small" title={tx("Pôr o terminal no painel da direita, como uma aba")} onClick={() => moveTerm("side")}>
-                        <PanelRight size={13} />
-                      </button>
-                      <button class="icon-btn small" title={tx("Fechar o terminal (⌘J)")} onClick={() => setTermOpen(false)}><X size={13} /></button>
-                    </>
-                  }
-                />
-              </Suspense>
-            </section>
-          </Show>
         </section>
-        <Show when={codeSideOpen()}>
+        <Show when={codeSideOpen() && !wide()}>
           <div class="pane-resize" title={tx("Arraste para mudar a largura")} onPointerDown={dragSide} onDblClick={() => setCodeSideW(400, true)} />
           <CodeSide />
         </Show>

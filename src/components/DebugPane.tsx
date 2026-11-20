@@ -477,7 +477,8 @@ export default function DebugPane() {
 
   return (
     <aside class="debug-pane">
-      <div class="dbg-tabs" role="tablist">
+      <div class="dbg-tabs seg-tabs" role="tablist">
+        <div class="seg">
         {tabs.map((t) => (
           <button role="tab" aria-selected={debugTab() === t.id} classList={{ on: debugTab() === t.id }} onClick={() => setDebugTab(t.id)} title={t.label()}>
             <t.icon size={13} />
@@ -491,6 +492,7 @@ export default function DebugPane() {
             <span>{tx("Arquivo")}</span>
           </button>
         </Show>
+        </div>
         <span class="dbg-spacer" />
         <Show when={debugTab() === "activity" && !currentProject().demo}>
           <button class="dbg-follow" classList={{ on: follow() }} onClick={() => setFollow(!follow())} title={tx("Abrir a árvore e o arquivo que o agente está mexendo")}>

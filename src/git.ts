@@ -175,6 +175,35 @@ export function setGitTab(t: "chat" | "access" | "trail" | "git" | "files") {
 
 export const [git, setGit] = createStore<State>({ byProject: {}, summaries: {} });
 
+/** Caminho do arquivo dentro do projeto (null se ficou fora da pasta do projeto). */
+const relOf = (st: GitStatus, path: string) => (st.prefix ? (path.startsWith(st.prefix) ? path.slice(st.prefix.length) : null) : path);
+
+/** Os arquivos mudados, na ordem da lista do painel Git (conflitos, preparados, o resto), para
+ *  andar de um para o outro na comparação. */
+export function changedFiles(pid: string): string[] {
+  const st = git.byProject[pid]?.status;
+  if (!st) return [];
+  const files = st.changes.filter((c) => !c.path.endsWith("/"));
+  const order = [
+    ...files.filter((c) => c.conflict),
+    ...files.filter((c) => !c.conflict && !c.untracked && c.index !== "."),
+    ...files.filter((c) => !c.conflict && (c.untracked || c.work !== ".")),
+  ];
+  const out: string[] = [];
+  for (const c of order) {
+    const r = relOf(st, c.path);
+    if (r !== null && !out.includes(r)) out.push(r);
+  }
+  return out;
+}
+
+/** O commit pelo hash (do que o painel Git já leu). */
+export function commitByHash(pid: string, hash: string): GitCommit | undefined {
+  const st = git.byProject[pid]?.status;
+  if (!st) return undefined;
+  return (st.graph ?? []).find((c) => c.hash === hash) ?? st.commits.find((c) => c.hash === hash) ?? st.incoming.find((c) => c.hash === hash);
+}
+
 const entry = (pid: string): Entry => git.byProject[pid] ?? { status: null, error: "", loading: false, fetching: false, gh: null, ghLoading: false, ghAt: 0, acting: null };
 const patch = (pid: string, p: Partial<Entry>) => setGit("byProject", pid, { ...entry(pid), ...p });
 export const gitOf = (pid: string) => entry(pid);

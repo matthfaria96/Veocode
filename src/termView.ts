@@ -24,34 +24,68 @@ const live = new Map<string, Live>();
 /** saída de um terminal que ainda não tem desenho (aberto há pouco) */
 const waiting = new Map<string, string[]>();
 
-const theme = {
-  background: "#0e1118",
-  foreground: "#e7eaf3",
-  cursor: "#6b9cff",
-  cursorAccent: "#0e1118",
-  selectionBackground: "#6b9cff55",
-  black: "#1d2331",
-  red: "#f87171",
-  green: "#34d399",
-  yellow: "#fbbf24",
-  blue: "#60a5fa",
-  magenta: "#a78bfa",
-  cyan: "#22d3ee",
-  white: "#a4acbf",
-  brightBlack: "#6c7589",
-  brightRed: "#fca5a5",
-  brightGreen: "#6ee7b7",
-  brightYellow: "#fde68a",
-  brightBlue: "#93c5fd",
-  brightMagenta: "#c4b5fd",
-  brightCyan: "#67e8f9",
-  brightWhite: "#e7eaf3",
+// cores do terminal nos dois temas do app (o fundo acompanha o painel da direita)
+const dark = {
+  background: "#17171b",
+  foreground: "#e8e8ee",
+  cursor: "#4d94ff",
+  cursorAccent: "#17171b",
+  selectionBackground: "#4d94ff55",
+  black: "#26262c",
+  red: "#ff6b6b",
+  green: "#3ccf8e",
+  yellow: "#f5b83d",
+  blue: "#64a8ff",
+  magenta: "#b18cff",
+  cyan: "#3fd0e0",
+  white: "#b4b4be",
+  brightBlack: "#70707b",
+  brightRed: "#ff9b9b",
+  brightGreen: "#7ee6b4",
+  brightYellow: "#ffd479",
+  brightBlue: "#9cc6ff",
+  brightMagenta: "#cfb6ff",
+  brightCyan: "#7fe3ee",
+  brightWhite: "#f5f5f7",
 };
+const light = {
+  background: "#fbfbfc",
+  foreground: "#1d1d1f",
+  cursor: "#0064d6",
+  cursorAccent: "#fbfbfc",
+  selectionBackground: "#0064d633",
+  black: "#1d1d1f",
+  red: "#c4262e",
+  green: "#11804a",
+  yellow: "#946200",
+  blue: "#0058c4",
+  magenta: "#8a3fd1",
+  cyan: "#0a7c8c",
+  white: "#6b6b75",
+  brightBlack: "#55555e",
+  brightRed: "#d93b3b",
+  brightGreen: "#178f55",
+  brightYellow: "#a86f00",
+  brightBlue: "#1a6ae0",
+  brightMagenta: "#9b51e0",
+  brightCyan: "#0b8a9c",
+  brightWhite: "#1d1d1f",
+};
+const themeNow = () => (document.documentElement.dataset.theme === "light" ? light : dark);
+// trocar o tema em Ajustes troca as cores de todos os terminais abertos
+try {
+  new MutationObserver(() => {
+    const t = themeNow();
+    for (const l of live.values()) l.xt.options.theme = t;
+  }).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+} catch {
+  /* sem observador: o tema novo vale para os terminais abertos depois */
+}
 
 /** Instância nova; `id` vazio até o Rust abrir o shell. */
 function create(id = ""): Live {
   const mono = getComputedStyle(document.documentElement).getPropertyValue("--mono").trim() || tx("Menlo, monospace");
-  const xt = new Terminal({ theme, fontFamily: mono, fontSize: 12.5, lineHeight: 1.2, cursorBlink: true, scrollback: 5000, macOptionIsMeta: true });
+  const xt = new Terminal({ theme: themeNow(), fontFamily: mono, fontSize: 12.5, lineHeight: 1.2, cursorBlink: true, scrollback: 5000, macOptionIsMeta: true });
   const fit = new FitAddon();
   xt.loadAddon(fit);
   // links abrem no navegador (só http/https)

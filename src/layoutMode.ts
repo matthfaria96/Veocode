@@ -76,21 +76,10 @@ export function setProjMode(m: ProjMode) {
   remember("veocode.ws.view", m);
 }
 
-/** Terminal do modo Código: embaixo do editor ou como aba do painel da direita (nunca nos dois). */
-export type TermAt = "bottom" | "side";
-const savedAt = recall("veocode.code.termAt");
-const [termAt, setTermAtRaw] = createSignal<TermAt>(savedAt === "side" || savedAt === "right" ? "side" : "bottom");
-export { termAt };
-export const setTermAt = (v: TermAt) => (setTermAtRaw(v), remember("veocode.code.termAt", v));
-/** Aberto embaixo (no painel da direita, quem manda é a aba do painel). */
-export const [termOpen, setTermOpen] = createSignal(false);
 const size = (k: string, d: number, lo: number, hi: number) => {
   const n = Number(recall(k));
   return n >= lo && n <= hi ? n : d;
 };
-const [termH, setTermHRaw] = createSignal(size("veocode.code.termH", 260, 120, 2000));
-export { termH };
-export const setTermH = (v: number, save = false) => (setTermHRaw(v), save && remember("veocode.code.termH", String(v)));
 
 /** Painel de depuração do modo IA (à direita): aberto, largura e a aba da frente. */
 export type DebugTab = "browser" | "procs" | "subs" | "activity" | "trail" | "file";
@@ -105,10 +94,10 @@ const [debugTab, setDebugTabRaw] = createSignal<DebugTab>(savedTab === "procs" |
 export { debugTab };
 export const setDebugTab = (v: DebugTab) => (setDebugTabRaw(v), v !== "file" && remember("veocode.ai.debugTab", v));
 
-/** Painel da direita do modo Código (abre e fecha pelo ícone ao lado do terminal): o Git, a
- *  conversa com a IA (como o Claude Code ao lado do código no VS Code) e, se você pôs ele aqui,
- *  o terminal. Aberto, largura e aba lembrados. O resto (comandos, atividade, rastro) é do modo IA. */
-export type CodeSideTab = "git" | "chat" | "env" | "term";
+/** Painel da direita do modo Código (⌥⌘B): o Git, o terminal da pasta e o Ambiente. Aberto,
+ *  largura e aba lembrados. O resto (comandos, atividade, rastro) é do modo IA; a conversa com a
+ *  IA mora no modo IA (⌘E). */
+export type CodeSideTab = "git" | "term" | "env";
 const [codeSidePref, setCodeSidePref] = createSignal(recall("veocode.code.side") === "1");
 export const codeSideOpen = () => (narrowRight() ? codeSheet() : codeSidePref());
 export const setCodeSideOpen = (v: boolean) => (narrowRight() ? setCodeSheet(v) : (setCodeSidePref(v), remember("veocode.code.side", v ? "1" : "0")));
@@ -116,28 +105,22 @@ const [codeSideW, setCodeSideWRaw] = createSignal(size("veocode.code.sideW", 400
 export { codeSideW };
 export const setCodeSideW = (v: number, save = false) => (setCodeSideWRaw(v), save && remember("veocode.code.sideW", String(v)));
 const savedSide = recall("veocode.code.sideTab");
-const [codeSideTab, setCodeSideTabRaw] = createSignal<CodeSideTab>(savedSide === "chat" || savedSide === "env" || (savedSide === "term" && termAt() === "side") ? savedSide : "git");
+const [codeSideTab, setCodeSideTabRaw] = createSignal<CodeSideTab>(savedSide === "term" || savedSide === "env" ? savedSide : "git");
 export { codeSideTab };
 export const setCodeSideTab = (v: CodeSideTab) => (setCodeSideTabRaw(v), remember("veocode.code.sideTab", v));
 
-/** O terminal está na tela agora (embaixo aberto, ou a aba dele no painel da direita). */
-export const termShown = () => (termAt() === "bottom" ? termOpen() : codeSideOpen() && codeSideTab() === "term");
-/** ⌘J: mostra ou esconde o terminal onde ele mora. */
-export function toggleTerm() {
-  if (termAt() === "bottom") return setTermOpen(!termOpen());
-  if (termShown()) return setCodeSideOpen(false);
+/** O terminal está na tela agora (a aba dele no painel da direita). */
+export const termShown = () => codeSideOpen() && codeSideTab() === "term";
+/** Abre o painel da direita na aba Terminal. */
+export function showTerm() {
   setCodeSideTab("term");
-  setCodeSideOpen(true);
+  if (!codeSideOpen()) setCodeSideOpen(true);
 }
-/** Muda o terminal de lugar (fica aberto no lugar novo). */
-export function moveTerm(to: TermAt) {
-  setTermAt(to);
-  if (to === "side") {
-    setTermOpen(false);
-    setCodeSideTab("term");
-    setCodeSideOpen(true);
-  } else {
-    setTermOpen(true);
-    if (codeSideTab() === "term") setCodeSideTab("git");
-  }
+/** ⌘J: mostra o terminal (no painel da direita) ou, se ele já está na frente, esconde o painel. */
+export function toggleTerm() {
+  if (termShown()) return setCodeSideOpen(false);
+  showTerm();
 }
+
+/** Comparação ampliada: o diff ou o commit ocupa a tela toda (as laterais saem até Esc). */
+export const [reviewWide, setReviewWide] = createSignal(false);

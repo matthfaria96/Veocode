@@ -9,7 +9,7 @@ import { createStore, produce, reconcile } from "solid-js/store";
 import { isTauri } from "./api";
 import { confirmAction } from "./dialogs";
 import { tx, txn } from "./i18n";
-import { codeSideOpen, setCodeSideOpen, setCodeSideTab, setTermOpen, termAt } from "./layoutMode";
+import { showTerm } from "./layoutMode";
 import { projects, showToast } from "./store";
 import { addTerm, closeTerm, errMsg, replaceTerm, setActiveTerm, terms, type TermInfo } from "./terminal";
 import { envNames, vault } from "./vault";
@@ -223,15 +223,12 @@ export async function restartService(pid: string, s: Service): Promise<void> {
   });
 }
 
-/** Mostra a saída do serviço no terminal (embaixo ou na aba do painel, onde ele estiver). */
+/** Mostra a saída do serviço no terminal (a aba Terminal do painel da direita). */
 export function showServiceTerm(pid: string, s: Service) {
   const t = termOfService(pid, s.key);
   if (!t) return;
   setActiveTerm(pid, t.id);
-  if (termAt() === "side") {
-    setCodeSideTab("term");
-    if (!codeSideOpen()) setCodeSideOpen(true);
-  } else setTermOpen(true);
+  showTerm();
 }
 
 export async function startAll(pid: string) {

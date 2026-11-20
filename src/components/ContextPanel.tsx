@@ -21,13 +21,12 @@ export function ContextChip(props: { k: string }) {
       class={`composer-chip ctx-chip ${weightOf(ctx())}`}
       classList={{ on: ctxPanel() === props.k, bare: !ctx() }}
       aria-haspopup="dialog"
-      title={ctx() ? tx("Esta conversa carrega {v} tokens. Cada mensagem manda tudo de novo para o Claude (com desconto de cache enquanto você está ativo). Clique para ver o que ocupa a janela e compactar.", { v: fmtTokens(ctx()!) }) : tx("Contexto da conversa: o que ocupa a janela do Claude")}
+      title={ctx() ? tx("Contexto: esta conversa carrega {v} tokens. Cada mensagem manda tudo de novo para o Claude (com desconto de cache enquanto você está ativo). Clique para ver o que ocupa a janela e compactar.", { v: fmtTokens(ctx()!) }) : tx("Contexto da conversa: o que ocupa a janela do Claude")}
       onClick={() => toggleCtx(props.k)}
     >
-      <Gauge size={12} />
-      <Show when={ctx()} fallback={<span>{tx("Contexto")}</span>}>
-        <span>{fmtTokens(ctx()!)}</span>
-        <Show when={windowOf(props.k)}>{(w) => <small class="ctx-chip-pct">{Math.min(100, Math.round((ctx()! / w()) * 100))}%</small>}</Show>
+      <Gauge size={13} />
+      <Show when={ctx()}>
+        <Show when={windowOf(props.k)} fallback={<span>{fmtTokens(ctx()!)}</span>}>{(w) => <span>{Math.min(100, Math.round((ctx()! / w()) * 100))}%</span>}</Show>
       </Show>
     </button>
   );

@@ -6,7 +6,7 @@ import { createStore } from "solid-js/store";
 import { isTauri } from "./api";
 import { showToast } from "./store";
 import { setLanguagePref, tx } from "./i18n";
-import { setTermOpen } from "./layoutMode";
+import { narrowRight, showTerm } from "./layoutMode";
 
 export type IconStyle = "minimalista" | "detalhado";
 export type Motion = "completa" | "reduzida";
@@ -23,7 +23,7 @@ export interface Settings {
   freeAccount: string;
   /** Chat livre pode olhar o computador (só leitura) */
   freePc: boolean;
-  /** tela Projetos: o painel de baixo (atividade e terminal) já abre aberto */
+  /** tela Projetos, modo Código: o painel da direita já abre no terminal */
   bottomPanel: boolean;
 }
 
@@ -58,8 +58,8 @@ export async function loadSettings() {
     /* fica o padrão */
   }
   applyMotion();
-  // o terminal do modo Código começa como o ajuste manda (fechado, a não ser que a pessoa prefira aberto)
-  setTermOpen(!!settings.bottomPanel);
+  // o terminal do modo Código (painel da direita) já abre se a pessoa preferir assim
+  if (settings.bottomPanel && !narrowRight()) showTerm();
 }
 
 /** Muda na hora e grava; se a gravação falhar, volta ao que estava. */

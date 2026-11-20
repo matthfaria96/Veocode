@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowUp, Brain, Eye, ArrowLeft, Ban, Check, ChevronDown, FileCode2, History, Loader2, Maximize2, MessageSquarePlus, Pencil, Paperclip, Plus, SendHorizontal, Shrink, ShieldCheck, Square, TerminalSquare, X } from "lucide-solid";
+import { AlertTriangle, ArrowUp, Eye, ArrowLeft, Ban, Check, ChevronDown, FileCode2, History, Loader2, Maximize2, MessageSquarePlus, Pencil, Paperclip, Plus, SendHorizontal, Shrink, ShieldCheck, Square, TerminalSquare, X } from "lucide-solid";
 import { createEffect, createMemo, createSignal, For, Match, on, Show, Switch } from "solid-js";
 import { accessLevels } from "../data/mock";
 import { accountById } from "../accounts";
@@ -10,7 +10,8 @@ import { activeKey, closeTab, forkConversation, nameFromPrompt, openInTab, selec
 import { dropFromHist, histLoaded, histLoading, histOf, loadHist } from "../convHist";
 import { ConvTabsBar, EconomyHint } from "./ConvBar";
 import { ContextChip } from "./ContextPanel";
-import { isOpen, openAccess, openMemory } from "../modals";
+import { isOpen, openAccess } from "../modals";
+import { ProjectIcon } from "./icons";
 import { isTauri } from "../api";
 import ConvoRow from "./ConvoRow";
 import { setChatTab } from "../git";
@@ -58,33 +59,35 @@ function useFollow(el: () => HTMLElement | undefined, changes: () => unknown, re
   };
 }
 
-/** Projeto real sem conversa ainda. */
+/** Projeto real sem conversa ainda: uma tela calma, com o essencial e três atalhos. */
 function RealIdle(props: { onAccess: () => void; onConvos: () => void }) {
   const changes = () => ws.events.filter((e) => e.agent === "disco").slice(-8);
   const p = currentProject;
   const a = () => accountById(p().accountId);
   const isClaude = () => a().provider === "claude";
+  const level = () => accessLevels[p().access];
   return (
     <>
-      <div class="bubble agent pop-in">
-        <Show
-          when={isClaude()}
-          fallback={<>{tx("Peça abaixo e {label} trabalha nesta pasta pelas ferramentas do Veocode: lista, lê, busca, edita arquivos e roda comandos, obedecendo o nível de acesso. O que o nível manda perguntar aparece aqui para você permitir ou recusar. Se o modelo não aceitar ferramentas, vira só conversa.", { label: a().label })}</>}
-        >
-          {tx("Peça abaixo e o Claude Code trabalha nesta pasta, com a conta {label} e obedecendo o nível de acesso. O que o nível manda perguntar aparece aqui para você permitir ou recusar. O que ele mudar fica marcado na árvore (", { label: a().label })}<b class="c-edit">M</b>, <b class="c-new">N</b>, <b class="c-del">A</b>).
-        </Show>
+      <div class="idle-hero pop-in">
+        <span class="idle-mark"><ProjectIcon id={p().id} name={p().name} stack={p().stack} size={40} /></span>
+        <h2>{tx("O que vamos fazer em {name}?", { name: p().name })}</h2>
+        <p>
+          <Show when={isClaude()} fallback={tx("{label} trabalha nesta pasta pelas ferramentas do Veocode. O que precisar da sua permissão aparece aqui.", { label: a().label })}>
+            {tx("O Claude Code trabalha nesta pasta com a conta {label}. O que precisar da sua permissão aparece aqui.", { label: a().label })}
+          </Show>
+        </p>
         <div class="idle-actions">
+          <button class="idle-act" onClick={props.onConvos}>
+            <History size={14} /> {tx("Conversas anteriores")}
+          </button>
+          <button class="idle-act" onClick={props.onAccess} style={{ "--lc": level().color }}>
+            <ShieldCheck size={14} class="idle-lc" /> {tx("Acesso: {v}", { v: level().short })}
+          </button>
           <Show when={isClaude()}>
-            <button class="ghost-btn" onClick={() => openClaude(p().id)}>
-              <TerminalSquare size={13} /> {tx("Abrir no Terminal")}
+            <button class="idle-act" onClick={() => openClaude(p().id)}>
+              <TerminalSquare size={14} /> {tx("Abrir no Terminal")}
             </button>
           </Show>
-          <button class="ghost-btn" onClick={props.onConvos}>
-            <History size={13} /> {tx("Conversas anteriores")}
-          </button>
-          <button class="ghost-btn" onClick={props.onAccess}>
-            <ShieldCheck size={13} /> {tx("Nível de acesso")}
-          </button>
         </div>
       </div>
       <Show when={changes().length > 0}>
@@ -496,13 +499,8 @@ function Composer(props: { onLevel: () => void; k?: string; compact?: boolean })
         </button>
         <AgentChipButton prefKey={p().id} accountId={a().id} open={menu()} title={tx("Conta, modelo e força do raciocínio deste projeto")} onClick={() => setMenu(!menu())} />
         <button class="composer-chip" classList={{ on: isOpen("access", p().id), unapplied: unapplied() }} aria-haspopup="dialog" style={{ "--lc": level().color }} title={unapplied() ? tx("Nível de acesso: ainda não vale no Claude Code, clique para gravar") : tx("Nível de acesso: o que a IA pode fazer aqui (clique para mudar)")} onClick={props.onLevel}>
-          <ShieldCheck size={12} /> {level().short}
+          <ShieldCheck size={13} /> <span>{level().short}</span>
         </button>
-        <Show when={!demo() && !props.compact}>
-          <button class="composer-chip mem-chip" classList={{ on: isOpen("memory", p().id) }} aria-haspopup="dialog" title={tx("Memória do projeto: o que o Claude já sabe daqui sem reler conversas antigas")} onClick={() => openMemory(p().id)}>
-            <Brain size={12} /> <span>{tx("Memória")}</span>
-          </button>
-        </Show>
         <Show when={!demo() && !props.compact && a().provider === "claude"}>
           <ContextChip k={k()} />
         </Show>
@@ -599,8 +597,7 @@ export function showChatPane(v: Pane) {
   setPane(v);
 }
 
-/** `docked`: dentro do painel da direita do modo Código (estreito: sem o modo foco). */
-export default function ChatPanel(props: { slim?: boolean; docked?: boolean }) {
+export default function ChatPanel(props: { slim?: boolean }) {
   const project = currentProject;
   const view = (): View => (panelAt() === "tab" ? "act" : pane());
   const go = (v: View) => {
@@ -622,7 +619,7 @@ export default function ChatPanel(props: { slim?: boolean; docked?: boolean }) {
     }
   }));
   const real = () => isTauri && !project().demo;
-  const focusOn = () => !props.docked && focusMode() && real() && view() === "chat";
+  const focusOn = () => focusMode() && real() && view() === "chat";
   const key = () => activeKey(project().id);
   // aba reaberta depois de fechar o app: a conversa dela está voltando (não é uma conversa nova)
   const waking = () => {
@@ -653,9 +650,9 @@ export default function ChatPanel(props: { slim?: boolean; docked?: boolean }) {
   const done = () => ws.events.find((e) => e.kind === "done");
 
   return (
-    <aside class="chat-panel" classList={{ docked: props.docked }} style={{ "--c": account().color }}>
+    <aside class="chat-panel" style={{ "--c": account().color }}>
           <Show when={real()}>
-            <ConvTabsBar pid={project().id} view={view()} onView={go} extCount={new Set(extEvents().map((e) => e.session)).size} slim={props.slim} docked={props.docked} />
+            <ConvTabsBar pid={project().id} view={view()} onView={go} extCount={new Set(extEvents().map((e) => e.session)).size} slim={props.slim} />
           </Show>
           <Show when={convos() && real()}>
             <div class="chat-scroll">

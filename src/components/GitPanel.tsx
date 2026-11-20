@@ -164,7 +164,7 @@ export default function GitPanel() {
               hot
               right={
                 <Show when={st().changes.length}>
-                  <button class="git-sec-link" classList={{ on: ws.activeFile === ALL_CHANGES }} title={tx("Ver todas as mudanças numa tela só, um arquivo embaixo do outro")} onClick={openAllChanges}>
+                  <button class="git-sec-link accent" classList={{ on: ws.activeFile === ALL_CHANGES }} title={tx("Ver todas as mudanças numa tela só, um arquivo embaixo do outro")} onClick={openAllChanges}>
                     <GitCompareArrows size={12} /> {tx("Revisar tudo")}
                   </button>
                 </Show>
@@ -175,6 +175,7 @@ export default function GitPanel() {
                 <ChangeGroup kind="staged" title={tx("Preparadas para o commit")} items={groups().staged} />
                 <ChangeGroup kind="work" title={groups().staged.length || groups().conflict.length ? tx("Ainda não preparadas") : ""} items={groups().work} />
                 <Show when={st().moreChanges}><div class="git-more">{tx("e mais {moreChanges} arquivos", { moreChanges: st().moreChanges })}</div></Show>
+                <div class="git-tip"><GitCompareArrows size={12} /> {tx("Clique num arquivo para ver o antes e o agora, lado a lado.")}</div>
               </Show>
             </Section>
 
@@ -195,9 +196,10 @@ export default function GitPanel() {
                 <div class="git-legend">
                   <span><i class="dot local" /> {tx("só neste computador")}</span>
                   <span><i class="dot pushed" /> {tx("já está no remoto")}</span>
-                  <span>{tx("cada cor é um branch · clique num commit para ver os arquivos")}</span>
+                  <span>{tx("cada cor é um branch")}</span>
                 </div>
-                <CommitGraph pid={pid()} commits={graphCommits()} head={st().head} web={web()} uncommitted={changed()} />
+                <div class="git-tip"><GitCompareArrows size={12} /> {tx("Clique num commit para comparar os arquivos dele lado a lado.")}</div>
+                <CommitGraph pid={pid()} commits={graphCommits()} head={st().head} uncommitted={changed()} onUncommitted={openAllChanges} />
                 <Show when={(st().graph ?? st().commits).length > 15 && !showAll()}>
                   <button class="git-link" onClick={() => setShowAll(true)}>{tx("Mostrar os últimos {length}", { length: (st().graph ?? st().commits).length })}</button>
                 </Show>
@@ -474,6 +476,9 @@ export default function GitPanel() {
                   </span>
                 </Show>
                 <span class="git-file-act" onClick={(ev) => ev.stopPropagation()}>
+                  <Show when={r !== null && !isDir}>
+                    <button class="icon-btn small" title={tx("Comparar lado a lado: antes e agora")} onClick={() => openDiff(r!)}><GitCompareArrows size={12} /></button>
+                  </Show>
                   <Show when={props.kind === "staged"}>
                     <button class="icon-btn small" disabled={busy()} title={tx("Tirar do próximo commit")} onClick={() => void stage([c.path.replace(/\/$/, "")], false)}><Minus size={12} /></button>
                   </Show>

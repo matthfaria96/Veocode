@@ -1,13 +1,14 @@
 // O que mudou num arquivo: o que era (esquerda) e o que é agora (direita), lado a lado como num
 // editor, ou numa coluna só. Lê o diff do git e se atualiza sozinho enquanto está aberto.
 // Também a revisão de tudo de uma vez (AllChanges): um arquivo embaixo do outro.
-import { Check, ChevronRight, Columns2, FileText, RefreshCw, Rows3 } from "lucide-solid";
+import { Check, ChevronLeft, ChevronRight, Columns2, FileText, Maximize2, Minimize2, RefreshCw, Rows3 } from "lucide-solid";
 import { createEffect, createMemo, createSignal, For, Index, on, onCleanup, Show } from "solid-js";
 import { every } from "../every";
 import { textOf } from "../editing";
-import { diffAll, fileDiff } from "../git";
+import { changedFiles, diffAll, fileDiff } from "../git";
+import { projMode, reviewWide, setReviewWide } from "../layoutMode";
 import { openRealFile } from "../realProject";
-import { currentProject, openFile } from "../store";
+import { currentProject, openDiff, openFile } from "../store";
 import { tokenize } from "../syntax";
 import { FileIcon } from "./icons";
 import { tx, txn } from "../i18n";
@@ -85,6 +86,7 @@ const [split, setSplitRaw] = createSignal((() => {
     return true;
   }
 })());
+export { split };
 const setSplit = (v: boolean) => {
   setSplitRaw(v);
   try {
@@ -103,12 +105,23 @@ function Code(props: { t: string; ext: string }) {
   );
 }
 
-function SplitSwitch() {
+export function SplitSwitch() {
   return (
     <div class="df-seg" role="radiogroup" aria-label={tx("Como mostrar")}>
       <button role="radio" aria-checked={split()} classList={{ on: split() }} title={tx("Lado a lado: antes à esquerda, agora à direita")} onClick={() => setSplit(true)}><Columns2 size={13} /></button>
       <button role="radio" aria-checked={!split()} classList={{ on: !split() }} title={tx("Numa coluna só")} onClick={() => setSplit(false)}><Rows3 size={13} /></button>
     </div>
+  );
+}
+
+/** Ampliar: a comparação ocupa a tela toda (as laterais saem; Esc ou o mesmo botão voltam). */
+export function WideButton() {
+  return (
+    <Show when={projMode() === "code"}>
+      <button class="icon-btn small" classList={{ on: reviewWide() }} aria-pressed={reviewWide()} title={reviewWide() ? tx("Voltar ao tamanho normal (Esc)") : tx("Ampliar: a comparação ocupa a tela toda")} onClick={() => setReviewWide(!reviewWide())}>
+        <Show when={reviewWide()} fallback={<Maximize2 size={13} />}><Minimize2 size={13} /></Show>
+      </button>
+    </Show>
   );
 }
 
@@ -191,6 +204,13 @@ export default function DiffView(props: { path: string }) {
   const d = createMemo(() => (raw() === null ? null : parseDiff(raw()!)));
   const name = () => props.path.split("/").pop() ?? props.path;
   const open = () => (currentProject().demo ? openFile(props.path) : openRealFile(props.path));
+  // andar pelos arquivos mudados sem voltar ao painel Git (a aba é trocada, não se acumula)
+  const list = () => changedFiles(pid());
+  const at = () => list().indexOf(props.path);
+  const go = (dir: number) => {
+    const next = list()[at() + dir];
+    if (next) openDiff(next);
+  };
 
   return (
     <div class="diff-view">
@@ -210,15 +230,23 @@ export default function DiffView(props: { path: string }) {
           )}
         </Show>
         <span class="df-tools">
+          <Show when={at() >= 0 && list().length > 1}>
+            <span class="df-nav" title={tx("Arquivos mudados desde o último commit")}>
+              <button class="icon-btn small" disabled={at() <= 0} title={tx("Arquivo anterior")} onClick={() => go(-1)}><ChevronLeft size={14} /></button>
+              <small>{tx("{a} de {b}", { a: at() + 1, b: list().length })}</small>
+              <button class="icon-btn small" disabled={at() >= list().length - 1} title={tx("Próximo arquivo")} onClick={() => go(1)}><ChevronRight size={14} /></button>
+            </span>
+          </Show>
           <SplitSwitch />
           <button class="icon-btn small" classList={{ spin: busy() }} title={tx("Ler de novo")} onClick={() => void load()}><RefreshCw size={12} /></button>
           <Show when={!d()?.gone}>
-            <button class="ghost-btn small" title={tx("Abrir o arquivo para editar")} onClick={open}><FileText size={12} /> {tx("Abrir arquivo")}</button>
+            <button class="ghost-btn small" title={tx("Abrir o arquivo para editar")} onClick={open}><FileText size={12} /> {tx("Editar")}</button>
           </Show>
+          <WideButton />
         </span>
       </div>
       <Show when={split() && d() && d()!.rows.length}>
-        <div class="df-cols"><span>{tx("Último commit")}</span><span>{tx("Agora")}</span></div>
+        <div class="df-cols"><span><b>{tx("Antes")}</b> {tx("no último commit")}</span><span><b>{tx("Agora")}</b> {tx("no disco")}</span></div>
       </Show>
       <div class="df-body">
         <Show when={!err()} fallback={<div class="df-empty">{err()}</div>}>
@@ -312,6 +340,7 @@ export function AllChanges() {
         <span class="df-tools">
           <SplitSwitch />
           <button class="icon-btn small" classList={{ spin: busy() }} title={tx("Ler de novo")} onClick={() => void load()}><RefreshCw size={12} /></button>
+          <WideButton />
         </span>
       </div>
       <div class="df-body">

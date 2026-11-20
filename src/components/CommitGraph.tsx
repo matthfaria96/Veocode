@@ -1,11 +1,11 @@
 // Desenho dos commits: cada branch é uma linha colorida; as linhas se separam
 // quando alguém criou um branch e se juntam num merge. Clique num commit para
-// ver os arquivos que ele mudou e, num arquivo, o que mudou dentro dele.
+// abrir, no lugar do editor, os arquivos dele com o antes e o depois lado a lado.
 
-import { ChevronDown, ChevronRight, Cloud, ExternalLink, Laptop, Tag } from "lucide-solid";
-import { createSignal, For, Show } from "solid-js";
-import { api } from "../api";
-import { commitDiff, commitFiles, since, type CommitFile, type GitCommit } from "../git";
+import { ChevronRight, Cloud, Laptop, Tag } from "lucide-solid";
+import { For, Show } from "solid-js";
+import { since, type GitCommit } from "../git";
+import { ALL_CHANGES, COMMIT, openCommit, ws } from "../store";
 import { locale, tx, txn } from "../i18n";
 
 const COLORS = ["#6b9cff", "#4cc38a", "#f5a524", "#e5649a", "#38bdf8", "#a78bfa", "#f97316", "#94a3b8"];
@@ -76,124 +76,53 @@ function Lines(props: { row: Row; width: number; pushed: boolean; head: boolean 
   );
 }
 
-const statusWord: Record<string, string> = { A: "novo", M: "alterado", D: "apagado", R: "renomeado", C: "copiado", T: "tipo mudou" };
-
 export default function CommitGraph(props: {
   pid: string;
   commits: GitCommit[];
   head: string | null;
-  web: string | null;
   uncommitted: number;
   onUncommitted?: () => void;
 }) {
   const rows = () => layout(props.commits);
   const width = () => Math.min(8, Math.max(1, ...rows().map((r) => r.lanes))) * LANE + 6;
-  const [open, setOpen] = createSignal<string | null>(null);
-  const [files, setFiles] = createSignal<CommitFile[] | null>(null);
-  const [err, setErr] = createSignal("");
-  const [diffOf, setDiffOf] = createSignal<string | null>(null);
-  const [diff, setDiff] = createSignal("");
-
-  const toggle = async (c: GitCommit) => {
-    if (open() === c.hash) return setOpen(null);
-    setOpen(c.hash);
-    setFiles(null);
-    setErr("");
-    setDiffOf(null);
-    try {
-      setFiles(await commitFiles(props.pid, c.hash));
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
-    }
-  };
-  const showDiff = async (c: GitCommit, f: CommitFile) => {
-    if (diffOf() === f.path) return setDiffOf(null);
-    setDiffOf(f.path);
-    setDiff(tx("Carregando…"));
-    try {
-      setDiff(await commitDiff(props.pid, c.hash, f.path));
-    } catch (e) {
-      setDiff(e instanceof Error ? e.message : String(e));
-    }
-  };
 
   return (
     <div class="commit-graph">
       <Show when={props.uncommitted > 0}>
-        <button class="graph-row uncommitted" onClick={() => props.onUncommitted?.()}>
+        <button class="graph-row uncommitted" classList={{ open: ws.activeFile === ALL_CHANGES }} onClick={() => props.onUncommitted?.()} title={tx("Ver todas as mudanças ainda sem commit, lado a lado")}>
           <svg class="graph-svg" width={width()} height={ROW} aria-hidden="true">
             <path d={`M${x(rows()[0]?.col ?? 0)} ${ROW / 2} L${x(rows()[0]?.col ?? 0)} ${ROW}`} stroke="var(--line-2)" stroke-dasharray="3 3" />
             <circle cx={x(rows()[0]?.col ?? 0)} cy={ROW / 2} r="4" fill="none" stroke="var(--text-3)" stroke-dasharray="2 2" stroke-width="1.5" />
           </svg>
           <span class="graph-text">
-            <span class="graph-subject">{tx("Mudanças ainda sem commit")}</span>
+            <span class="graph-subject"><span>{tx("Mudanças ainda sem commit")}</span></span>
             <small>{txn(props.uncommitted, "{n} arquivo · ainda não salvo no git", "{n} arquivos · ainda não salvos no git")}</small>
           </span>
+          <ChevronRight size={13} class="graph-go" />
         </button>
       </Show>
       <For each={props.commits}>
         {(c, i) => {
           const isHead = () => !!props.head && c.hash.startsWith(props.head);
-          const url = () => (props.web?.includes("github.com") ? `${props.web}/commit/${c.hash}` : null);
           return (
-            <>
-              <button class="graph-row" classList={{ open: open() === c.hash, head: isHead() }} onClick={() => toggle(c)} title={`${c.hash}\n${c.author} · ${new Date(c.time * 1000).toLocaleString(locale())}`}>
-                <Lines row={rows()[i()]} width={width()} pushed={c.pushed} head={isHead()} />
-                <span class="graph-text">
-                  <span class="graph-subject">
-                    {open() === c.hash ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
-                    <span>{c.subject}</span>
-                  </span>
-                  <small>
-                    <span class="graph-where" title={c.pushed ? tx("Já está no remoto (nuvem)") : tx("Só neste computador")}>{c.pushed ? <Cloud size={10} /> : <Laptop size={10} />}</span>
-                    {c.author} · {since(c.time)}
-                    <For each={c.refs.filter((r) => !r.endsWith("/HEAD")).slice(0, 3)}>
-                      {(r) => (
-                        <span class="git-ref" classList={{ tag: r.startsWith("tag: "), remote: r.includes("/") && !r.startsWith("tag: ") }}>
-                          {r.startsWith("tag: ") ? <><Tag size={9} />{r.slice(5)}</> : r.includes("/") ? <><Cloud size={9} />{r}</> : <><Laptop size={9} />{r}</>}
-                        </span>
-                      )}
-                    </For>
-                  </small>
-                </span>
-              </button>
-              <Show when={open() === c.hash}>
-                <div class="graph-detail" style={{ "margin-left": `${width()}px` }}>
-                  <Show when={!err()} fallback={<div class="git-hint">{err()}</div>}>
-                    <Show when={files()} fallback={<div class="git-hint">{tx("Lendo o commit…")}</div>}>
-                      <Show when={files()!.length} fallback={<div class="git-hint">{tx("Este commit não mudou arquivos (é só uma junção).")}</div>}>
-                        <div class="graph-files-head">
-                          {txn(files()!.length, "{n} arquivo · clique para ver o que mudou", "{n} arquivos · clique para ver o que mudou")}
-                          <Show when={url() && c.pushed}>
-                            <button class="git-link" onClick={(e) => { e.stopPropagation(); void api.openUrl(url()!).catch(() => {}); }}><ExternalLink size={10} /> {tx("GitHub")}</button>
-                          </Show>
-                        </div>
-                        <For each={files()!}>
-                          {(f) => (
-                            <>
-                              <button class="graph-file" classList={{ open: diffOf() === f.path }} onClick={() => showDiff(c, f)} title={f.from ? `${f.from} → ${f.path}` : f.path}>
-                                <span class={`gf-status s-${f.status}`}>{statusWord[f.status] ? tx(statusWord[f.status]) : f.status}</span>
-                                <span class="gf-path">{f.path}</span>
-                                <Show when={f.added !== null} fallback={<small>{tx("binário")}</small>}>
-                                  <small><span class="plus">+{f.added}</span> <span class="minus">−{f.removed}</span></small>
-                                </Show>
-                              </button>
-                              <Show when={diffOf() === f.path}>
-                                <pre class="graph-diff">
-                                  <For each={diff().split("\n").filter((l) => !/^(diff --git|index |--- |\+\+\+ )/.test(l))}>
-                                    {(l) => <span class={l.startsWith("+") ? "add" : l.startsWith("-") ? "del" : l.startsWith("@@") ? "hunk" : ""}>{l || " "}{"\n"}</span>}
-                                  </For>
-                                </pre>
-                              </Show>
-                            </>
-                          )}
-                        </For>
-                      </Show>
-                    </Show>
-                  </Show>
-                </div>
-              </Show>
-            </>
+            <button class="graph-row" classList={{ open: ws.activeFile === COMMIT + c.hash, head: isHead() }} onClick={() => openCommit(c.hash)} title={`${c.subject}\n${c.short} · ${c.author} · ${new Date(c.time * 1000).toLocaleString(locale())}\n${tx("Clique para comparar os arquivos deste commit, lado a lado")}`}>
+              <Lines row={rows()[i()]} width={width()} pushed={c.pushed} head={isHead()} />
+              <span class="graph-text">
+                <span class="graph-subject"><span>{c.subject}</span></span>
+                <small>
+                  <span class="graph-where" title={c.pushed ? tx("Já está no remoto (nuvem)") : tx("Só neste computador")}>{c.pushed ? <Cloud size={10} /> : <Laptop size={10} />}</span>
+                  {c.author} · {since(c.time)}
+                  <For each={c.refs.filter((r) => !r.endsWith("/HEAD")).slice(0, 3)}>
+                    {(r) => (
+                      <span class="git-ref" classList={{ tag: r.startsWith("tag: "), remote: r.includes("/") && !r.startsWith("tag: ") }}>
+                        {r.startsWith("tag: ") ? <><Tag size={9} />{r.slice(5)}</> : r.includes("/") ? <><Cloud size={9} />{r}</> : <><Laptop size={9} />{r}</>}
+                      </span>
+                    )}
+                  </For>
+                </small>
+              </span>
+              <ChevronRight size={13} class="graph-go" />
+            </button>
           );
         }}
       </For>

@@ -198,10 +198,26 @@ export const resetWorkspace = (demo = true) => setWs(reconcile(initialWorkspace(
 export const DIFF = "diff:";
 export const isDiffTab = (t: string) => t.startsWith(DIFF);
 export const diffPathOf = (t: string) => t.slice(DIFF.length);
-export const openDiff = (path: string) => openFile(DIFF + path);
 /** A aba que junta todas as mudanças da pasta, um arquivo embaixo do outro. */
 export const ALL_CHANGES = DIFF + "*";
 export const openAllChanges = () => openFile(ALL_CHANGES);
+/** Aba de um commit: os arquivos dele à esquerda e, ao lado, antes e depois de cada um. */
+export const COMMIT = DIFF + "@commit:";
+export const isCommitTab = (t: string) => t.startsWith(COMMIT);
+export const commitOfTab = (t: string) => t.slice(COMMIT.length);
+const isFileDiff = (t: string) => isDiffTab(t) && t !== ALL_CHANGES && !isCommitTab(t);
+
+/** Abre `tab` no lugar da aba de comparação que já está aberta (do mesmo tipo), como a prévia do
+ *  VS Code: clicar em vários arquivos ou commits seguidos não enche a fileira de abas. */
+function openPreview(tab: string, same: (t: string) => boolean) {
+  if (ws.openTabs.includes(tab)) return setWs("activeFile", tab);
+  const old = ws.openTabs.find(same);
+  if (old) setWs("openTabs", (l) => l.map((t) => (t === old ? tab : t)));
+  else setWs("openTabs", (l) => [...l, tab]);
+  setWs("activeFile", tab);
+}
+export const openDiff = (path: string) => openPreview(DIFF + path, isFileDiff);
+export const openCommit = (hash: string) => openPreview(COMMIT + hash, isCommitTab);
 
 export function openFile(path: string) {
   if (!ws.openTabs.includes(path)) setWs("openTabs", (t) => [...t, path]);

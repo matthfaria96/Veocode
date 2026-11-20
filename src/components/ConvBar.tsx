@@ -1,11 +1,11 @@
 // Barra de conversas do projeto (abas), medidor de contexto, aviso de conversa pesada e
 // memória do projeto.
-import { Activity, Brain, Check, Eye, GitBranch, History, LayoutGrid, PanelBottom, PanelRight, Plus, Sparkles, SquarePen, X } from "lucide-solid";
+import { Activity, Brain, Check, Eye, GitBranch, History, LayoutGrid, PanelBottom, PanelRight, Plus, Sparkles, X } from "lucide-solid";
 import { createSignal, For, Show, type Component, type JSX } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { bottomOpen, debugOpen, focusMode, setBottomOpen, setDebugOpen, setFocusMode } from "../layoutMode";
 import { chatOf } from "../chat";
-import { activeKey, CACHE_TTL, closeTab, concludeTab, continueFresh, fmtTokens, forkConversation, newTab, renameTab, selectTab, startConversation, tabsOf, weightOf } from "../convTabs";
+import { activeKey, CACHE_TTL, closeTab, concludeTab, continueFresh, fmtTokens, forkConversation, newTab, renameTab, selectTab, tabsOf, weightOf } from "../convTabs";
 import { customName, forkParentOf } from "../forks";
 import { histFind } from "../convHist";
 import { ProjectIcon } from "./icons";
@@ -38,7 +38,7 @@ function Tool(props: { icon: Component<{ size?: number }>; name: string; hint: s
   );
 }
 
-export function ConvTabsBar(props: { pid: string; view: View; onView: (v: View) => void; extCount: number; slim?: boolean; docked?: boolean }) {
+export function ConvTabsBar(props: { pid: string; view: View; onView: (v: View) => void; extCount: number; slim?: boolean }) {
   const [editing, setEditing] = createSignal<string | null>(null);
   const k = () => activeKey(props.pid);
   const claude = () => accountById(projects.find((p) => p.id === props.pid)?.accountId ?? "").provider === "claude";
@@ -144,11 +144,6 @@ export function ConvTabsBar(props: { pid: string; view: View; onView: (v: View) 
         </button>
       </div>
       <div class="conv-tools">
-        <Show when={props.docked}>
-          <Tool icon={SquarePen} name={tx("Nova conversa")} hint={tx("Começa uma conversa nova neste projeto (as outras continuam no modo IA)")} onClick={() => (props.view !== "chat" && props.onView("chat"), startConversation(props.pid))} />
-          <Tool icon={History} name={tx("Conversas anteriores")} hint={tx("Trocar para outra conversa deste projeto")} on={props.view === "hist"} onClick={() => props.onView("hist")} />
-        </Show>
-        <Show when={!props.docked}>
         <Tool
           icon={LayoutGrid}
           name={focusMode() ? tx("Sair do modo foco") : tx("Modo foco")}
@@ -161,11 +156,12 @@ export function ConvTabsBar(props: { pid: string; view: View; onView: (v: View) 
         >
           <Show when={focusMode() && tabsOf(props.pid).length > 1}><i class="ctool-badge">{tabsOf(props.pid).length}</i></Show>
         </Tool>
-        </Show>
         <Show when={props.slim && canFork()}>
           <Tool icon={GitBranch} name={tx("Bifurcar")} hint={tx("Uma conversa nova que começa com tudo desta. Para tentar outro caminho sem perder este.")} onClick={fork} />
         </Show>
-        <Show when={props.slim && !props.docked}>
+        <Show when={props.slim}>
+          <Tool icon={Brain} name={tx("Memória do projeto")} hint={tx("O que o Claude já sabe deste projeto sem reler conversas antigas")} on={isOpen("memory", props.pid)} onClick={() => openMemory(props.pid)} />
+          <i class="conv-sep" />
           <Tool icon={PanelRight} name={debugOpen() ? tx("Esconder o painel da direita") : tx("Mostrar o painel da direita")} hint={tx("Navegador, comandos rodando, subagentes e atividade, ao lado da conversa")} on={debugOpen()} onClick={() => setDebugOpen(!debugOpen())} />
         </Show>
         <Show when={!props.slim}>

@@ -1,16 +1,14 @@
-// Modo Código, à direita: o painel que abre e fecha pelo ícone ao lado do terminal (⌥⌘B).
-// Só o que serve enquanto você mexe no código: o Git (com o número do que falta resolver), a
-// conversa com a IA ao lado do código (como o Claude Code no VS Code), o Ambiente (perfis do
-// .env e os serviços do projeto) e, se você pôs ele aqui, o terminal. Comandos, atividade,
-// subagentes e rastro moram no painel do modo IA.
-import { GitBranch, MessagesSquare, PanelBottom, SlidersHorizontal, SquareTerminal, X } from "lucide-solid";
+// Modo Código, à direita: o painel que abre e fecha pelo ícone ao lado das abas (⌥⌘B). Só o que
+// serve enquanto você mexe no código: o Git (com o número do que falta resolver), o terminal da
+// pasta (⌘J) e o Ambiente (perfis do .env e os serviços do projeto). A conversa com a IA mora no
+// modo IA (⌘E); comandos, atividade, subagentes e rastro também.
+import { GitBranch, SlidersHorizontal, SquareTerminal, X } from "lucide-solid";
 import { lazy, Match, Show, Suspense, Switch } from "solid-js";
 import { pendingOf } from "../git";
-import { projectLive } from "../convList";
 import { runningCount } from "../envs";
-import { codeSideTab, moveTerm, setCodeSideOpen, setCodeSideTab, termAt, type CodeSideTab } from "../layoutMode";
+import { codeSideTab, setCodeSideOpen, setCodeSideTab, type CodeSideTab } from "../layoutMode";
 import { currentProject } from "../store";
-import ChatPanel from "./ChatPanel";
+import { terms } from "../terminal";
 import EnvPanel from "./EnvPanel";
 import GitPanel from "./GitPanel";
 import { tx, txn } from "../i18n";
@@ -50,45 +48,38 @@ export function GitCount(props: { pid: string }) {
 
 export default function CodeSide() {
   const pid = () => currentProject().id;
-  const live = () => projectLive(pid());
+  const shells = () => (terms.byProject[pid()] ?? []).filter((t) => t.alive).length;
   const tabs = (): { id: CodeSideTab; label: string; hint: string; icon: typeof GitBranch }[] => [
     { id: "git", label: tx("Git"), hint: tx("O que mudou, commit, enviar e baixar, e o GitHub"), icon: GitBranch },
-    { id: "chat", label: tx("Conversa"), hint: tx("A conversa com a IA ao lado do código. O arquivo aberto no editor pode ir junto no pedido."), icon: MessagesSquare },
+    { id: "term", label: tx("Terminal"), hint: tx("Terminal desta pasta (⌘J)"), icon: SquareTerminal },
     { id: "env", label: tx("Ambiente"), hint: tx("Perfis do .env (qual banco, qual API…) e os serviços do projeto: trocar um perfil reinicia quem lê aquele .env"), icon: SlidersHorizontal },
-    ...(termAt() === "side" ? [{ id: "term" as const, label: tx("Terminal"), hint: tx("Terminal desta pasta (⌘J)"), icon: SquareTerminal }] : []),
   ];
 
   return (
     <aside class="debug-pane code-side">
-      <div class="dbg-tabs" role="tablist">
-        {tabs().map((t) => (
-          <button role="tab" aria-selected={codeSideTab() === t.id} classList={{ on: codeSideTab() === t.id }} onClick={() => setCodeSideTab(t.id)} title={t.hint}>
-            <t.icon size={13} />
-            <span>{t.label}</span>
-            <Show when={t.id === "git"}><GitCount pid={pid()} /></Show>
-            <Show when={t.id === "chat" && live().ask}><i class="cv-gask" title={tx("Esperando você")} /></Show>
-            <Show when={t.id === "chat" && !live().ask && live().busy}><i class="ctool-live" title={tx("Trabalhando")} /></Show>
-            <Show when={t.id === "env" && runningCount(pid())}><i class="git-count run" title={txn(runningCount(pid()), "{n} serviço rodando", "{n} serviços rodando")}>{runningCount(pid())}</i></Show>
-          </button>
-        ))}
+      <div class="dbg-tabs seg-tabs" role="tablist">
+        <div class="seg">
+          {tabs().map((t) => (
+            <button role="tab" aria-selected={codeSideTab() === t.id} classList={{ on: codeSideTab() === t.id }} onClick={() => setCodeSideTab(t.id)} title={t.hint}>
+              <t.icon size={13} />
+              <span>{t.label}</span>
+              <Show when={t.id === "git"}><GitCount pid={pid()} /></Show>
+              <Show when={t.id === "term" && shells() > 1}><i class="git-count muted" title={txn(shells(), "{n} terminal aberto", "{n} terminais abertos")}>{shells()}</i></Show>
+              <Show when={t.id === "env" && runningCount(pid())}><i class="git-count run" title={txn(runningCount(pid()), "{n} serviço rodando", "{n} serviços rodando")}>{runningCount(pid())}</i></Show>
+            </button>
+          ))}
+        </div>
         <span class="dbg-spacer" />
         <button class="icon-btn small" title={tx("Esconder o painel (⌥⌘B)")} onClick={() => setCodeSideOpen(false)}><X size={13} /></button>
       </div>
       <div class="dbg-body">
         <Switch>
           <Match when={codeSideTab() === "git"}><div class="side-scroll"><GitPanel /></div></Match>
-          <Match when={codeSideTab() === "chat"}><ChatPanel slim docked /></Match>
           <Match when={codeSideTab() === "env"}><EnvPanel /></Match>
-          <Match when={codeSideTab() === "term" && termAt() === "side"}>
+          <Match when={codeSideTab() === "term"}>
             <section class="code-term docked">
               <Suspense fallback={<div class="pterm-empty"><span class="spinner" /> {tx("Carregando o terminal…")}</div>}>
-                <ProjectTerminal
-                  tools={
-                    <button class="icon-btn small" title={tx("Pôr o terminal embaixo do editor")} onClick={() => moveTerm("bottom")}>
-                      <PanelBottom size={13} />
-                    </button>
-                  }
-                />
+                <ProjectTerminal />
               </Suspense>
             </section>
           </Match>
