@@ -11,6 +11,7 @@ import { isTauri } from "./api";
 import { loadDir, openRealFile } from "./realProject";
 import { projectId, pushEvent, setWs, ws, type ActivityEvent, type Cursor, type FileMark } from "./store";
 import { tx } from "./i18n";
+import { markStopped } from "./outside";
 
 export interface AgentEvent {
   id: string;
@@ -18,7 +19,7 @@ export interface AgentEvent {
   account: string;
   sub: string | null;
   subLabel: string | null;
-  kind: "user" | "say" | "think" | "read" | "search" | "edit" | "create" | "run" | "web" | "tool" | "swarm" | "plan" | "done" | "result" | "compact";
+  kind: "user" | "say" | "think" | "read" | "search" | "edit" | "create" | "run" | "web" | "tool" | "swarm" | "plan" | "done" | "stop" | "result" | "compact";
   title: string;
   detail: string | null;
   path: string | null;
@@ -189,7 +190,8 @@ export function startAgentFeed(root: HTMLElement): () => void {
         return {
           ...old,
           status: e.status === "error" ? "error" : "ok",
-          detail: e.detail ?? old.detail,
+          // a lista de tarefas chega no pedido; o resultado dela não traz nada melhor
+          detail: old.kind === "plan" ? old.detail : e.detail ?? old.detail,
           kind: created ? "create" : old.kind,
           title: created ? old.title.replace(/^Escrevendo/, "Criando") : old.title,
         };
@@ -209,6 +211,12 @@ export function startAgentFeed(root: HTMLElement): () => void {
         e.output.forEach((l) => term(l, "dim"));
         term(e.status === "error" ? "✗ falhou" : "✓ ok", e.status === "error" ? undefined : "ok");
       }
+      return;
+    }
+
+    // parado no meio (no Terminal, no editor, no app do Claude): o pedido acabou
+    if (e.kind === "stop") {
+      markStopped(e.session, e.ts);
       return;
     }
 

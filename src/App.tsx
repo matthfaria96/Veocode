@@ -34,18 +34,17 @@ import { refreshLimits, startLimitWatch } from "./limits";
 import { SwitchAccountDialog } from "./components/Limits";
 import { accts } from "./accounts";
 import { tx } from "./i18n";
+import { mapFileChanged } from "./projmap";
 
 // telas menos usadas chegam aos poucos: o app abre mais rápido e elas ficam prontas logo depois
 const loaders = {
   Accounts: () => import("./views/Accounts"),
   System: () => import("./views/System"),
-  Inventory: () => import("./views/Inventory"),
   Settings: () => import("./views/Settings"),
   Help: () => import("./components/Help"),
 };
 const Accounts = lazy(loaders.Accounts);
 const System = lazy(loaders.System);
-const Inventory = lazy(loaders.Inventory);
 const Settings = lazy(loaders.Settings);
 const Help = lazy(loaders.Help);
 
@@ -118,6 +117,7 @@ export default function App() {
       // arquivos mudaram: o número de mudanças do git também (uma leitura leve, juntando os avisos)
       clearTimeout(gitTimer);
       gitTimer = window.setTimeout(() => void loadSummaries(true), 1500);
+      if (e.changes.some((c) => c.path === ".veocode/map.json")) mapFileChanged(e.projectId);
       if (acc.reports[e.projectId] && e.changes.some((c) => /(^|[\\/])\.claude[\\/]settings(\.local)?\.json$/.test(c.path))) {
         clearTimeout(accTimer);
         accTimer = window.setTimeout(() => loadAccess(e.projectId), 400);
@@ -145,9 +145,6 @@ export default function App() {
             <Match when={view() === "accounts"}>
               <div class="view-enter"><Accounts /></div>
             </Match>
-            <Match when={view() === "inventory"}>
-              <div class="view-enter"><Inventory /></div>
-            </Match>
             <Match when={view() === "board"}>
               <div class="view-enter"><Board /></div>
             </Match>
@@ -157,7 +154,7 @@ export default function App() {
             <Match when={view() === "settings"}>
               <div class="view-enter"><Settings /></div>
             </Match>
-            <Match when={view() === "system"}>
+            <Match when={view() === "system" || view() === "inventory"}>
               <div class="view-enter"><System /></div>
             </Match>
           </Switch>

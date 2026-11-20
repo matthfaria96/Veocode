@@ -31,7 +31,7 @@ pub struct AgentEvent {
     /// subagente (agent-…), se não for a sessão principal
     pub sub: Option<String>,
     pub sub_label: Option<String>,
-    /// user, say, read, search, edit, create, run, web, tool, swarm, plan, done, result
+    /// user, say, read, search, edit, create, run, web, tool, swarm, plan, done, stop, result
     pub kind: String,
     pub title: String,
     pub detail: Option<String>,
@@ -347,7 +347,7 @@ pub fn stream_steps(v: &Value, account: &str, root: &Path, tools: &mut HashMap<S
     let now = chrono::Utc::now().timestamp_millis();
     parse_line(&v, &ctx, tools)
         .into_iter()
-        .filter(|e| !matches!(e.kind.as_str(), "user" | "say" | "think" | "done"))
+        .filter(|e| !matches!(e.kind.as_str(), "user" | "say" | "think" | "done" | "stop"))
         .map(|mut e| {
             if e.ts == 0 {
                 e.ts = now;
@@ -445,6 +445,11 @@ fn is_noise(text: &str) -> bool {
         || t.starts_with("[Request interrupted")
 }
 
+/// "[Request interrupted by user…]": a pessoa parou o pedido (no Terminal, no editor, no app).
+fn interrupted(text: &str) -> bool {
+    text.trim_start().starts_with("[Request interrupted")
+}
+
 fn parse_line(v: &Value, c: &Ctx, tools: &mut HashMap<String, String>) -> Vec<AgentEvent> {
     let ty = s(v, "type").unwrap_or("");
     // conversa compactada: vira uma linha "antes → depois" (o resumo que o Claude escreve fica de fora)
@@ -491,8 +496,12 @@ fn parse_line(v: &Value, c: &Ctx, tools: &mut HashMap<String, String>) -> Vec<Ag
     // ------------------------------------------------ pedido da pessoa e resultados
     if ty == "user" {
         let anchor = Some(s(v, "parentUuid").unwrap_or("").to_string());
+        // parado no meio: o pedido acabou (a conversa não ganha linha; o "trabalhando" some)
+        let stop = || AgentEvent { id: format!("{uuid}:stop"), kind: "stop".into(), ..base.clone() };
         if let Some(text) = content.and_then(Value::as_str) {
-            if !is_noise(text) && c.sub.is_none() {
+            if c.sub.is_none() && interrupted(text) {
+                out.push(stop());
+            } else if !is_noise(text) && c.sub.is_none() {
                 out.push(AgentEvent { id: uuid.into(), kind: "user".into(), title: cut(text, 400), anchor, ..base.clone() });
             }
             return out;
@@ -501,7 +510,9 @@ fn parse_line(v: &Value, c: &Ctx, tools: &mut HashMap<String, String>) -> Vec<Ag
             match s(b, "type") {
                 Some("text") if c.sub.is_none() => {
                     let t = s(b, "text").unwrap_or("");
-                    if !is_noise(t) {
+                    if interrupted(t) {
+                        out.push(stop());
+                    } else if !is_noise(t) {
                         out.push(AgentEvent { id: format!("{uuid}:{i}"), kind: "user".into(), title: cut(t, 400), anchor: anchor.clone(), ..base.clone() });
                     }
                 }
@@ -614,7 +625,41 @@ fn parse_line(v: &Value, c: &Ctx, tools: &mut HashMap<String, String>) -> Vec<Ag
                         e.title = format!("Subagente: {}", cut(s(&input, "description").unwrap_or("tarefa"), 70));
                         e.detail = s(&input, "subagent_type").map(String::from);
                     }
-                    "TodoWrite" | "mcp__ccd_turn__update_plan" => (e.kind, e.title) = ("plan".into(), crate::i18n::tr("Atualizou a lista de tarefas", "Updated the task list").into()),
+                    "TodoWrite" | "mcp__ccd_turn__update_plan" => {
+                        (e.kind, e.title) = ("plan".into(), crate::i18n::tr("Atualizou a lista de tarefas", "Updated the task list").into());
+                        // a lista inteira vai junto, para o chat mostrar o cartão de tarefas como o Claude Code
+                        let list = input.get("todos").or_else(|| input.get("items")).and_then(|v| v.as_array());
+                        if let Some(list) = list {
+                            let todos: Vec<serde_json::Value> = list
+                                .iter()
+                                .filter_map(|t| {
+                                    let text = s(t, "content")?;
+                                    Some(serde_json::json!({
+                                        "content": cut(text, 160),
+                                        "status": s(t, "status").unwrap_or("pending"),
+                                        "active": s(t, "activeForm").map(|a| cut(a, 160)),
+                                    }))
+                                })
+                                .collect();
+                            if !todos.is_empty() {
+                                e.detail = serde_json::to_string(&todos).ok();
+                            }
+                        }
+                    }
+                    // tarefas uma a uma (Claude Code mais novo): o chat refaz a lista somando as mudanças
+                    "TaskCreate" => {
+                        (e.kind, e.title) = ("plan".into(), crate::i18n::tr("Atualizou a lista de tarefas", "Updated the task list").into());
+                        if let Some(text) = s(&input, "subject").or_else(|| s(&input, "content")) {
+                            e.detail = Some(serde_json::json!({ "op": "create", "content": cut(text, 160), "active": s(&input, "activeForm").map(|a| cut(a, 160)) }).to_string());
+                        }
+                    }
+                    "TaskUpdate" => {
+                        (e.kind, e.title) = ("plan".into(), crate::i18n::tr("Atualizou a lista de tarefas", "Updated the task list").into());
+                        let id = input.get("taskId").map(|v| v.as_str().map(String::from).unwrap_or_else(|| v.to_string()));
+                        if let Some(id) = id {
+                            e.detail = Some(serde_json::json!({ "op": "update", "id": id, "status": s(&input, "status"), "content": s(&input, "subject").map(|t| cut(t, 160)), "active": s(&input, "activeForm").map(|a| cut(a, 160)) }).to_string());
+                        }
+                    }
                     "Skill" => (e.kind, e.title) = ("tool".into(), format!("Skill {}", s(&input, "skill").unwrap_or("?"))),
                     n if n.starts_with("mcp__") => {
                         let mut parts = n.trim_start_matches("mcp__").splitn(2, "__");
@@ -661,6 +706,50 @@ mod tests {
 
     fn line(v: serde_json::Value) -> String {
         format!("{v}\n")
+    }
+
+    #[test]
+    fn task_list_goes_with_the_plan_step() {
+        let root = std::env::temp_dir();
+        let mut tools = HashMap::new();
+        let v = serde_json::json!({"type":"assistant","uuid":"a1","message":{"content":[{"type":"tool_use","id":"t1","name":"TodoWrite","input":{"todos":[
+            {"content":"Ler o código","status":"completed","activeForm":"Lendo o código"},
+            {"content":"Rodar os testes","status":"in_progress","activeForm":"Rodando os testes"},
+            {"content":"Abrir o PR","status":"pending","activeForm":"Abrindo o PR"}]}}]}});
+        let out = stream_steps(&v, "acc", &root, &mut tools);
+        let plan = out.iter().find(|e| e.kind == "plan").expect("passo da lista");
+        let todos: Vec<Value> = serde_json::from_str(plan.detail.as_deref().unwrap()).unwrap();
+        assert_eq!(todos.len(), 3);
+        assert_eq!(todos[1]["status"], "in_progress");
+        assert_eq!(todos[1]["active"], "Rodando os testes");
+        // o plano do app (update_plan) usa "items"
+        let v = serde_json::json!({"type":"assistant","uuid":"a2","message":{"content":[{"type":"tool_use","id":"t2","name":"mcp__ccd_turn__update_plan","input":{"items":[{"content":"Um","status":"pending"}]}}]}});
+        let out = stream_steps(&v, "acc", &root, &mut tools);
+        assert!(out[0].detail.as_deref().unwrap().contains("\"Um\""));
+        // sem lista (só "advance"), fica sem detalhe
+        let v = serde_json::json!({"type":"assistant","uuid":"a3","message":{"content":[{"type":"tool_use","id":"t3","name":"mcp__ccd_turn__update_plan","input":{"advance":true}}]}});
+        assert!(stream_steps(&v, "acc", &root, &mut tools)[0].detail.is_none());
+        // tarefas uma a uma
+        let v = serde_json::json!({"type":"assistant","uuid":"a4","message":{"content":[
+            {"type":"tool_use","id":"t4","name":"TaskCreate","input":{"subject":"Rodar os testes","description":"…","activeForm":"Rodando os testes"}},
+            {"type":"tool_use","id":"t5","name":"TaskUpdate","input":{"taskId":"1","status":"in_progress"}}]}});
+        let out = stream_steps(&v, "acc", &root, &mut tools);
+        assert!(out[0].detail.as_deref().unwrap().contains("\"op\":\"create\""));
+        assert!(out[1].detail.as_deref().unwrap().contains("\"in_progress\""));
+    }
+
+    #[test]
+    fn interrupted_request_ends_the_turn() {
+        let root = std::env::temp_dir();
+        let mut tools = HashMap::new();
+        let v = serde_json::json!({"type":"user","uuid":"u9","message":{"content":[{"type":"text","text":"[Request interrupted by user for tool use]"}]}});
+        let ctx = Ctx { session: "s", account: "acc", sub: &None, sub_label: &None, root: &root, history: false };
+        let out = parse_line(&v, &ctx, &mut tools);
+        assert_eq!(out.iter().map(|e| e.kind.as_str()).collect::<Vec<_>>(), ["stop"]);
+        let v = serde_json::json!({"type":"user","uuid":"u10","message":{"content":"[Request interrupted by user]"}});
+        assert_eq!(parse_line(&v, &ctx, &mut tools)[0].kind, "stop");
+        // o leitor do chat do Veocode não precisa dele (o parar dele já sabe)
+        assert!(stream_steps(&v, "acc", &root, &mut tools).is_empty());
     }
 
     #[test]

@@ -1,8 +1,9 @@
 // Modo IA, à esquerda: os projetos, cada um abrindo as conversas dele (como no Claude), da mais
-// recente para a mais antiga. Ramos (bifurcações) ficam embaixo da conversa de onde saíram.
-// Um clique abre a conversa no meio; o "+" do projeto começa uma conversa nova nele.
-import { Archive, ArchiveRestore, ChevronRight, Code2, ExternalLink, FolderPlus, FolderSearch, GitBranch, LayoutGrid, Lock, Mail, MailOpen, MoreHorizontal, Pencil, Pin, PinOff, Plus, Search, SquarePen, SquareTerminal, Trash2, Check, Square, X } from "lucide-solid";
-import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from "solid-js";
+// recente para a mais antiga. Ramos (bifurcações) ficam embaixo da conversa de onde saíram, e
+// grupos com nome juntam conversas do mesmo assunto. Um clique abre a conversa no meio; o "+" do
+// projeto começa uma conversa nova nele. Embaixo: novo grupo, "só as ativas" e Local | Nuvem.
+import { Archive, ArchiveRestore, ChevronRight, Cloud, CloudDownload, Code2, ExternalLink, Folder, FolderInput, FolderMinus, FolderPlus, FolderSearch, GitBranch, Laptop, LayoutGrid, Lock, Mail, MailOpen, MoreHorizontal, Pencil, Pin, PinOff, Plus, Search, SquarePen, SquareTerminal, Trash2, Check, Square, X, Zap } from "lucide-solid";
+import { createEffect, createMemo, createSignal, For, on, onCleanup, Show, type JSX } from "solid-js";
 import { createStore } from "solid-js/store";
 import { accountById } from "../accounts";
 import { api, isTauri } from "../api";
@@ -20,6 +21,8 @@ import { absPathOf, addProjectFromPicker, currentProject, projectId, projects, s
 import { ProjectIcon } from "./icons";
 import { chatPane, showChatPane } from "./ChatPanel";
 import { lang, tx, txn } from "../i18n";
+import { addGroup, groupOf, groupsOf, moveToGroup, namingGroup, removeGroup, renameGroup, setNamingGroup, toggleGroup } from "../convGroups";
+import { attachCloud, CLOUD_URL, cloudOf, forgetCloud, parseSession, sessionUrl, startCloud, teleportCloud, type CloudSession } from "../cloud";
 
 const OPEN_KEY = "veocode.ai.groups";
 const readOpen = (): Record<string, boolean> => {
@@ -39,6 +42,25 @@ const setGroup = (pid: string, v: boolean) => {
     /* sem armazenamento */
   }
 };
+
+// Local (as conversas deste computador) ou Nuvem (claude.ai/code); e "só as ativas"
+const WHERE_KEY = "veocode.ai.where";
+const [where, setWhereRaw] = createSignal<"local" | "cloud">((() => {
+  try {
+    return localStorage.getItem(WHERE_KEY) === "cloud" ? "cloud" : "local";
+  } catch {
+    return "local";
+  }
+})());
+const setWhere = (v: "local" | "cloud") => {
+  setWhereRaw(v);
+  try {
+    localStorage.setItem(WHERE_KEY, v);
+  } catch {
+    /* só não lembra */
+  }
+};
+const [activeOnly, setActiveOnly] = createSignal(false);
 
 // relógio de 30 em 30 s para "há 5 min" andar sozinho
 const [now, setNow] = createSignal(Date.now());
@@ -133,8 +155,18 @@ export default function ConvSidebar() {
 
   const p = currentProject;
   const real = () => isTauri && !p().demo;
-  // o mesmo menu do Claude, com o que faz sentido aqui (não tem nuvem, janela nova nem seções:
-  // as conversas já ficam no projeto de onde são)
+  // conversas trabalhando ou esperando você, em todos os projetos (o número do "Ativas")
+  const activeN = createMemo(() =>
+    projects.reduce((n, pr) => (pr.demo ? n : n + convItems(pr.id).reduce((m, x) => m + Number(x.busy || x.ask) + x.forks.filter((f) => f.busy || f.ask).length, 0)), 0),
+  );
+  const newGroup = () => {
+    if (p().demo) return showToast(tx("Adicione uma pasta sua para criar grupos de conversas"));
+    setActiveOnly(false);
+    setGroup(p().id, true);
+    addGroup(p().id);
+  };
+  // o mesmo menu do Claude, com o que faz sentido aqui (sem janela nova: as conversas já ficam
+  // no projeto de onde são; a nuvem tem a aba dela, embaixo)
   const menuFor = (it: ConvItem): MenuEntry[] => {
     const claudeSession = !!it.session && it.convo?.kind !== "api" && !it.locked;
     const marks = !it.blank;
@@ -162,6 +194,18 @@ export default function ConvSidebar() {
     if (marks && !it.forkOf) items.push({ label: isPinned(it.id) ? tx("Desafixar") : tx("Fixar"), icon: () => (isPinned(it.id) ? <PinOff size={14} /> : <Pin size={14} />), key: "P", run: () => setPinned(it.id, !isPinned(it.id)) });
     if (marks) items.push({ label: isUnread(it.id) ? tx("Marcar como lida") : tx("Marcar como não lida"), icon: () => (isUnread(it.id) ? <MailOpen size={14} /> : <Mail size={14} />), key: "U", run: () => setUnread(it.id, !isUnread(it.id)) });
     items.push({ label: tx("Renomear"), icon: () => <Pencil size={14} />, key: "R", run: () => setEditing(it.id) });
+    if (marks && !it.forkOf) {
+      const cur = groupOf(it.pid, it.id);
+      const sub: MenuEntry[] = groupsOf(it.pid).map((g) => ({
+        label: g.name || tx("Sem nome"),
+        icon: () => (cur === g.id ? <Check size={14} /> : <Folder size={14} />),
+        run: () => (moveToGroup(it.id, g.id), toggleGroup(it.pid, g.id, true)),
+      }));
+      if (sub.length) sub.push("sep");
+      sub.push({ label: tx("Novo grupo…"), icon: () => <FolderPlus size={14} />, run: () => (setGroup(it.pid, true), moveToGroup(it.id, addGroup(it.pid))) });
+      if (cur) sub.push({ label: tx("Tirar do grupo"), icon: () => <FolderMinus size={14} />, run: () => moveToGroup(it.id, null) });
+      items.push({ label: tx("Mover para o grupo"), icon: () => <FolderInput size={14} />, key: "G", sub });
+    }
     if (claudeSession) items.push({ label: tx("Bifurcar"), hint: tx("Nova conversa a partir desta; a original não muda"), icon: () => <GitBranch size={14} />, key: "F", run: () => void forkItem(it) });
     if (it.busy && it.tab) items.push({ label: tx("Parar a resposta"), icon: () => <Square size={13} />, run: () => void stopChat(it.tab!.key) });
     if (it.tab && !it.blank && real()) items.push({ label: tx("Concluir: resumo na memória do projeto"), icon: () => <Check size={14} />, run: () => void concludeTab(it.pid, it.tab!.key) });
@@ -248,6 +292,63 @@ export default function ConvSidebar() {
     );
   }
 
+  function SubGroup(props: { pid: string; id: string; name: string; open: boolean; ids: string[]; busy: boolean; children: (id: string) => JSX.Element }) {
+    const naming = () => namingGroup() === props.id;
+    const menu = (e: MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      setContextMenu({
+        x: e.type === "contextmenu" ? e.clientX : r.left,
+        y: e.type === "contextmenu" ? e.clientY : r.bottom + 4,
+        items: [
+          { label: tx("Renomear"), icon: () => <Pencil size={14} />, key: "R", run: () => setNamingGroup(props.id) },
+          "sep",
+          { label: tx("Desfazer o grupo"), hint: tx("As conversas voltam para a lista; nada é apagado"), icon: () => <FolderMinus size={14} />, key: "D", run: () => removeGroup(props.pid, props.id) },
+        ],
+      });
+    };
+    const finish = (v: string) => {
+      setNamingGroup(null);
+      if (v.trim()) renameGroup(props.pid, props.id, v);
+      else if (!props.name && !props.ids.length) removeGroup(props.pid, props.id);
+    };
+    return (
+      <div class="cv-sub" classList={{ open: props.open }}>
+        <div class="cv-shead" role="button" tabindex="0" onClick={() => !naming() && toggleGroup(props.pid, props.id)} onKeyDown={(e) => e.key === "Enter" && !naming() && toggleGroup(props.pid, props.id)} onDblClick={() => setNamingGroup(props.id)} onContextMenu={menu}>
+          <span class="cv-schev"><ChevronRight size={12} /></span>
+          <span class="cv-sicon"><Folder size={13} /></span>
+          <Show when={naming()} fallback={<span class="cv-sname">{props.name || tx("Sem nome")}</span>}>
+            <input
+              class="cv-rename"
+              value={props.name}
+              placeholder={tx("Nome do grupo")}
+              ref={(el) => requestAnimationFrame(() => (el.focus(), el.select()))}
+              onClick={(e) => e.stopPropagation()}
+              onKeyDown={(e) => {
+                e.stopPropagation();
+                if (e.key === "Enter") e.currentTarget.blur();
+                if (e.key === "Escape") (e.currentTarget.value = props.name), e.currentTarget.blur();
+              }}
+              onBlur={(e) => finish(e.currentTarget.value)}
+            />
+          </Show>
+          <Show when={props.busy}><span class="spinner inline" /></Show>
+          <small class="cv-scount">{props.ids.length || ""}</small>
+          <button class="cv-more" title={tx("Mais ações")} onClick={menu}><MoreHorizontal size={14} /></button>
+        </div>
+        <Show when={props.open}>
+          <div class="cv-sitems">
+            <For each={props.ids}>{(id) => props.children(id)}</For>
+            <Show when={!props.ids.length}>
+              <p class="cv-sempty">{tx("Vazio. No ⋯ de uma conversa, use “Mover para o grupo”.")}</p>
+            </Show>
+          </div>
+        </Show>
+      </div>
+    );
+  }
+
   function Group(props: { pid: string }) {
     const pr = () => projects.find((x) => x.id === props.pid)!;
     const open = () => !!openGroups[props.pid];
@@ -260,15 +361,17 @@ export default function ConvSidebar() {
       onCleanup(every(() => void loadHist(props.pid, 20_000), 30_000));
     });
     const all = createMemo(() => (pr().demo ? [] : convItems(props.pid)));
+    const demoBusy = () => pr().demo && cur() && ws.running && !ws.paused;
     // arquivadas ficam fora (a não ser na busca, em "Arquivadas" ou se voltaram a ser abertas);
     // fixadas sobem para o topo
     const [showArch, setShowArch] = createSignal(false);
     const archN = createMemo(() => all().reduce((n, x) => n + Number(isArchived(x.id)) + x.forks.filter((f) => isArchived(f.id)).length, 0));
     const unreadN = createMemo(() => all().reduce((n, x) => n + Number(isUnread(x.id)) + x.forks.filter((f) => isUnread(f.id)).length, 0));
     const items = createMemo(() => {
-      const keep = (x: ConvItem) => showArch() || !!q().trim() || !isArchived(x.id) || x.busy || x.active;
+      const live = (x: ConvItem) => x.busy || x.ask;
+      const keep = (x: ConvItem) => (activeOnly() ? live(x) : showArch() || !!q().trim() || !isArchived(x.id) || x.busy || x.active);
       const list = all()
-        .filter(keep)
+        .filter((x) => keep(x) || (activeOnly() && x.forks.some(live)))
         .map((x) => (x.forks.every(keep) ? x : { ...x, forks: x.forks.filter(keep) }));
       return [...list.filter((x) => isPinned(x.id)), ...list.filter((x) => !isPinned(x.id))];
     });
@@ -299,9 +402,32 @@ export default function ConvSidebar() {
       }
       return m;
     });
-    const rootIds = createMemo(() => ordered().slice(0, shown()).map((x) => x.id));
+    // grupos do projeto (na ordem em que foram criados) e as conversas soltas
+    const grouped = createMemo(() => {
+      const m = new Map<string, string[]>();
+      for (const r of ordered()) {
+        const g = groupOf(props.pid, r.id);
+        if (g) m.set(g, [...(m.get(g) ?? []), r.id]);
+      }
+      return m;
+    });
+    const loose = createMemo(() => ordered().filter((r) => !groupOf(props.pid, r.id)));
+    const rootIds = createMemo(() => loose().slice(0, shown()).map((x) => x.id));
+    const tree = (id: string) => (
+      <Show when={byId().get(id)}>
+        {(it) => (
+          <>
+            <Row it={it()} />
+            <Show when={it().forks.length}>
+              <div class="cv-forks">
+                <For each={it().forks.map((f) => f.id)}>{(fid) => <Show when={byId().get(fid)}>{(f) => <Row it={f()} fork />}</Show>}</For>
+              </div>
+            </Show>
+          </>
+        )}
+      </Show>
+    );
     const live = () => projectLive(props.pid);
-    const demoBusy = () => pr().demo && cur() && ws.running && !ws.paused;
     const pick = () => {
       if (!cur()) {
         setProjectId(props.pid);
@@ -309,7 +435,7 @@ export default function ConvSidebar() {
       } else setGroup(props.pid, !open());
     };
     return (
-      <Show when={!q().trim() || filtered().length || norm(pr().name).includes(norm(q().trim()))}>
+      <Show when={activeOnly() ? filtered().length > 0 || demoBusy() : !q().trim() || filtered().length || norm(pr().name).includes(norm(q().trim()))}>
         <div class="cv-group" classList={{ open: open() || !!q().trim(), cur: cur() }}>
           <div class="cv-ghead" role="button" tabindex="0" onClick={pick} onKeyDown={(e) => e.key === "Enter" && pick()} title={pr().path}>
             <button class="cv-chev" title={open() ? tx("Fechar") : tx("Abrir")} onClick={(e) => (e.stopPropagation(), setGroup(props.pid, !open()))}>
@@ -338,24 +464,18 @@ export default function ConvSidebar() {
                   </div>
                 }
               >
-                <For each={rootIds()}>
-                  {(id) => (
-                    <Show when={byId().get(id)}>
-                      {(it) => (
-                        <>
-                          <Row it={it()} />
-                          <Show when={it().forks.length}>
-                            <div class="cv-forks">
-                              <For each={it().forks.map((f) => f.id)}>{(fid) => <Show when={byId().get(fid)}>{(f) => <Row it={f()} fork />}</Show>}</For>
-                            </div>
-                          </Show>
-                        </>
-                      )}
+                <For each={groupsOf(props.pid)}>
+                  {(g) => (
+                    <Show when={(!q().trim() && !activeOnly()) || grouped().get(g.id)?.length}>
+                      <SubGroup pid={props.pid} id={g.id} name={g.name} open={g.open || !!q().trim() || activeOnly()} ids={grouped().get(g.id) ?? []} busy={(grouped().get(g.id) ?? []).some((id) => byId().get(id)?.busy)}>
+                        {(id) => tree(id)}
+                      </SubGroup>
                     </Show>
                   )}
                 </For>
-                <Show when={filtered().length > shown()}>
-                  <button class="cv-more-list" onClick={() => setShown(shown() + 20)}>{tx("Mostrar mais ({n})", { n: filtered().length - shown() })}</button>
+                <For each={rootIds()}>{(id) => tree(id)}</For>
+                <Show when={loose().length > shown()}>
+                  <button class="cv-more-list" onClick={() => setShown(shown() + 20)}>{tx("Mostrar mais ({n})", { n: loose().length - shown() })}</button>
                 </Show>
                 <Show when={archN() && !q().trim()}>
                   <button class="cv-more-list cv-arch-btn" classList={{ on: showArch() }} onClick={() => setShowArch(!showArch())}>
@@ -391,13 +511,124 @@ export default function ConvSidebar() {
           <Show when={q()}><button class="cv-clear" title={tx("Limpar")} onClick={() => setQ("")}><X size={12} /></button></Show>
         </label>
       </div>
-      <div class="cv-scroll" onPointerEnter={() => setHold(true)} onPointerLeave={() => setHold(false)}>
-        <div class="cv-sec">
-          <span>{tx("Projetos")}</span>
-          <button class="icon-btn small" title={tx("Adicionar pasta")} onClick={() => void addProjectFromPicker()}><FolderPlus size={13} /></button>
+      <Show when={where() === "local"} fallback={<CloudView />}>
+        <div class="cv-scroll" onPointerEnter={() => setHold(true)} onPointerLeave={() => setHold(false)}>
+          <div class="cv-sec">
+            <span>{activeOnly() ? tx("Trabalhando agora") : tx("Projetos")}</span>
+            <button class="icon-btn small" title={tx("Adicionar pasta")} onClick={() => void addProjectFromPicker()}><FolderPlus size={13} /></button>
+          </div>
+          <For each={projects}>{(pr) => <Group pid={pr.id} />}</For>
+          <Show when={activeOnly() && !activeN()}>
+            <p class="cv-empty cv-none">{tx("Nenhuma conversa trabalhando ou esperando você agora.")}</p>
+          </Show>
         </div>
-        <For each={projects}>{(pr) => <Group pid={pr.id} />}</For>
+      </Show>
+      <div class="cv-foot">
+        <Show when={where() === "local"}>
+          <div class="cv-tools">
+            <button class="cv-tool" onClick={newGroup} title={tx("Um grupo dentro do projeto para juntar conversas do mesmo assunto")}>
+              <FolderPlus size={13} />
+              <span>{tx("Novo grupo")}</span>
+            </button>
+            <button class="cv-tool" classList={{ on: activeOnly() }} aria-pressed={activeOnly()} onClick={() => setActiveOnly(!activeOnly())} title={tx("Mostrar só as conversas trabalhando ou esperando você")}>
+              <Zap size={13} />
+              <span>{tx("Ativas")}</span>
+              <i class="cv-tool-n" classList={{ live: activeN() > 0 }}>{activeN()}</i>
+            </button>
+          </div>
+        </Show>
+        <div class="view-switch cv-where" role="radiogroup" aria-label={tx("Onde as conversas rodam")}>
+          <button role="radio" aria-checked={where() === "local"} classList={{ on: where() === "local" }} onClick={() => setWhere("local")} title={tx("Conversas que rodam neste computador")}>
+            <Laptop size={13} /><span>{tx("Local")}</span>
+          </button>
+          <button role="radio" aria-checked={where() === "cloud"} classList={{ on: where() === "cloud" }} onClick={() => setWhere("cloud")} title={tx("Sessões do Claude Code na nuvem (claude.ai/code)")}>
+            <Cloud size={13} /><span>{tx("Nuvem")}</span>
+          </button>
+          <span class="view-thumb" style={{ transform: `translateX(${where() === "cloud" ? 100 : 0}%)` }} />
+        </div>
       </div>
+    </div>
+  );
+}
+
+/** Nuvem: começar uma sessão em claude.ai/code, abrir uma pelo link e as que passaram por aqui. */
+function CloudView() {
+  const pr = currentProject;
+  const [task, setTask] = createSignal("");
+  const [link, setLink] = createSignal("");
+  const sid = () => parseSession(link());
+  const ok = () => !pr().demo && accountById(pr().accountId).provider === "claude";
+  const start = () => {
+    if (!task().trim()) return;
+    void startCloud(pr().id, task());
+    setTask("");
+  };
+  const open = (s: CloudSession) => (s.sid ? void attachCloud(pr().id, s.sid, s.title) : void api.openUrl(CLOUD_URL));
+  const menu = (e: MouseEvent, s: CloudSession) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const items: MenuEntry[] = [];
+    if (s.sid) items.push({ label: tx("Acompanhar no Terminal"), hint: tx("Ela continua rodando na nuvem"), icon: () => <SquareTerminal size={14} />, run: () => void attachCloud(pr().id, s.sid!, s.title) });
+    items.push({ label: tx("Abrir no navegador"), icon: () => <ExternalLink size={14} />, run: () => void api.openUrl(s.sid ? sessionUrl(s.sid) : CLOUD_URL) });
+    if (s.sid) items.push({ label: tx("Trazer para este computador"), hint: tx("Passa a rodar aqui e aparece em Local"), icon: () => <CloudDownload size={14} />, run: () => void teleportCloud(pr().id, s.sid!, s.title) });
+    items.push("sep", { label: tx("Tirar da lista"), icon: () => <X size={14} />, run: () => forgetCloud(pr().id, s) });
+    setContextMenu({ x: e.type === "contextmenu" ? e.clientX : r.left, y: e.type === "contextmenu" ? e.clientY : r.bottom + 4, items });
+  };
+  return (
+    <div class="cv-scroll cv-cloud">
+      <div class="cloud-hero pop-in">
+        <span class="cloud-mark"><Cloud size={17} /></span>
+        <div>
+          <strong>{tx("Na nuvem")}</strong>
+          <span>{tx("Sessões que rodam nos servidores do Claude (claude.ai/code) e continuam mesmo com este computador desligado.")}</span>
+        </div>
+      </div>
+      <Show
+        when={ok()}
+        fallback={<p class="cloud-note">{pr().demo ? tx("Adicione uma pasta sua para usar sessões na nuvem.") : tx("Precisa de uma conta do Claude no projeto. Troque a conta na caixa de mensagem.")}</p>}
+      >
+        <div class="cloud-box">
+          <small class="cloud-label">{tx("Nova sessão em {name}", { name: pr().name })}</small>
+          <textarea
+            rows={3}
+            value={task()}
+            placeholder={tx("O que ela deve fazer?")}
+            onInput={(e) => setTask(e.currentTarget.value)}
+            onKeyDown={(e) => e.key === "Enter" && (e.metaKey || e.ctrlKey) && (e.preventDefault(), start())}
+          />
+          <button class="cloud-go" disabled={!task().trim()} onClick={start}>
+            <Cloud size={13} /> {tx("Começar na nuvem")}
+          </button>
+          <small class="cloud-fine">{tx("Abre o Terminal com claude --cloud. O projeto precisa estar no GitHub.")}</small>
+        </div>
+        <div class="cloud-box">
+          <small class="cloud-label">{tx("Abrir uma que já existe")}</small>
+          <input value={link()} placeholder={tx("Cole o link da sessão (claude.ai/code/…)")} onInput={(e) => setLink(e.currentTarget.value)} />
+          <div class="cloud-actions">
+            <button class="cloud-btn" disabled={!sid()} onClick={() => (void attachCloud(pr().id, sid()!), setLink(""))} title={tx("Abre no Terminal; ela continua rodando na nuvem")}>
+              <SquareTerminal size={13} /> {tx("Acompanhar")}
+            </button>
+            <button class="cloud-btn" disabled={!sid()} onClick={() => (void teleportCloud(pr().id, sid()!), setLink(""))} title={tx("Passa a rodar neste computador e aparece em Local")}>
+              <CloudDownload size={13} /> {tx("Trazer para cá")}
+            </button>
+          </div>
+        </div>
+      </Show>
+      <div class="cv-sec"><span>{tx("Passaram por aqui")}</span></div>
+      <For each={cloudOf(pr().id)} fallback={<p class="cv-empty">{tx("Nenhuma ainda.")}</p>}>
+        {(c) => (
+          <div class="cv-row" role="button" tabindex="0" title={c.title} onClick={() => open(c)} onKeyDown={(e) => e.key === "Enter" && open(c)} onContextMenu={(e) => menu(e, c)}>
+            <span class="cv-st"><Cloud size={11} /></span>
+            <span class="cv-title">{c.title}</span>
+            <span class="cv-meta"><small class="cv-time">{shortAgo(c.at, now(), lang())}</small></span>
+            <button class="cv-more" title={tx("Mais ações")} onClick={(e) => menu(e, c)}><MoreHorizontal size={14} /></button>
+          </div>
+        )}
+      </For>
+      <button class="cv-more-list cloud-all" onClick={() => void api.openUrl(CLOUD_URL)}>
+        <ExternalLink size={12} /> {tx("Ver todas em claude.ai/code")}
+      </button>
     </div>
   );
 }

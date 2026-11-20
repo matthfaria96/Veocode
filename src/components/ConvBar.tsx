@@ -28,9 +28,9 @@ const ago = (ms: number) => {
 };
 
 /** Botão só de ícone; o nome e uma linha de explicação aparecem ao passar o mouse. */
-function Tool(props: { icon: Component<{ size?: number }>; name: string; hint: string; on?: boolean; onClick: () => void; children?: JSX.Element }) {
+export function Tool(props: { icon: Component<{ size?: number }>; name: string; hint: string; on?: boolean; disabled?: boolean; onClick: () => void; children?: JSX.Element }) {
   return (
-    <button class="ctool" classList={{ on: props.on }} aria-label={props.name} aria-pressed={!!props.on} onClick={props.onClick}>
+    <button class="ctool" classList={{ on: props.on }} aria-label={props.name} aria-pressed={!!props.on} disabled={props.disabled} onClick={props.onClick}>
       <Dynamic component={props.icon} size={15} />
       {props.children}
       <span class="ctip" role="tooltip"><b>{props.name}</b><small>{props.hint}</small></span>

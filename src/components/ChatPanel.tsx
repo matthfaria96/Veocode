@@ -1,8 +1,8 @@
-import { AlertTriangle, ArrowUp, Eye, ArrowLeft, Ban, Check, ChevronDown, FileCode2, History, Loader2, Maximize2, MessageSquarePlus, Pencil, Paperclip, Plus, SendHorizontal, Shrink, ShieldCheck, Square, TerminalSquare, X } from "lucide-solid";
+import { AlertTriangle, ArrowUp, Eye, ArrowLeft, Ban, Check, FileCode2, History, Loader2, Maximize2, MessageSquarePlus, Pencil, Paperclip, Plus, SendHorizontal, Shrink, ShieldCheck, Square, TerminalSquare, X } from "lucide-solid";
 import { createEffect, createMemo, createSignal, For, Match, on, Show, Switch } from "solid-js";
 import { accessLevels } from "../data/mock";
 import { accountById } from "../accounts";
-import { currentProject, isDiffTab, showToast, ws, type ActivityEvent } from "../store";
+import { currentProject, isDiffTab, setWs, showToast, ws, type ActivityEvent } from "../store";
 import { seenAgent } from "../agentFeed";
 import { acc, loadAccess, openClaude } from "../access";
 import { answerPermission, chatOf, clearError, deleteConvos, ofChat, resendEdited, sendChat, setAttach, setInput, stopChat, type Convo } from "../chat";
@@ -18,7 +18,6 @@ import { setChatTab } from "../git";
 import { focusMode, panelAt, setFocusMode, setPanelAt } from "../layoutMode";
 import BottomPanel from "./BottomPanel";
 import { MicButton } from "./Mic";
-import { stepsSummary } from "../steps";
 import { LimitHitCard, requestSwitch, UsageRing } from "./Limits";
 import { limitHit } from "../limits";
 import { listeningTo, voiceKey } from "../voice";
@@ -29,7 +28,9 @@ import ActivityIcon, { kindColor } from "./ActivityIcon";
 import { AgentChipButton, AgentMenu } from "./AgentMenu";
 import MsgTools, { focusComposer } from "./MsgTools";
 import Markdown from "./Markdown";
-import Thinking from "./Thinking";
+import { LiveLine, LongText, latestPlan, PlanCard, useClock, WorkFold } from "./Work";
+import StopOutside from "./StopOutside";
+import { markStopped, outsideTurn } from "../outside";
 import { tx, txn } from "../i18n";
 import { gridFit, spanOf, useWidth } from "../gridFit";
 
@@ -190,7 +191,7 @@ function RealConversation(props: { events: () => ActivityEvent[]; tail?: boolean
                     when={editing() === e().id}
                     fallback={
                       <div class="bubble user pop-in">
-                        {e().title}
+                        <LongText text={e().title} />
                         <SentThumbs text={e().title} />
                         <MsgTools
                           text={e().title}
@@ -250,52 +251,13 @@ function RealConversation(props: { events: () => ActivityEvent[]; tail?: boolean
                 )}
               </Match>
               <Match when={b()?.t === "work" && (b() as { items: ActivityEvent[] }).items}>
-                {(items) => {
-                  // fechado por padrão: uma linha só ("Executou 2 comandos, leu 1 arquivo ›"); abre com um clique
-                  const [open, setOpen] = createSignal(false);
-                  const [all, setAll] = createSignal(false);
-                  const shown = () => (all() ? items() : items().slice(-8));
-                  const running = () => items().some((x) => x.status === "running");
-                  const now = () => [...items()].reverse().find((x) => x.status === "running") ?? items()[items().length - 1];
-                  const failed = () => items().filter((x) => x.status === "error").length;
-                  return (
-                    <div class="work-fold pop-in" classList={{ open: open(), live: running() }}>
-                      <button class="work-sum" aria-expanded={open()} onClick={() => setOpen(!open())}>
-                        <Show when={running()} fallback={<span class="work-sum-text">{stepsSummary(items().map((x) => x.kind))}</span>}>
-                          <span class="spinner" />
-                          <span class="work-sum-text now">{now()?.title}</span>
-                          <small class="work-sum-count">{txn(items().length, "{n} passo", "{n} passos")}</small>
-                        </Show>
-                        <Show when={failed() > 0}><small class="work-sum-fail">{tx("{failed} falhou", { failed: failed() })}</small></Show>
-                        <ChevronDown size={13} class="work-chev" />
-                      </button>
-                      <Show when={open()}>
-                        <div class="work-card slide-in">
-                          <Show when={items().length > 8 && !all()}><button class="work-more" onClick={() => setAll(true)}>{tx("+{v} antes · mostrar tudo", { v: items().length - 8 })}</button></Show>
-                          <For each={shown()}>
-                            {(x) => (
-                              <div class="work-row" classList={{ running: x.status === "running", error: x.status === "error" }} title={x.detail ?? x.title}>
-                                <span class="work-icon" style={{ color: kindColor[x.kind] }}>
-                                  <ActivityIcon kind={x.kind} />
-                                </span>
-                                <span class="work-title">{x.title}</span>
-                                <Show when={x.status === "running"} fallback={<small class="work-detail">{x.status === "error" ? tx("falhou") : x.kind === "run" ? "" : x.detail}</small>}>
-                                  <span class="spinner" />
-                                </Show>
-                              </div>
-                            )}
-                          </For>
-                        </div>
-                      </Show>
-                    </div>
-                  );
-                }}
+                {(items) => <WorkFold steps={items()} pid={currentProject().demo ? null : currentProject().id} />}
               </Match>
             </Switch>
           );
         }}
       </For>
-      <Show when={props.tail !== false}><ChatTail k={props.k} /></Show>
+      <Show when={props.tail !== false}><ChatTail k={props.k} events={props.events} /></Show>
     </>
   );
 }
@@ -374,18 +336,47 @@ function Conversations(props: { onClose: () => void }) {
   );
 }
 
-/** Texto chegando, pedidos de permissão e erro da conversa. */
-function ChatTail(props: { k?: string }) {
+/** Lista de tarefas, o que a IA está fazendo agora (e há quanto tempo), texto chegando, pedidos de permissão e erro. */
+function ChatTail(props: { k?: string; events?: () => ActivityEvent[] }) {
   const p = currentProject;
   const ck = () => props.k ?? activeKey(p().id);
   const chat = () => chatOf(ck());
   const a = () => accountById(p().accountId);
+  // o pedido em curso: tudo depois da sua última mensagem
+  const turn = createMemo(() => {
+    const ev = props.events?.() ?? [];
+    let i = ev.length - 1;
+    while (i >= 0 && ev[i].kind !== "user") i--;
+    return { since: ev[i]?.ts, steps: ev.slice(i + 1) };
+  });
+  const plan = createMemo(() => latestPlan(props.events?.() ?? []));
+  const runningStep = () => [...turn().steps].reverse().find((x) => x.status === "running" && x.kind !== "say" && x.kind !== "user");
+  // a mesma conversa rodando por fora (Terminal, editor, app do Claude): o arquivo dela diz se
+  // o pedido ainda não terminou
+  const clock = useClock();
+  const outside = createMemo(() => (chat().busy || !props.events ? null : outsideTurn(props.events(), clock())));
+  const [stopOut, setStopOut] = createSignal(false);
+  const [stopping, setStopping] = createSignal(false);
+  createEffect(() => !chat().busy && setStopping(false));
+  const stop = () => (setStopping(true), void stopChat(ck()));
   return (
     <>
+      <Show when={plan()}>{(t) => <PlanCard todos={t()} color={a().color} live={chat().busy || !!outside()} />}</Show>
       <Show when={chat().busy && !chat().perms.length}>
-        <Show when={chat().draft} fallback={<Thinking color={a().color} />}>
+        <Show when={chat().draft}>
           <div class="bubble agent say streaming" style={{ "--c": a().color }}>{chat().draft.replace(/\*\*/g, "")}</div>
         </Show>
+        <LiveLine color={a().color} step={chat().draft ? null : runningStep()} writing={!!chat().draft} since={turn().since} onStop={stop} stopping={stopping()} />
+      </Show>
+      <Show when={outside()}>
+        {(o) => (
+          <>
+            <LiveLine color={a().color} step={o().step} since={o().since} where={tx("fora do Veocode")} onStop={() => setStopOut(!stopOut())} stopTitle={tx("Parar a IA que roda fora do Veocode")} />
+            <Show when={stopOut()}>
+              <StopOutside pid={p().id} onClose={() => setStopOut(false)} onStopped={() => (markStopped(o().session, Date.now()), setStopOut(false))} />
+            </Show>
+          </>
+        )}
       </Show>
       <For each={chat().perms}>
         {(q) => (
@@ -646,7 +637,6 @@ export default function ChatPanel(props: { slim?: boolean }) {
     () => shown()[shown().length - 1]?.kind === "user",
   );
 
-  const work = () => ws.events.filter((e) => e.kind !== "user" && e.kind !== "done");
   const done = () => ws.events.find((e) => e.kind === "done");
 
   return (
@@ -690,11 +680,14 @@ export default function ChatPanel(props: { slim?: boolean }) {
                 <div class="chat-empty">{ws.paused ? tx("Simulação parada: aperte Assistir (em cima do editor) para ver um agente de exemplo trabalhando.") : tx("O agente de exemplo vai começar em instantes…")}</div>
               </Show>
               <RealConversation events={() => ws.events} tail={false} />
-              <Show when={!ws.paused && ws.running && ws.events.length > 0 && work().length === 0}><Thinking color={account().color} /></Show>
+              <Show when={latestPlan(ws.events)}>{(t) => <PlanCard todos={t()} color={account().color} live={ws.running && !ws.paused} />}</Show>
+              <Show when={!ws.paused && ws.running && ws.events.length > 0}>
+                <LiveLine color={account().color} step={[...ws.events].reverse().find((e) => e.status === "running" && e.kind !== "think")} since={ws.events.find((e) => e.kind === "user")?.ts} onStop={() => setWs("paused", true)} stopTitle={tx("Pausar a demonstração")} />
+              </Show>
               <Show when={done()}>
                 {(d) => (
                   <div class="bubble agent pop-in">
-                    <strong>{d().title}.</strong> {tx("{detail}. Quer ver os dados reais do disco em Computador → Uso da máquina?", { detail: d().detail })}
+                    <strong>{d().title}.</strong> {tx("{detail}. Quer ver os dados reais do disco no Painel?", { detail: d().detail })}
                   </div>
                 )}
               </Show>

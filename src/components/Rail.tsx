@@ -1,4 +1,4 @@
-import { Bot, LayoutDashboard, MessagesSquare, CircleHelp, FolderOpen, Monitor, Settings } from "lucide-solid";
+import { Bot, ChartPie, LayoutDashboard, MessagesSquare, CircleHelp, FolderOpen, Settings } from "lucide-solid";
 import { createMemo, For, Show, type JSX } from "solid-js";
 import { helpOpen, setHelpOpen, setView, view, type View } from "../store";
 import { railStatus } from "../railStatus";
@@ -10,7 +10,7 @@ const items: { id: View; label: string; icon: () => JSX.Element; also?: View[] }
   { id: "workspace", get label() { return tx("Projetos"); }, icon: () => <FolderOpen size={19} /> },
   { id: "livre", get label() { return tx("Chat livre"); }, icon: () => <MessagesSquare size={19} /> },
   { id: "accounts", get label() { return tx("Contas e IAs"); }, icon: () => <Bot size={19} /> },
-  { id: "system", get label() { return tx("Computador: espaço, IAs abertas e extras do Claude"); }, icon: () => <Monitor size={19} />, also: ["inventory"] },
+  { id: "system", get label() { return tx("Painel: espaço, IAs abertas e extras do Claude"); }, icon: () => <ChartPie size={19} />, also: ["inventory"] },
 ];
 
 export default function Rail() {

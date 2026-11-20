@@ -3,7 +3,7 @@ import { ArrowRight, Check, ExternalLink, FolderOpen, Globe, KeyRound, Pencil, P
 import Vault from "../components/Vault";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { api, isTauri, prettyPath } from "../api";
-import { projects, setProjectAccount, setView, showToast } from "../store";
+import { projects, setProjectAccount, showToast } from "../store";
 import { settings, updateSettings } from "../settings";
 import { loadLimits } from "../limits";
 import {
@@ -13,6 +13,7 @@ import {
 import { CountUp, PageHeader, ProviderMark, Stagger } from "../components/ui";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { lang, locale, tx, txn } from "../i18n";
+import { openPanel } from "../panel";
 
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 /** A semana em uma frase: "Esta semana: 1,2 mi tokens. Dia mais forte: ter. Hoje está acima do normal." */
@@ -40,7 +41,7 @@ export default function Accounts() {
   const [keyFor, setKeyFor] = createSignal<Account | null>(null);
 
   return (
-    <div class="page">
+    <div class="page acc-page">
       <PageHeader
         title={tx("Contas e IAs")}
         subtitle={isTauri ? tx("As IAs que os seus projetos usam, quanto falta de cada plano e o cofre de chaves.") : tx("Modo navegador: contas de exemplo. Abra pelo app para ver as suas.")}
@@ -73,9 +74,9 @@ export default function Accounts() {
         <span class="vault-badge alt"><Plug size={18} /></span>
         <div>
           <strong>{tx("Integrações")}</strong>
-          <p>{tx("Conexões do Claude com outros programas (Figma, GitHub, navegador…), receitas e atalhos ficam em")} <b>{tx("Computador → Extras do Claude")}</b>{tx(", com ligar, desligar e remover.")}</p>
+          <p>{tx("Conexões do Claude com outros programas (Figma, GitHub, navegador…), receitas e atalhos ficam em")} <b>{tx("Painel → Extras do Claude")}</b>{tx(", com ligar, desligar e remover.")}</p>
         </div>
-        <button class="ghost-btn" onClick={() => setView("inventory")}>{tx("Abrir Extras")} <ArrowRight size={13} /></button>
+        <button class="ghost-btn" onClick={() => openPanel("mcp")}>{tx("Abrir no Painel")} <ArrowRight size={13} /></button>
       </section>
 
       <Show when={adding()}>
@@ -311,7 +312,7 @@ function AccountCard(props: { a: Account; onRemove: (a: Account) => void; onKey:
           <dt>{tx("Servidor")}</dt>
           <dd>{s()?.who ?? a().baseUrl ?? "—"}</dd>
           <dt>{tx("Modelos")}</dt>
-          <dd>{s() ? (s()!.models.length ? tx("{length} disponíveis", { length: s()!.models.length }) : "—") : "…"}</dd>
+          <dd>{s() ? (s()!.models.length ? txn(s()!.models.length, "{n} disponível", "{n} disponíveis") : "—") : "…"}</dd>
         </dl>
       </Show>
 

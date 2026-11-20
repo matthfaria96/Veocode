@@ -127,6 +127,8 @@ export interface ActivityEvent {
   title: string;
   detail?: string;
   time: string;
+  /** quando aconteceu (ms), para contar o tempo do pedido no chat */
+  ts?: number;
   status: "running" | "ok" | "error";
   agent: string; // rótulo do cursor que fez
   /** cor de quem fez (conta), para os eventos reais */
@@ -205,7 +207,9 @@ export const openAllChanges = () => openFile(ALL_CHANGES);
 export const COMMIT = DIFF + "@commit:";
 export const isCommitTab = (t: string) => t.startsWith(COMMIT);
 export const commitOfTab = (t: string) => t.slice(COMMIT.length);
-const isFileDiff = (t: string) => isDiffTab(t) && t !== ALL_CHANGES && !isCommitTab(t);
+/** Aba do mapa do projeto (projmap.ts). */
+export const MAP_TAB = DIFF + "@map";
+const isFileDiff = (t: string) => isDiffTab(t) && t !== ALL_CHANGES && t !== MAP_TAB && !isCommitTab(t);
 
 /** Abre `tab` no lugar da aba de comparação que já está aberta (do mesmo tipo), como a prévia do
  *  VS Code: clicar em vários arquivos ou commits seguidos não enche a fileira de abas. */
@@ -236,7 +240,7 @@ export function pushEvent(e: Omit<ActivityEvent, "id" | "time" | "status"> & { s
   const now = e.at ? new Date(e.at) : new Date();
   delete e.at;
   const time = now.toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-  const ev: ActivityEvent = { status: "running", ...e, id, time };
+  const ev: ActivityEvent = { status: "running", ...e, id, time, ts: now.getTime() };
   setWs("events", (list) => [...list, ev].slice(-4000));
   return id;
 }

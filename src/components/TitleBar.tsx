@@ -2,9 +2,10 @@ import { Bell, BellRing, CircleCheck, Command, HardDrive, Search } from "lucide-
 import { createSignal, For, Show } from "solid-js";
 import { needs, urgentCount } from "../attention";
 import { dismissable } from "../dismiss";
-import { setPaletteOpen, setView } from "../store";
+import { setPaletteOpen } from "../store";
 import AppMark from "./AppMark";
 import { tx } from "../i18n";
+import { openPanel } from "../panel";
 
 const isMac = navigator.userAgent.includes("Mac");
 
@@ -29,7 +30,7 @@ export default function TitleBar() {
         <button
           class="ghost-btn"
           title={tx("Ver o espaço que as IAs ocupam no disco e escolher o que apagar (nada é apagado sem você confirmar)")}
-          onClick={() => setView("system")}
+          onClick={() => openPanel("overview")}
         >
           <HardDrive size={14} />
           <span>{tx("Liberar espaço")}</span>

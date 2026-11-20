@@ -27,7 +27,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/projects.jpg" alt="Veocode: a project with an AI agent working, the file tree lighting up as it reads and edits files" width="900">
+  <img src="docs/screenshots/projects.jpg" alt="Veocode: a project in AI mode with an agent working, its task list, a live step with a Stop button and the app running in the browser panel" width="900">
 </p>
 
 > [!NOTE]
@@ -62,11 +62,26 @@ AI coding agents are great, and they are also a black box running with your user
 ## Screens
 
 ### Projects
-A real folder per project, in two modes you switch with one click (⌘E). **Code** works like an editor: file tree, files in tabs, a Git panel where clicking a changed file shows what it was and what it is now side by side, and a terminal at the bottom or on the right (⌘J). **AI** works like Claude: your projects on the left, each one opening its conversations newest first (fork any conversation to try another path, and the branch shows up under the original), and a debug panel on the right: the folder's app running in a browser (desktop or phone size), the servers and commands running in the folder, each subagent and what it's doing, and the activity log. The agent's chat runs inside the app (Claude Code headless with `claude -p`, or DeepSeek / OpenAI-compatible / Ollama with a small set of file tools). Every step the agent takes — reading, searching, editing, running a command — is animated on the tree with a cursor in the account's color, so you *see* the work instead of scrolling logs. Permission requests show up as cards with **Allow** / **Deny**.
+A real folder per project, in two modes you switch with one click (⌘E).
 
-Run several conversations in the same project at once (a busy one keeps working while you open another), and turn on **focus mode** to see them all side by side, each with its own message box. The grid adjusts itself to 2, 3, 4, 6 or 8 conversations. Click the context chip in the message box (next to Memory) to see what fills Claude's context window (messages, tools, MCP, skills, memory files) and compact the conversation in one click.
+**AI** works like Claude: your projects on the left, each one opening its conversations newest first, and a debug panel on the right with the folder's app running in a browser (desktop or phone size), the servers and commands running in the folder, each subagent and what it's doing, and the activity log. Group conversations by topic ("New login", "Checkout bugs") like folders, fork any conversation to try another path, and switch the list between **Local** and **Cloud** (Claude Code sessions on claude.ai/code: start one, follow it by link or bring it to this Mac). The agent's chat runs inside the app (Claude Code headless with `claude -p`, or DeepSeek / OpenAI-compatible / Ollama with a small set of file tools). While it works you see a live line with the current step and a timer, and **Stop** really stops it, together with everything it started. That works for conversations running outside Veocode too (Terminal, your editor, the Claude app): Veocode shows which AIs are open in the folder and stops the one you pick. Permission requests show up as cards with **Allow** / **Deny**.
 
-![Projects](docs/screenshots/projects.jpg)
+![Projects in AI mode](docs/screenshots/projects.jpg)
+
+**Code** works like an editor: file tree, files in tabs and a panel on the right with **Git** (click a changed file to see before and after side by side, commits in a graph, push and pull), the folder's **Terminal**, **Environment** (switch `.env` profiles and start the project's services) and the **Map**. Every step the agent takes (reading, searching, editing, running a command) lights up on the tree, so you *see* the work instead of scrolling logs.
+
+![Projects in Code mode](docs/screenshots/code.jpg)
+
+Run several conversations in the same project at once (a busy one keeps working while you open another), and turn on **focus mode** to see them all side by side, each with its own message box. The grid adjusts itself to 2, 3, 4, 6 or 8 conversations. Click the context chip in the message box to see what fills Claude's context window (messages, tools, MCP, skills, memory files) and compact the conversation in one click.
+
+### Project map
+An Obsidian-style graph of the whole project, opened as a tab in Code mode (the **Map** tab in the right panel, or <kbd>⌘K</kbd> → *Project map*). Each area of the code is a colored cloud, each file a point sized by its lines, and the lines show who imports whom. **Draw from the code** reads the imports in seconds (JS/TS, CSS, HTML, Rust, Python, Java/Kotlin, C/C++, Ruby, Dart); **Ask the AI** has the project's AI rewrite it as a map of ideas (screens, services, data) instead of files.
+
+It is live: a pink ring marks what the AI is working on right now, a dashed orange ring what changed and isn't committed yet. Click a point to see what it uses and what uses it, double-click to open the file, search by name, and click the legend to hide or isolate areas.
+
+Everything lives in a single compact file, `.veocode/map.json` (one item per line, ~14 KB for 160 files). Veocode has the viewer built in and redraws when the file changes, so any AI can write or update it.
+
+![Project map](docs/screenshots/map.jpg)
 
 ### Accounts and AIs
 Several Claude accounts side by side (each one is its own `CLAUDE_CONFIG_DIR`), with the 5-hour and weekly plan limits, daily usage and default model. DeepSeek shows balance and models; Ollama shows what is installed locally. API keys go to the macOS Keychain.
@@ -74,20 +89,20 @@ Several Claude accounts side by side (each one is its own `CLAUDE_CONFIG_DIR`), 
 ![Accounts](docs/screenshots/accounts.jpg)
 
 ### Free chat
-A conversation outside any project, with any of your accounts. In **Só conversa** (just talk) the AI sees no files; in **Olhar o computador** (look at my computer) it can list, read and search your home folder to answer — never edit, delete or run commands — and credential folders (`.ssh`, `.aws`, Keychain, `.env` files…) stay blocked.
+A conversation outside any project, with any of your accounts. In **Just chat** the AI sees no files; with **Let it look at the computer** it can list, read and search your home folder to answer — never edit, delete or run commands — and credential folders (`.ssh`, `.aws`, Keychain, `.env` files…) stay blocked.
 
 ![Free chat](docs/screenshots/chat.jpg)
 
-### Computer → Space and memory
+### Dashboard → Space and memory
 Everything the AIs left on this Mac, measured: Claude's own data (sessions, sandboxes, versions), package-manager and build caches, what Claude Code installed (read from its session history), local models (Ollama, LM Studio, Hugging Face), virtual machines and containers (Docker, Lima, UTM, Parallels, VirtualBox) with the project that created them, and the agents running right now with every process they started.
 
 ![Space and memory](docs/screenshots/space.jpg)
 
-**Open ports** lists every program listening on localhost and spots **leftover dev servers**: a `vite`, `next dev` or `python -m http.server` still holding a port after the agent or terminal that started it is gone. Open it in the browser or stop it (and its child processes) with one click.
+**Servers and ports** lists every program listening on localhost and spots **leftover dev servers**: a `vite`, `next dev` or `python -m http.server` still holding a port after the agent or terminal that started it is gone. Open it in the browser or stop it (and its child processes) with one click.
 
-![Open ports](docs/screenshots/ports.jpg)
+![Servers and ports](docs/screenshots/ports.jpg)
 
-### Computer → Claude extras
+### Dashboard → Claude extras
 Every skill, slash command, subagent, plugin and MCP server, for every account and project: where it applies (one folder, the whole account), whether it is on or running, how much CPU/RAM/disk it uses and **how many tokens it adds to every conversation**. Turn things off or remove them; removals go through `claude plugin …` / `claude mcp remove` or to the Trash.
 
 ![Claude extras](docs/screenshots/extras.jpg)
@@ -106,7 +121,7 @@ flowchart LR
   subgraph UI["Window (SolidJS + TypeScript)"]
     P[Projects / Board / Overview]
     A[Accounts]
-    C[Computer]
+    C[Dashboard]
     L[Free chat]
   end
   subgraph Core["Native core (Rust + Tauri 2)"]
@@ -116,9 +131,10 @@ flowchart LR
     XR[xray/*<br/>caches, installs, VMs,<br/>processes, ports]
     INV[inventory.rs<br/>skills, plugins, MCP]
     T[term.rs / git.rs<br/>terminals, Git]
+    PM[projmap.rs<br/>project map]
   end
   P & L --> CH
-  P --> AF & AC & T
+  P --> AF & AC & T & PM
   A --> AF
   C --> XR & INV
   CH -->|"claude -p (stream-json)"| CC[Claude Code]
@@ -132,6 +148,7 @@ flowchart LR
 - **It reads, it doesn't hook.** Veocode follows the JSONL session logs Claude Code already writes under each account's `projects/` folder. Nothing is injected into Claude Code, and agents opened in your own terminal or editor show up too.
 - **Access levels are real.** Picking a level for a project (Read only, Suggest, Edit, Full) is translated into Claude Code permission rules in `.claude/settings.local.json` — only Veocode's own rules, with the previous content kept so it can be undone exactly — and passed with `--permission-mode` / `--settings` to the chats it runs. For API models, Veocode itself enforces the same rules on every tool call.
 - **Cleaning is reversible.** Caches, skills and leftovers go to the macOS **Trash**, never `rm`. Package removals are shown as commands for you to run. Stopping a process is only allowed for processes started by an agent, or leftover servers in your own folders, never system apps.
+- **The map is one file.** `projmap.rs` walks the folder (respecting `.gitignore`), resolves imports per language, groups files into areas and writes `.veocode/map.json`. The window only reads that file, so a map written by the AI shows up the same way.
 - **Secrets stay secret.** MCP configs are shown with the *names* of environment variables, never their values. API keys live in the Keychain.
 
 ## Build from source

@@ -6,6 +6,7 @@ import { activeKey, tabsOf, type ConvTab } from "./convTabs";
 import { histOf } from "./convHist";
 import { customName, forkParentOf } from "./forks";
 import { projectId, projects } from "./store";
+import { outsideBusy } from "./outside";
 
 export interface ConvItem {
   /** chave na lista: a sessão (ou a conversa da API); a aba enquanto ela não tem sessão */
@@ -63,7 +64,7 @@ export function convItems(pid: string): ConvItem[] {
       convo: h,
       session,
       active: t.key === front,
-      busy: c.busy,
+      busy: c.busy || (!!session && outsideBusy().has(session)),
       ask: c.perms.length > 0,
       err: !!c.error,
       locked: false,
@@ -84,7 +85,7 @@ export function convItems(pid: string): ConvItem[] {
       convo: h,
       session: h.kind === "claude" ? h.id : null,
       active: false,
-      busy: false,
+      busy: h.kind === "claude" && outsideBusy().has(h.id),
       ask: false,
       err: false,
       locked: !!proj && h.account !== proj.accountId,
@@ -139,11 +140,16 @@ export function convItems(pid: string): ConvItem[] {
 export function projectLive(pid: string) {
   let busy = 0;
   let ask = 0;
+  const mine = new Set<string>();
   for (const t of tabsOf(pid)) {
     const c = chatOf(t.key);
+    const s = c.session ?? t.session;
+    if (s && c.busy) mine.add(s);
     if (c.perms.length) ask++;
     else if (c.busy) busy++;
   }
+  // as que rodam por fora (só se sabe das do projeto da frente)
+  if (pid === projectId()) for (const s of outsideBusy()) if (!mine.has(s)) busy++;
   return { busy, ask };
 }
 

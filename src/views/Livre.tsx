@@ -1,8 +1,6 @@
 import { AlertTriangle, ArrowLeft, ArrowUp, Ban, Check, Eye, History, HardDrive, MessageSquarePlus, MessagesSquare, Paperclip, ShieldCheck, Square, X } from "lucide-solid";
-import Thinking from "../components/Thinking";
-import { createEffect, createResource, createSignal, For, Match, on, onMount, Show, Switch } from "solid-js";
+import { createEffect, createMemo, createResource, createSignal, For, Match, on, onMount, Show, Switch } from "solid-js";
 import { accountById, accts } from "../accounts";
-import type { ActivityEvent } from "../store";
 import { isTauri } from "../api";
 import { settings } from "../settings";
 import { answerLivre, freeAccount, freeAccountId, listLivre, livre, newLivre, openLivre, sendLivre, setFreeAccount, setFreePc, setLivre, stopLivre, type Item } from "../livre";
@@ -12,16 +10,16 @@ import { SentThumbs } from "../components/Media";
 import { deleteConvos, type Convo } from "../chat";
 import { LIVRE } from "../livre";
 import ConvoRow from "../components/ConvoRow";
-import ActivityIcon, { kindColor } from "../components/ActivityIcon";
 import Markdown from "../components/Markdown";
-import { ProviderMark } from "../components/ui";
+import { LiveLine, LongText, latestPlan, PlanCard, WorkFold, type WorkStep } from "../components/Work";
+import { Tool } from "../components/ConvBar";
 import MsgTools, { focusComposer } from "../components/MsgTools";
 import { MicButton } from "../components/Mic";
 import { LimitHitCard, UsageRing } from "../components/Limits";
 import { AgentChipButton, AgentMenu } from "../components/AgentMenu";
 import { limitHit } from "../limits";
 import { listeningTo, voiceKey } from "../voice";
-import { tx, txn } from "../i18n";
+import { locale, tx } from "../i18n";
 
 const ideas = {
   conversa: [
@@ -38,21 +36,16 @@ const ideas = {
   ],
 };
 
-function Empty() {
+/** Conversa vazia: igual ao chat dos projetos (marca, título, uma linha e atalhos) e ideias para começar. */
+function Empty(props: { onConvos: () => void }) {
   const list = () => (settings.freePc ? ideas.pc : ideas.conversa).map((s) => tx(s));
   return (
-    <div class="livre-empty">
-      <div class="livre-orbit" aria-hidden="true">
-        <span class="livre-orbit-ring" />
-        <span class="livre-orbit-core" style={{ "--c": freeAccount().color }}>
-          <Show when={settings.freePc} fallback={<MessagesSquare size={26} />}>
-            <HardDrive size={26} />
-          </Show>
-        </span>
-        <span class="livre-bubble b1" />
-        <span class="livre-bubble b2" />
-        <span class="livre-bubble b3" />
-      </div>
+    <div class="idle-hero livre-hero pop-in">
+      <span class="idle-mark livre-mark" style={{ "--c": freeAccount().color }}>
+        <Show when={settings.freePc} fallback={<MessagesSquare size={28} />}>
+          <HardDrive size={28} />
+        </Show>
+      </span>
       <h2>{settings.freePc ? tx("Pergunte sobre o seu computador") : tx("Pergunte o que quiser")}</h2>
       <p>
         <Show
@@ -62,11 +55,21 @@ function Empty() {
           {tx("{label} pode listar, ler e buscar arquivos na sua pasta pessoal para responder.", { label: freeAccount().label })} <b>{tx("Não edita, não apaga e não roda comandos")}</b>{tx(", e pastas de senhas e chaves (.ssh, .aws, chaveiro) ficam de fora.")}
         </Show>
       </p>
+      <div class="idle-actions">
+        <button class="idle-act" onClick={props.onConvos}>
+          <History size={14} /> {tx("Conversas anteriores")}
+        </button>
+        <button class="idle-act" disabled={livre.busy} style={{ "--lc": settings.freePc ? "var(--info)" : "var(--text-3)" }} onClick={() => void setFreePc(!settings.freePc)}>
+          <Show when={settings.freePc} fallback={<><Eye size={14} class="idle-lc" /> {tx("Deixar olhar o computador")}</>}>
+            <MessagesSquare size={14} class="idle-lc" /> {tx("Voltar a só conversa")}
+          </Show>
+        </button>
+      </div>
       <div class="livre-ideas">
         <For each={list()}>
           {(t, i) => (
             <button class="livre-idea pop-in" style={{ "animation-delay": `${80 + i() * 60}ms` }} onClick={() => sendLivre(t)}>
-              <MessageSquarePlus size={13} />
+              <MessageSquarePlus size={14} />
               <span>{t}</span>
             </button>
           )}
@@ -76,47 +79,28 @@ function Empty() {
   );
 }
 
-function Steps(props: { steps: Item & { t: "work" } }) {
-  const steps = () => props.steps.steps;
-  const running = () => steps().some((x) => x.status === "running");
-  const shown = () => steps().slice(-8);
-  return (
-    <div class="work-card livre-work pop-in">
-      <div class="work-head">
-        <span class="work-dot" classList={{ live: running() }} />
-        {running() ? tx("Olhando…") : tx("Passos")}
-        <small>{txn(steps().length, "{n} passo", "{n} passos")}</small>
-      </div>
-      <Show when={steps().length > 8}><div class="work-more">{tx("+{v} antes", { v: steps().length - 8 })}</div></Show>
-      <For each={shown()}>
-        {(x) => (
-          <div class="work-row slide-in" classList={{ running: x.status === "running", error: x.status === "error" }} title={x.detail ?? x.title}>
-            <span class="work-icon" style={{ color: kindColor[x.kind as ActivityEvent["kind"]] }}>
-              <ActivityIcon kind={x.kind as ActivityEvent["kind"]} />
-            </span>
-            <span class="work-title">{x.title}</span>
-            <Show when={x.status === "running"} fallback={<small class="work-detail">{x.status === "error" ? x.detail ?? tx("falhou") : x.detail}</small>}>
-              <span class="spinner" />
-            </Show>
-          </div>
-        )}
-      </For>
-    </div>
-  );
-}
+const clock = (at: number) => new Date(at).toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
+/** As mesmas mensagens do chat dos projetos: seu pedido num balão, a resposta em texto corrido, os passos numa linha. */
 function Message(props: { item: Item }) {
   return (
     <Switch>
-      <Match when={props.item.t === "user" && props.item}>{(it) => <div class="livre-msg user pop-in">{it().text}<SentThumbs text={it().text} /><MsgTools text={it().text} onReuse={() => (setLivre("input", it().text), focusComposer(document.querySelector(".livre-composer")))} /></div>}</Match>
+      <Match when={props.item.t === "user" && props.item}>
+        {(it) => (
+          <div class="bubble user pop-in">
+            <LongText text={it().text} />
+            <SentThumbs text={it().text} />
+            <MsgTools text={it().text} onReuse={() => (setLivre("input", it().text), focusComposer(document.querySelector(".livre-composer")))} />
+          </div>
+        )}
+      </Match>
       <Match when={props.item.t === "say" && props.item}>
         {(it) => (
           <Show
             when={limitHit(it().text)}
             fallback={
-              <div class="livre-msg agent pop-in" style={{ "--c": accountById(it().account).color }}>
-                <ProviderMark id={it().account} size={22} />
-                <div class="livre-say"><Markdown text={it().text} /></div>
+              <div class="bubble agent say md-bubble pop-in" style={{ "--c": accountById(it().account).color }}>
+                <Markdown text={it().text} />
                 <MsgTools text={it().text} />
               </div>
             }
@@ -125,13 +109,15 @@ function Message(props: { item: Item }) {
           </Show>
         )}
       </Match>
-      <Match when={props.item.t === "work" && (props.item as Item & { t: "work" })}>{(it) => <Steps steps={it()} />}</Match>
+      <Match when={props.item.t === "work" && (props.item as Item & { t: "work" })}>{(it) => <WorkFold steps={it().steps} />}</Match>
       <Match when={props.item.t === "done" && props.item}>
         {(it) => (
-          <div class="done-line pop-in" classList={{ stopped: !it().ok }}>
-            <span>{it().ok ? "✓" : "■"}</span> {accountById(it().account).label} {it().ok ? tx("respondeu") : tx("parou")}
-            <Show when={it().detail}> · {it().detail}</Show>
-          </div>
+          <Show
+            when={it().ok}
+            fallback={<div class="done-line stopped pop-in" title={it().detail ?? undefined}><span>■</span> {tx("Você parou · {time}", { time: clock(it().at) })}</div>}
+          >
+            <div class="done-line pop-in" title={it().detail ?? undefined}><span>✓</span> {tx("{agent} terminou · {time}", { agent: accountById(it().account).label, time: clock(it().at) })}</div>
+          </Show>
         )}
       </Match>
       <Match when={props.item.t === "note" && props.item}>{(it) => <div class="livre-note pop-in">{it().text}</div>}</Match>
@@ -212,20 +198,35 @@ export default function Livre() {
   }));
   onMount(() => box.focus());
 
+  // o pedido em curso: o que veio depois da sua última mensagem (para a lista de tarefas e a linha viva)
+  const turn = createMemo(() => {
+    let i = livre.items.length - 1;
+    while (i >= 0 && livre.items[i].t !== "user") i--;
+    const steps: WorkStep[] = [];
+    for (const it of livre.items.slice(i + 1)) if (it.t === "work") steps.push(...it.steps);
+    const u = livre.items[i];
+    return { since: u?.t === "user" ? u.at : undefined, steps };
+  });
+  const plan = createMemo(() => latestPlan(livre.items.flatMap((it): WorkStep[] => (it.t === "work" ? it.steps : it.t === "user" ? [{ id: it.key, kind: "user", title: "", status: "ok" }] : []))));
+  const runningStep = () => [...turn().steps].reverse().find((x) => x.status === "running");
+
   const a = freeAccount;
   return (
     <div class="livre">
-      <header class="livre-head">
-        <div class="livre-name">
-          <span class="livre-logo"><MessagesSquare size={17} /></span>
-          <div>
-            <strong>{tx("Chat livre")}</strong>
-            <small title={livre.conv?.title}>{livre.conv ? tx("Conversa retomada: {title}", { title: livre.conv.title }) : tx("Conversa sem projeto, para tirar dúvidas")}</small>
-          </div>
+      <header class="conv-bar slim livre-bar">
+        <div class="conv-now">
+          <span class="conv-crumb">
+            <MessagesSquare size={14} />
+            <span>{tx("Chat livre")}</span>
+            <i>/</i>
+          </span>
+          <i class="conv-dot" classList={{ busy: livre.busy, ask: livre.perms.length > 0, err: !!livre.error }} />
+          <strong title={livre.conv?.title}>{livre.conv?.title ?? (livre.items.length ? tx("Conversa nova") : tx("Nova conversa"))}</strong>
+          <small>{livre.busy ? tx("trabalhando") : livre.perms.length ? tx("esperando você") : settings.freePc ? tx("pode olhar o computador") : tx("só conversa")}</small>
         </div>
-        <div class="livre-tools">
-          <button class="icon-btn" title={tx("Conversas anteriores")} classList={{ active: convos() }} onClick={() => setConvos(!convos())}><History size={15} /></button>
-          <button class="icon-btn" title={tx("Nova conversa")} disabled={livre.busy || (!livre.items.length && !livre.conv)} onClick={() => newLivre()}><MessageSquarePlus size={15} /></button>
+        <div class="conv-tools">
+          <Tool icon={History} name={tx("Conversas anteriores")} hint={tx("Todas as conversas do Chat livre, de todas as contas")} on={convos()} onClick={() => setConvos(!convos())} />
+          <Tool icon={MessageSquarePlus} name={tx("Nova conversa")} hint={tx("Começa do zero; esta fica guardada nas conversas anteriores")} disabled={livre.busy || (!livre.items.length && !livre.conv)} onClick={() => void newLivre()} />
         </div>
       </header>
 
@@ -234,17 +235,16 @@ export default function Livre() {
       </Show>
 
       <div class="livre-scroll" ref={scroller} onScroll={() => (stick = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 80)}>
-        <div class="livre-col">
-          <Show when={livre.items.length} fallback={<Empty />}>
+        <div class="livre-col" classList={{ empty: !livre.items.length }}>
+          <Show when={livre.items.length} fallback={<Empty onConvos={() => setConvos(true)} />}>
             <For each={livre.items}>{(it) => <Message item={it} />}</For>
           </Show>
+          <Show when={plan()}>{(t) => <PlanCard todos={t()} color={a().color} live={livre.busy} />}</Show>
           <Show when={livre.busy && !livre.perms.length}>
-            <Show when={livre.draft} fallback={<Thinking color={a().color} />}>
-              <div class="livre-msg agent streaming" style={{ "--c": a().color }}>
-                <ProviderMark id={a().id} size={22} />
-                <div class="livre-say"><Markdown text={livre.draft} /></div>
-              </div>
+            <Show when={livre.draft}>
+              <div class="bubble agent say streaming" style={{ "--c": a().color }}>{livre.draft.replace(/\*\*/g, "")}</div>
             </Show>
+            <LiveLine color={a().color} step={livre.draft ? null : runningStep()} writing={!!livre.draft} since={turn().since} onStop={() => void stopLivre()} />
           </Show>
           <For each={livre.perms}>
             {(q) => (

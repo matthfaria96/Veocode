@@ -1,9 +1,9 @@
 // Modo Código, à direita: o painel que abre e fecha pelo ícone ao lado das abas (⌥⌘B). Só o que
 // serve enquanto você mexe no código: o Git (com o número do que falta resolver), o terminal da
-// pasta (⌘J) e o Ambiente (perfis do .env e os serviços do projeto). A conversa com a IA mora no
+// pasta (⌘J), o Ambiente (perfis do .env e os serviços do projeto) e o Mapa do projeto. A conversa com a IA mora no
 // modo IA (⌘E); comandos, atividade, subagentes e rastro também.
-import { GitBranch, SlidersHorizontal, SquareTerminal, X } from "lucide-solid";
-import { lazy, Match, Show, Suspense, Switch } from "solid-js";
+import { GitBranch, SlidersHorizontal, SquareTerminal, Waypoints, X } from "lucide-solid";
+import { createSignal, lazy, Match, onCleanup, onMount, Show, Suspense, Switch } from "solid-js";
 import { pendingOf } from "../git";
 import { runningCount } from "../envs";
 import { codeSideTab, setCodeSideOpen, setCodeSideTab, type CodeSideTab } from "../layoutMode";
@@ -11,6 +11,7 @@ import { currentProject } from "../store";
 import { terms } from "../terminal";
 import EnvPanel from "./EnvPanel";
 import GitPanel from "./GitPanel";
+import MapPanel from "./MapPanel";
 import { tx, txn } from "../i18n";
 
 // o xterm só carrega quando o terminal aparece
@@ -53,12 +54,35 @@ export default function CodeSide() {
     { id: "git", label: tx("Git"), hint: tx("O que mudou, commit, enviar e baixar, e o GitHub"), icon: GitBranch },
     { id: "term", label: tx("Terminal"), hint: tx("Terminal desta pasta (⌘J)"), icon: SquareTerminal },
     { id: "env", label: tx("Ambiente"), hint: tx("Perfis do .env (qual banco, qual API…) e os serviços do projeto: trocar um perfil reinicia quem lê aquele .env"), icon: SlidersHorizontal },
+    { id: "map", label: tx("Mapa"), hint: tx("O mapa do projeto: as áreas, os arquivos e quem usa quem, com o que está mudando agora"), icon: Waypoints },
   ];
+
+  // Sem espaço para todos os nomes (painel estreito, inglês, bolinhas de número), as abas de fora
+  // ficam só com o ícone; o nome volta quando cabe. Medido, não por largura fixa: o nome escondido
+  // continua no layout com largura 0, então dá para saber quanto ele ocuparia.
+  let seg!: HTMLDivElement;
+  const [compact, setCompact] = createSignal(false);
+  onMount(() => {
+    let raf = 0;
+    const check = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        let need = seg.scrollWidth;
+        if (compact()) for (const el of seg.querySelectorAll<HTMLElement>('[role="tab"]:not(.on) > span')) need += el.scrollWidth + 6;
+        setCompact(need > seg.clientWidth + 1);
+      });
+    };
+    const ro = new ResizeObserver(check);
+    ro.observe(seg);
+    const mo = new MutationObserver(check);
+    mo.observe(seg, { subtree: true, childList: true, characterData: true, attributeFilter: ["class"] });
+    onCleanup(() => (cancelAnimationFrame(raf), ro.disconnect(), mo.disconnect()));
+  });
 
   return (
     <aside class="debug-pane code-side">
       <div class="dbg-tabs seg-tabs" role="tablist">
-        <div class="seg">
+        <div class="seg" ref={seg} classList={{ compact: compact() }}>
           {tabs().map((t) => (
             <button role="tab" aria-selected={codeSideTab() === t.id} classList={{ on: codeSideTab() === t.id }} onClick={() => setCodeSideTab(t.id)} title={t.hint}>
               <t.icon size={13} />
@@ -76,6 +100,7 @@ export default function CodeSide() {
         <Switch>
           <Match when={codeSideTab() === "git"}><div class="side-scroll"><GitPanel /></div></Match>
           <Match when={codeSideTab() === "env"}><EnvPanel /></Match>
+          <Match when={codeSideTab() === "map"}><MapPanel /></Match>
           <Match when={codeSideTab() === "term"}>
             <section class="code-term docked">
               <Suspense fallback={<div class="pterm-empty"><span class="spinner" /> {tx("Carregando o terminal…")}</div>}>

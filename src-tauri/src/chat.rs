@@ -547,6 +547,8 @@ impl Chats {
                 }
                 busy.store(false, Ordering::SeqCst);
                 if let Some(mut p) = c.claude.take() {
+                    // o Claude e tudo o que ele abriu (comandos, servidores, ajudantes)
+                    crate::xray::procs::kill_tree(p.child.id());
                     let _ = p.child.kill();
                 }
                 drop(m);

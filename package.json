@@ -1,6 +1,6 @@
 {
   "name": "veocode",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "See and control what your AI coding agents are doing on your Mac",
   "type": "module",
   "scripts": {

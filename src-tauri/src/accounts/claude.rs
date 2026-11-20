@@ -384,11 +384,44 @@ pub fn cancel_login(id: &str) {
 /// Abre um terminal com o Claude Code usando a pasta desta conta. Com `cwd`, já dentro do
 /// projeto (o Claude lê o .claude/settings.local.json de lá, onde está o nível de acesso).
 /// `resume`: id de uma sessão para continuar (`claude --resume <id>`); só letras, números e "-".
+/// O que o Claude faz ao abrir no Terminal.
+pub enum Launch<'a> {
+    New,
+    /// continua uma conversa deste computador
+    Resume(&'a str),
+    /// começa uma sessão na nuvem com este pedido, ou acompanha uma pelo id
+    Cloud(&'a str),
+    /// traz uma sessão da nuvem para este computador
+    Teleport(&'a str),
+}
+
 pub fn open_terminal(a: &Account, cwd: Option<&Path>, resume: Option<&str>) -> Result<(), String> {
-    let resume = resume.filter(|r| !r.is_empty());
-    if resume.is_some_and(|r| !r.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') || r.len() > 80) {
-        return Err(crate::i18n::tr("conversa inválida", "invalid conversation").into());
+    match resume.filter(|r| !r.is_empty()) {
+        Some(r) => launch_terminal(a, cwd, Launch::Resume(r)),
+        None => launch_terminal(a, cwd, Launch::New),
     }
+}
+
+pub fn launch_terminal(a: &Account, cwd: Option<&Path>, how: Launch) -> Result<(), String> {
+    let id_ok = |r: &str| !r.is_empty() && r.len() <= 120 && r.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+    // os argumentos do claude depois do executável
+    let args: Vec<String> = match how {
+        Launch::New => vec![],
+        Launch::Resume(r) if id_ok(r) => vec!["--resume".into(), r.into()],
+        Launch::Teleport(r) if id_ok(r) => vec!["--teleport".into(), r.into()],
+        Launch::Cloud(t) => {
+            // um pedido de uma linha (o Terminal recebe como um argumento só)
+            let mut t: String = t.chars().map(|c| if c.is_control() { ' ' } else { c }).collect::<String>().trim().chars().take(2000).collect();
+            if cfg!(windows) {
+                t.retain(|c| !matches!(c, '"' | '&' | '|' | '<' | '>' | '^' | '%'));
+            }
+            if t.is_empty() {
+                return Err(crate::i18n::tr("escreva o que a sessão na nuvem deve fazer", "write what the cloud session should do").into());
+            }
+            vec!["--cloud".into(), t]
+        }
+        _ => return Err(crate::i18n::tr("conversa inválida", "invalid conversation").into()),
+    };
     let claude = crate::xray::util::which("claude").ok_or(
         crate::i18n::tr("Não achei o comando `claude`. Instale o Claude Code (https://claude.com/claude-code) e tente de novo.", "Couldn't find the `claude` command. Install Claude Code (https://claude.com/claude-code) and try again."),
     )?;
@@ -410,10 +443,8 @@ pub fn open_terminal(a: &Account, cwd: Option<&Path>, resume: Option<&str>) -> R
         script += &format!("echo {}\n", q(&crate::trf!("Veocode · conta: {}", "Veocode · account: {}", a.label)));
         script += &format!("echo {}\n", q(&crate::trf!("Pasta: {cwd_s}", "Folder: {cwd_s}")));
         script += crate::i18n::tr("echo 'Se o Claude pedir login, digite /login.'\necho\n", "echo 'If Claude asks you to sign in, type /login.'\necho\n");
-        match resume {
-            Some(r) => script += &format!("cd {} || exit 1\nexec {} --resume {}\n", q(&cwd_s), q(&claude), q(r)),
-            None => script += &format!("cd {} || exit 1\nexec {}\n", q(&cwd_s), q(&claude)),
-        }
+        let rest: String = args.iter().map(|x| format!(" {}", q(x))).collect();
+        script += &format!("cd {} || exit 1\nexec {}{}\n", q(&cwd_s), q(&claude), rest);
         let file = std::env::temp_dir().join(format!("veocode-claude-{}.command", a.id));
         fs::write(&file, script).map_err(|e| e.to_string())?;
         use std::os::unix::fs::PermissionsExt;
@@ -426,9 +457,7 @@ pub fn open_terminal(a: &Account, cwd: Option<&Path>, resume: Option<&str>) -> R
     {
         let mut c = std::process::Command::new("cmd");
         c.args(["/c", "start", "Veocode - Claude", "cmd", "/k"]).arg(&claude);
-        if let Some(r) = resume {
-            c.args(["--resume", r]);
-        }
+        c.args(&args);
         if a.config_dir.is_some() {
             c.env("CLAUDE_CONFIG_DIR", &dir_s);
         }

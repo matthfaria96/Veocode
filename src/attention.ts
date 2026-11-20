@@ -11,6 +11,7 @@ import { projectId, projects, setProjectId, setView, showToast, view } from "./s
 import { xray } from "./xray";
 import { every } from "./every";
 import { tx } from "./i18n";
+import { openPanel } from "./panel";
 
 export type Urgency = "agora" | "logo" | "lembrete";
 
@@ -50,7 +51,7 @@ export const needs = createMemo<Need[]>(() => {
   }
   if (xray.cachesLoaded) {
     const total = xray.caches.reduce((s, c) => s + (c.size ?? 0), 0);
-    if (total > 10 * 1024 ** 3) out.push({ id: "disk", urgency: "lembrete", title: tx("As IAs ocupam {v} no disco", { v: formatBytes(total) }), detail: tx("Históricos e arquivos temporários. Dá para mandar parte para a Lixeira."), action: tx("Liberar espaço"), go: () => setView("system") });
+    if (total > 10 * 1024 ** 3) out.push({ id: "disk", urgency: "lembrete", title: tx("As IAs ocupam {v} no disco", { v: formatBytes(total) }), detail: tx("Históricos e arquivos temporários. Dá para mandar parte para a Lixeira."), action: tx("Liberar espaço"), go: () => openPanel("caches") });
   }
   return out.sort((a, b) => order[a.urgency] - order[b.urgency]);
 });

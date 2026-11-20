@@ -15,7 +15,7 @@ import TrailPanel from "./TrailPanel";
 import ActivityIcon, { kindColor } from "./ActivityIcon";
 import { ActivityTimeline } from "./BottomPanel";
 import Editor from "./Editor";
-import { tx, txn } from "../i18n";
+import { dec, tx, txn } from "../i18n";
 
 const dur = (s: number) => (s < 60 ? `${Math.max(1, Math.round(s))} s` : s < 3600 ? `${Math.round(s / 60)} min` : `${Math.floor(s / 3600)} h ${Math.round((s % 3600) / 60)} min`);
 
@@ -218,7 +218,7 @@ const [device, setDevice] = createSignal<"desktop" | "phone">("desktop");
 const tabLabel = (u: string) => u.replace(/^https?:\/\//, "").replace(/^(localhost|127\.0\.0\.1)(?=:)/, "").replace(/\/$/, "") || tx("Nova aba");
 const portOf = (u: string) => Number(/^https?:\/\/(?:localhost|127\.0\.0\.1):(\d+)/.exec(u)?.[1] ?? 0);
 
-const demoPage = `<!doctype html><html><head><meta charset="utf-8"><style>
+const demoPage = () => `<!doctype html><html><head><meta charset="utf-8"><style>
 body{margin:0;font:14px/1.5 -apple-system,system-ui,sans-serif;background:#0d1017;color:#e7eaf3}
 header{display:flex;align-items:center;gap:10px;padding:16px 22px;border-bottom:1px solid #222938}
 header b{font-size:15px}header span{margin-left:auto;font-size:12px;color:#8d96ab}
@@ -226,10 +226,10 @@ main{padding:22px;display:grid;gap:12px;grid-template-columns:repeat(auto-fill,m
 .c{padding:14px 16px;border:1px solid #222938;border-radius:12px;background:#12161f}
 .c small{color:#8d96ab;font-size:12px}.c strong{display:block;font-size:22px;font-weight:600;margin-top:2px}
 .bar{height:6px;border-radius:4px;background:#222938;margin-top:10px;overflow:hidden}.bar i{display:block;height:100%;background:#6b9cff}
-</style></head><body><header><b>Raio-X</b><span>localhost:5173</span></header><main>
-<div class="c"><small>Caches</small><strong>2,4 GB</strong><div class="bar"><i style="width:62%"></i></div></div>
-<div class="c"><small>node_modules</small><strong>1,1 GB</strong><div class="bar"><i style="width:38%"></i></div></div>
-<div class="c"><small>Modelos</small><strong>8,7 GB</strong><div class="bar"><i style="width:84%"></i></div></div>
+</style></head><body><header><b>${tx("Raio-X")}</b><span>localhost:5173</span></header><main>
+<div class="c"><small>Caches</small><strong>${dec(2.4)} GB</strong><div class="bar"><i style="width:62%"></i></div></div>
+<div class="c"><small>node_modules</small><strong>${dec(1.1)} GB</strong><div class="bar"><i style="width:38%"></i></div></div>
+<div class="c"><small>${tx("Modelos")}</small><strong>${dec(8.7)} GB</strong><div class="bar"><i style="width:84%"></i></div></div>
 </main></body></html>`;
 
 function Browser(props: { focusPort: number | null }) {
@@ -367,7 +367,7 @@ function Browser(props: { focusPort: number | null }) {
                 when={p().demo}
                 fallback={<iframe title={tx("App rodando")} src={t.url} onLoad={() => setLoad(t.id, false)} />}
               >
-                <iframe title={tx("App rodando")} srcdoc={demoPage} onLoad={() => setLoad(t.id, false)} />
+                <iframe title={tx("App rodando")} srcdoc={demoPage()} onLoad={() => setLoad(t.id, false)} />
               </Show>
             </div>
           )}

@@ -5,7 +5,8 @@ import { accountById } from "../accounts";
 import { closePane, isPinned, maximized, panes, projectState, replacePane, setMaximized, swapPanes, togglePin } from "../board";
 import { attsOf, dropPid, pasteFiles, pickFiles } from "../attachments";
 import AttachBar from "./AttachBar";
-import Thinking from "./Thinking";
+import StopOutside from "./StopOutside";
+import { LiveLine, LongText, latestPlan, PlanCard, WorkFold, type WorkStep } from "./Work";
 import { activeKey, nameFromPrompt, tabsOf } from "../convTabs";
 import { setFocusMode } from "../layoutMode";
 import { MicButton } from "./Mic";
@@ -16,8 +17,6 @@ import { answerPermission, chatOf, clearError, newChat, sendChat, setInput, stop
 import { clearFeed, feedOf, type FeedItem } from "../feeds";
 import { git, gitWords } from "../git";
 import { projects, setProjectId, setView } from "../store";
-import ActivityIcon, { kindColor } from "./ActivityIcon";
-import { stepsSummary } from "../steps";
 import { LimitHitCard, requestSwitch, UsageRing } from "./Limits";
 import { limitHit } from "../limits";
 import { ProjectIcon } from "./icons";
@@ -42,7 +41,9 @@ function blocks(items: FeedItem[]): Block[] {
 }
 
 const STEP_KINDS = new Set(["think", "read", "search", "swarm", "edit", "create", "delete", "run", "tool", "done", "user", "say", "web", "plan"]);
-const stepKind = (k?: string) => (k && STEP_KINDS.has(k) ? k : "tool") as keyof typeof kindColor;
+const stepKind = (k?: string) => (k && STEP_KINDS.has(k) ? k : "tool");
+/** Um item da conversa do canto como passo (para a linha de passos e a lista de tarefas). */
+const asStep = (it: FeedItem): WorkStep => ({ id: it.id, kind: it.kind === "user" ? "user" : stepKind(it.step), title: it.sub ? `${it.sub}: ${it.title}` : it.title, detail: it.detail, status: it.status, ts: it.ts });
 
 /** Um canto da grade: a conversa de um projeto rolando ao vivo, com a caixa para pedir. */
 export default function ChatPane(props: { pid: string; index: number; span?: number }) {
@@ -55,8 +56,16 @@ export default function ChatPane(props: { pid: string; index: number; span?: num
   const st = () => projectState(props.pid);
   const g = () => git.summaries[props.pid];
   const list = createMemo(() => blocks(feed().items.slice(-120)));
+  // o pedido em curso: lista de tarefas, o passo de agora e há quanto tempo começou
+  const plan = createMemo(() => latestPlan(feed().items.filter((it) => it.kind === "user" || it.kind === "step").map(asStep)));
+  const lastUser = () => [...feed().items].reverse().find((it) => it.kind === "user");
+  const runningStep = () => {
+    const it = [...feed().items].reverse().find((x) => x.kind === "step" && x.status === "running");
+    return it && (lastUser()?.ts ?? 0) <= it.ts ? asStep(it) : null;
+  };
   const [pick, setPick] = createSignal(false);
   const [more, setMore] = createSignal(false);
+  const [stopOut, setStopOut] = createSignal(false);
   let scroller!: HTMLDivElement;
   let titleBtn!: HTMLButtonElement;
   let moreBtn!: HTMLButtonElement;
@@ -170,28 +179,41 @@ export default function ChatPane(props: { pid: string; index: number; span?: num
             <For each={list()}>
               {(b) =>
                 b.kind === "steps" ? (
-                  <Steps items={b.items} />
+                  <WorkFold steps={b.items.map(asStep)} pid={props.pid} />
                 ) : b.item.kind === "user" ? (
-                  <div class="bubble user">{b.item.title}<SentThumbs text={b.item.title} /><MsgTools text={b.item.title} onReuse={() => (setInput(ck(), b.item.title), focusComposer(scroller.closest(".pane")))} /></div>
+                  <div class="bubble user"><LongText text={b.item.title} /><SentThumbs text={b.item.title} /><MsgTools text={b.item.title} onReuse={() => (setInput(ck(), b.item.title), focusComposer(scroller.closest(".pane")))} /></div>
                 ) : b.item.kind === "say" ? (
                   limitHit(b.item.title) ? (
                     <LimitHitCard accountId={p().accountId} win={limitHit(b.item.title)!.win} raw={b.item.title} onPick={(id) => requestSwitch(props.pid, id)} />
                   ) : (
-                    <div class="bubble agent say" style={{ "--c": a().color }}><Markdown text={b.item.title} /><MsgTools text={b.item.title} /></div>
+                    <div class="bubble agent say md-bubble" style={{ "--c": a().color }}><Markdown text={b.item.title} /><MsgTools text={b.item.title} /></div>
                   )
                 ) : b.item.kind === "error" ? (
-                  <div class="pane-done err"><AlertTriangle size={11} /> {b.item.title}</div>
+                  <div class="done-line stopped"><AlertTriangle size={11} /> {b.item.title}</div>
                 ) : (
-                  <div class="pane-done" classList={{ err: b.item.status === "error" }}>
-                    <Check size={11} /> {b.item.title}{b.item.detail ? ` · ${b.item.detail}` : ""}
+                  <div class="done-line" classList={{ stopped: b.item.status === "error" }} title={b.item.detail ?? undefined}>
+                    <span>{b.item.status === "error" ? "■" : "✓"}</span> {b.item.title}
                   </div>
                 )
               }
             </For>
           </Show>
-          <Show when={chat().busy && !chat().perms.length}>
-            <Show when={chat().draft} fallback={<Thinking color={a().color} />}>
+          <Show when={plan()}>{(t) => <PlanCard todos={t()} color={a().color} live={chat().busy || st().tone === "work"} />}</Show>
+          <Show when={(chat().busy || st().tone === "work") && !chat().perms.length}>
+            <Show when={chat().draft}>
               <div class="bubble agent say streaming" style={{ "--c": a().color }}>{chat().draft.replace(/\*\*/g, "")}</div>
+            </Show>
+            <LiveLine
+              color={a().color}
+              step={chat().draft ? null : runningStep()}
+              writing={!!chat().draft}
+              since={lastUser()?.ts}
+              where={chat().busy ? undefined : tx("fora do Veocode")}
+              onStop={() => (chat().busy ? void stopChat(ck()) : setStopOut(!stopOut()))}
+              stopTitle={chat().busy ? undefined : tx("Parar a IA que roda fora do Veocode")}
+            />
+            <Show when={stopOut() && !chat().busy}>
+              <StopOutside pid={props.pid} onClose={() => setStopOut(false)} onStopped={() => setStopOut(false)} />
             </Show>
           </Show>
           <For each={chat().perms}>
@@ -251,42 +273,6 @@ export default function ChatPane(props: { pid: string; index: number; span?: num
         </Show>
       </div>
     </section>
-  );
-}
-
-function Steps(props: { items: FeedItem[] }) {
-  // fechado numa linha só, como na conversa; enquanto trabalha mostra o passo atual
-  const [open, setOpen] = createSignal(false);
-  const running = () => props.items.find((s) => s.status === "running");
-  const failed = () => props.items.filter((s) => s.status === "error").length;
-  return (
-    <div class="pane-steps" classList={{ open: open() }}>
-      <button class="work-sum" aria-expanded={open()} onClick={() => setOpen(!open())}>
-        <Show when={running()} fallback={<span class="work-sum-text">{stepsSummary(props.items.map((s) => stepKind(s.step)))}</span>}>
-          {(r) => (
-            <>
-              <span class="spinner" />
-              <span class="work-sum-text now">{r().title}</span>
-            </>
-          )}
-        </Show>
-        <Show when={failed() > 0}><small class="work-sum-fail">{tx("{failed} falhou", { failed: failed() })}</small></Show>
-        <ChevronDown size={12} class="work-chev" />
-      </button>
-      <Show when={open()}>
-        <div class="pane-steps-list slide-in">
-          <For each={props.items}>
-            {(s) => (
-              <div class="pane-step" classList={{ running: s.status === "running", err: s.status === "error" }} title={s.detail ?? s.title}>
-                <span class="pane-step-icon" style={{ color: kindColor[stepKind(s.step)] }}><ActivityIcon kind={stepKind(s.step)} size={12} /></span>
-                <span class="pane-step-title">{s.sub ? <em>{s.sub}: </em> : null}{s.title}</span>
-                <Show when={s.status === "running"}><span class="spinner" /></Show>
-              </div>
-            )}
-          </For>
-        </div>
-      </Show>
-    </div>
   );
 }
 

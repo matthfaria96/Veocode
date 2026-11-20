@@ -18,7 +18,7 @@ import { tx } from "./i18n";
 export const LIVRE = "livre";
 
 export type Item =
-  | { key: string; t: "user"; text: string }
+  | { key: string; t: "user"; text: string; at?: number }
   | { key: string; t: "say"; text: string; account: string }
   | { key: string; t: "work"; steps: AgentEvent[] }
   | { key: string; t: "done"; ok: boolean; detail: string | null; account: string; at: number }
@@ -57,7 +57,7 @@ function step(e: AgentEvent) {
       const w = it as Extract<Item, { t: "work" }>;
       const s = w.steps.find((x) => x.id === e.id)!;
       s.status = e.status === "error" ? "error" : "ok";
-      if (e.detail) s.detail = e.detail;
+      if (e.detail && s.kind !== "plan") s.detail = e.detail;
       if (e.title === "create") s.kind = "create";
     }));
     return;
@@ -136,7 +136,7 @@ export async function sendLivre(text?: string) {
   clearAtts(LIVRE);
   const shown = [t, attLabel(files)].filter(Boolean).join("\n");
   rememberSent(shown, files.map((f) => f.thumb));
-  push({ key: key("u"), t: "user", text: shown });
+  push({ key: key("u"), t: "user", text: shown, at: Date.now() });
   if (!isTauri) return demoReply(t);
   try {
     await invoke("chat_send", { projectId: LIVRE, text: t, attach: null, files: files.map((f) => f.path), ...sendPrefs(LIVRE) });
@@ -200,7 +200,7 @@ export async function openLivre(c: Convo) {
     const evs = await invoke<AgentEvent[]>("chat_open", { projectId: LIVRE, kind: c.kind, id: c.id, account: c.account });
     setLivre({ items: [], draft: "", perms: [], error: null, conv: { kind: c.kind, id: c.id, title: c.title } });
     for (const e of evs) {
-      if (e.kind === "user") push({ key: `u-${e.id}`, t: "user", text: e.title });
+      if (e.kind === "user") push({ key: `u-${e.id}`, t: "user", text: e.title, at: e.ts });
       else if (e.kind === "say") push({ key: `s-${e.id}`, t: "say", text: e.title, account: c.account });
       else if (e.kind === "done") push({ key: `d-${e.id}`, t: "done", ok: true, detail: null, account: c.account, at: e.ts });
       else step(e);

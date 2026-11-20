@@ -188,7 +188,7 @@ export default function Settings() {
         </div>
       </Section>
 
-      <Section icon={<PanelRight size={15} />} title={tx("Terminal no modo Código")} desc={tx("O terminal fica no painel da direita do modo Código, numa aba ao lado do Git. Abre e fecha pelo botão ao lado das abas ou com ⌘J.")} delay={120}>
+      <Section icon={<PanelRight size={15} />} title={tx("Terminal no modo Código")} desc={tx("O terminal é uma aba do painel da direita do modo Código, ao lado do Git e do Ambiente. ⌘J abre direto nele; o ícone do painel (⌥⌘B) mostra e esconde.")} delay={120}>
         <div class="set-cards" role="radiogroup" aria-label={tx("Terminal no modo Código")}>
           <Choice value="fechado" current={settings.bottomPanel ? "aberto" : "fechado"} title={tx("Começa fechado")} desc={tx("Mais espaço para o código. Quando quiser o terminal, é um clique.")} onPick={() => updateSettings({ bottomPanel: false })}>
             <PanelPreview open={false} />

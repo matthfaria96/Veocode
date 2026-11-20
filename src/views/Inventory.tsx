@@ -1,5 +1,5 @@
 import { dismissable } from "../dismiss";
-import { BookOpen, ChevronDown, ChevronRight, Cpu, FolderOpen, HardDrive, Info, Loader2, Package, Play, Power, Puzzle, RefreshCw, Search, Server, Trash2, X, Zap, type LucideProps } from "lucide-solid";
+import { BookOpen, ChevronDown, ChevronRight, Cpu, FolderOpen, Info, Loader2, Package, Play, Power, Puzzle, Search, Server, Trash2, X, type LucideProps } from "lucide-solid";
 import { createMemo, createSignal, For, onCleanup, onMount, Show, type JSX } from "solid-js";
 import { api, isTauri, prettyPath } from "../api";
 import { accountById, fmtTokens } from "../accounts";
@@ -7,14 +7,12 @@ import { formatBytes } from "../data/mock";
 import { absPathOf, projects, showToast } from "../store";
 import { kindLabel, sk, type Item, type PluginInfo } from "../skills";
 import { xray } from "../xray";
-import { inv, loadInventory, pluginAction, refreshRunning, removeMcp, trashItem, type McpRun } from "../inventory";
-import { AccountChip, CountUp } from "../components/ui";
+import { inv, pluginAction, removeMcp, trashItem, type McpRun } from "../inventory";
+import { AccountChip } from "../components/ui";
 import { FolderIcon, ProjectIcon } from "../components/icons";
 import ConfirmDialog from "../components/ConfirmDialog";
 import Explainer from "../components/Explainer";
-import ComputerTabs from "../components/ComputerTabs";
 import { SkillDetail } from "./SkillDetail";
-import { every } from "../every";
 import { dec, tx } from "../i18n";
 
 // ---------------------------------------------------------------- modelo
@@ -235,24 +233,36 @@ function mcpRow(i: Item, runs: McpRun[]): Row {
 
 // ---------------------------------------------------------------- tela
 
-export default function Inventory() {
-  const [cat, setCat] = createSignal<Cat | "tudo">("tudo");
-  const [proj, setProj] = createSignal("todos");
-  const [q, setQ] = createSignal("");
-  const [open, setOpen] = createSignal<Record<string, boolean>>({});
+export type ExtrasCat = Cat;
+
+// filtro de projeto e busca valem para as três partes (trocar de parte não perde a escolha)
+const [proj, setProj] = createSignal("todos");
+const [q, setQ] = createSignal("");
+const [open, setOpen] = createSignal<Record<string, boolean>>({});
+
+/** Quantos extras de cada tipo (para o menu do Painel e a Visão geral). */
+export const extrasCount = (c: Cat) =>
+  c === "plugins" ? sk.plugins.length : c === "mcp" ? sk.items.filter((i) => i.kind === "mcp").length : sk.items.filter((i) => i.kind !== "mcp" && i.layer !== "plugin").length;
+/** Conexões (MCP) abertas agora e quanto gastam juntas. */
+export const mcpRunning = () => {
+  const runs = Object.values(inv.mcp).filter((r) => r.length);
+  return { n: runs.length, cpu: runs.flat().reduce((s, r) => s + r.cpu, 0), mem: runs.flat().reduce((s, r) => s + r.mem, 0) };
+};
+/** Espaço dos plugins baixados. */
+export const pluginsDisk = () => sk.plugins.reduce((s, p) => s + p.bytes, 0);
+
+/** Uma das três partes de extras do Painel: receitas e atalhos, conexões ou plugins. */
+export function ExtrasPane(props: { cat: Cat }) {
   const [confirm, setConfirm] = createSignal<Action | null>(null);
   const [reading, setReading] = createSignal<Item | null>(null);
 
-  onMount(() => {
-    loadInventory();
-    onCleanup(every(refreshRunning, 3000));
-  });
-
-  const rows = createMemo<Row[]>(() => [
-    ...sk.plugins.map(pluginRow),
-    ...sk.items.filter((i) => i.kind !== "mcp" && i.layer !== "plugin").map(itemRow),
-    ...sk.items.filter((i) => i.kind === "mcp").map((i) => mcpRow(i, inv.mcp[i.id] ?? [])),
-  ]);
+  const rows = createMemo<Row[]>(() =>
+    props.cat === "plugins"
+      ? sk.plugins.map(pluginRow)
+      : props.cat === "mcp"
+        ? sk.items.filter((i) => i.kind === "mcp").map((i) => mcpRow(i, inv.mcp[i.id] ?? []))
+        : sk.items.filter((i) => i.kind !== "mcp" && i.layer !== "plugin").map(itemRow),
+  );
 
   const selected = createMemo(() => realProjects().find((p) => p.id === proj()) ?? null);
   const inProject = (r: Row) => {
@@ -266,18 +276,11 @@ export default function Inventory() {
     const s = q().trim().toLowerCase();
     return !s || r.name.toLowerCase().includes(s) || r.sub.toLowerCase().includes(s) || (r.tag ?? "").toLowerCase().includes(s);
   };
-  const scoped = createMemo(() => rows().filter((r) => inProject(r) && matches(r)));
-  const shown = (c: Cat) => scoped().filter((r) => r.cat === c);
+  const shown = createMemo(() => rows().filter((r) => inProject(r) && matches(r)));
   // as linhas são refeitas a cada leitura (3 s); a lista anda pela chave para não recriar nem repetir a animação
   const byKey = createMemo(() => new Map(rows().map((r) => [r.key, r])));
-  const keys = (c: Cat) => shown(c).map((r) => r.key);
-  const visibleCats = () => cats.filter((c) => cat() === "tudo" || cat() === c.id);
+  const keys = createMemo(() => shown().map((r) => r.key), undefined, { equals: (a, b) => a.length === b.length && a.every((k, i) => k === b[i]) });
 
-  // ---- resumo
-  const running = createMemo(() => scoped().filter((r) => r.load));
-  const runCpu = () => running().reduce((s, r) => s + r.load!.cpu, 0);
-  const runMem = () => running().reduce((s, r) => s + r.load!.mem, 0);
-  const disk = createMemo(() => sk.plugins.filter((p) => inProject(pluginRow(p))).reduce((s, p) => s + p.bytes, 0));
   /** Tokens que entram em toda conversa do projeto escolhido (nome + descrição das skills ligadas). */
   const fixed = createMemo(() => {
     const p = selected();
@@ -291,98 +294,18 @@ export default function Inventory() {
   const toggle = (k: string) => setOpen((o) => ({ ...o, [k]: !o[k] }));
   // receitas agrupadas por de onde vieram; com busca, os grupos abrem sozinhos
   const skillFamilies = createMemo(() =>
-    families(keys("skills").map((key) => ({ key, item: sk.items.find((i) => `item:${i.id}` === key)! })).filter((x) => x.item)),
+    props.cat !== "skills" ? [] : families(keys().map((key) => ({ key, item: sk.items.find((i) => `item:${i.id}` === key)! })).filter((x) => x.item)),
   );
   const famOpen = (f: Family) => !!open()[`fam:${f.id}`] || q().trim().length > 0 || skillFamilies().length === 1;
   const runAction = (a: Action) => (a.confirm ? setConfirm(a) : a.run());
-  // tela larga: receitas numa coluna, conexões e pacotes na outra
-  const has = (c: (typeof cats)[number]) => shown(c.id).length > 0 || cat() === c.id;
-  const colA = () => visibleCats().filter((c) => c.id === "skills" && has(c));
-  const colB = () => visibleCats().filter((c) => c.id !== "skills" && has(c));
-  const section = (c: (typeof cats)[number]) => (
-    <section class="inv-section stagger">
-      <div class="inv-section-head">
-        <span class="inv-cat-icon"><c.icon size={15} /></span>
-        <div>
-          <strong>{c.label} <small>{shown(c.id).length}</small></strong>
-          <small>{c.hint}</small>
-        </div>
-      </div>
-      <Show
-        when={c.id === "skills" && keys(c.id).length > 0}
-        fallback={
-          <div class="inv-list">
-            <For each={keys(c.id)} fallback={<div class="scope-empty">{tx("Nada aqui{v}", { v: q() ? tx(" com essa busca") : "" })}</div>}>
-              {(k, n) => (
-                <Show when={byKey().get(k)}>
-                  {(r) => <RowView r={r()} n={n()} open={!!open()[k]} onToggle={() => toggle(k)} onAction={runAction} onRead={setReading} />}
-                </Show>
-              )}
-            </For>
-          </div>
-        }
-      >
-        <div class="inv-list">
-          <For each={skillFamilies()}>
-            {(f) => (
-              <FamilyView f={f} open={famOpen(f)} onToggle={() => toggle(`fam:${f.id}`)} first={byKey().get(f.keys[0])}>
-                <For each={f.keys}>
-                  {(k, n) => (
-                    <Show when={byKey().get(k)}>
-                      {(r) => <RowView r={r()} n={n()} open={!!open()[k]} onToggle={() => toggle(k)} onAction={runAction} onRead={setReading} />}
-                    </Show>
-                  )}
-                </For>
-              </FamilyView>
-            )}
-          </For>
-        </div>
-      </Show>
-    </section>
+  const row = (k: string, n: number) => (
+    <Show when={byKey().get(k)}>
+      {(r) => <RowView r={r()} n={n} open={!!open()[k]} onToggle={() => toggle(k)} onAction={runAction} onRead={setReading} />}
+    </Show>
   );
 
   return (
-    <div class="page">
-      <ComputerTabs
-        actions={
-          <button class="ghost-btn small" onClick={loadInventory}>
-            <RefreshCw size={13} classList={{ spinning: inv.loading }} /> {tx("Atualizar")}
-          </button>
-        }
-      />
-
-      <div class="cx-help">
-      <Explainer
-        id="skills"
-        closed
-        title={tx("O que é esta tela?")}
-        intro={tx("O Claude já sabe programar sozinho. Aqui aparecem os extras que alguém instalou para ele. São quatro tipos:")}
-        terms={[
-          { word: tx("Receitas (skills)"), means: tx("Instruções prontas para um tipo de tarefa, como “fazer um PDF” ou “revisar código”. O Claude usa sozinho quando o pedido combina.") },
-          { word: tx("Atalhos /"), means: tx("Comandos que você digita no chat começando com barra, como /revisar. Cada um manda um pedido pronto.") },
-          { word: tx("Ajudantes"), means: tx("Mini-Claudes especializados que o Claude principal chama para uma parte do trabalho (pesquisar, testar…).") },
-          { word: tx("Conexões (MCP)"), means: tx("Pontes para outros programas e sites, como Figma, GitHub ou um navegador. Deixam o Claude ler e mexer neles.") },
-        ]}
-        calm={<>{tx("Você")} <strong>{tx("não precisa mexer em nada aqui")}</strong>{tx(". Clique numa linha para ver os detalhes. Antes de tirar algo, o Veocode pergunta, e o que sai vai para a")} <strong>{tx("Lixeira")}</strong>{tx(". Use o seletor de projeto para ver só o que vale numa pasta.")}</>}
-      />
-
-      <Explainer
-        id="onde-fica"
-        closed
-        openLabel={tx("Instalei uma skill ou plugin (do GitHub, por exemplo): fica só no projeto ou no computador?")}
-        title={tx("Fica só no projeto ou no computador todo?")}
-        intro={<>{tx("Depende de")} <strong>{tx("como")}</strong> {tx("foi instalado. São duas perguntas diferentes:")} <strong>{tx("onde os arquivos ficam guardados")}</strong> e <strong>{tx("em quais projetos valem")}</strong>{tx(". Cada linha da lista abaixo responde as duas (“vale em” e “guardado”).")}</>}
-        terms={[
-          { word: tx("Skill dentro do projeto"), means: <>{tx("Pasta")} <code>{tx(".claude/skills")}</code> {tx("dentro do projeto, comum quando você baixa um repositório do GitHub que já vem com ela.")} <strong>{tx("Só vale naquele projeto")}</strong> {tx("e vai junto no git.")}</> },
-          { word: tx("Skill na conta"), means: <>{tx("Pasta")} <code>~/.claude/skills</code>{tx(", fora dos projetos.")} <strong>{tx("Vale em todos os projetos")}</strong> {tx("daquela conta neste computador.")}</> },
-          { word: tx("Plugin (/plugin, do GitHub)"), means: <><strong>{tx("Sempre é baixado para o computador")}</strong> (<code>~/.claude/plugins</code>{tx("). Na instalação você escolhe onde ele liga:")} <em>user</em> {tx("= todos os projetos;")} <em>project</em> {tx("ou")} <em>local</em> {tx("= só no projeto onde instalou.")}</> },
-          { word: tx("Conexão (claude mcp add)"), means: <>{tx("Sem nada a mais,")} <strong>{tx("vale só na pasta")}</strong> {tx("onde você rodou o comando (guardada no computador). Com")} <code>--scope project</code> {tx("vai para")} <code>.mcp.json</code> {tx("no projeto; com")} <code>--scope user</code>{tx(", vale em todos.")}</> },
-          { word: tx("Programas que a skill instala"), means: <>{tx("Coisas instaladas com npm, pip ou brew ficam")} <strong>{tx("no computador todo")}</strong>{tx(", para qualquer projeto. Veja em")} <em>{tx("Uso da máquina → Instalado pelas IAs")}</em>.</> },
-        ]}
-        calm={<>{tx("No Veocode, cada conta do Claude tem a sua pasta: o que foi instalado “no computador” por uma conta")} <strong>{tx("não aparece")}</strong> {tx("para outra. Quer ver só o que vale num projeto? Escolha ele no seletor logo abaixo.")}</>}
-      />
-      </div>
-
+    <div class="dash-extras">
       <div class="inv-bar">
         <ProjectPicker value={proj()} onChange={setProj} />
         <label class="search-box">
@@ -390,45 +313,71 @@ export default function Inventory() {
           <input placeholder={tx("Buscar…")} value={q()} onInput={(e) => setQ(e.currentTarget.value)} />
           <Show when={q()}><button class="icon-btn tiny visible" title={tx("Limpar a busca")} onClick={() => setQ("")}><X size={11} /></button></Show>
         </label>
-      </div>
-
-      <div class="inv-tiles">
-        <Tile icon={<Package size={15} />} label={tx("Extras")} hint={selected() ? tx("que valem em {name}", { name: selected()!.name }) : tx("em todos os projetos")}>
-          <CountUp value={scoped().length} />
-        </Tile>
-        <Tile icon={<Zap size={15} />} label={tx("Conexões abertas")} hint={`${pct(runCpu())} CPU · ${formatBytes(runMem())}`} live={running().length > 0}>
-          <CountUp value={running().length} />
-        </Tile>
-        <Tile icon={<HardDrive size={15} />} label={tx("No disco")} hint={tx("pacotes instalados")}>
-          <CountUp value={disk()} format={formatBytes} />
-        </Tile>
-        <Tile icon={<Cpu size={15} />} label={tx("Contexto fixo")} hint={selected() ? tx("tokens em toda conversa, antes de você escrever") : tx("escolha um projeto para ver")}>
-          <Show when={fixed() !== null} fallback={<span class="muted">—</span>}>
-            ~<CountUp value={fixed()!} format={fmtTokens} />
-          </Show>
-        </Tile>
-      </div>
-
-      <div class="who-filter inv-cats">
-        <button classList={{ active: cat() === "tudo" }} onClick={() => setCat("tudo")}>{tx("Tudo")} <small class="count">{scoped().length}</small></button>
-        <For each={cats}>
-          {(c) => (
-            <button classList={{ active: cat() === c.id }} onClick={() => setCat(c.id)}>
-              <c.icon size={12} /> {c.label} <small class="count">{shown(c.id).length}</small>
-            </button>
-          )}
-        </For>
+        <Show when={props.cat === "skills" && fixed() !== null}>
+          <span class="inv-fixed" title={tx("Tokens que entram em toda conversa deste projeto antes de você escrever")}>
+            <Cpu size={12} /> {tx("~{v} tokens fixos por conversa", { v: fmtTokens(fixed()!) })}
+          </span>
+        </Show>
       </div>
       <Show when={selected()}>
         <p class="foot-note inv-scope-note"><Info size={12} /> {tx("Mostrando o que vale em")} <strong>{selected()!.name}</strong>{tx(": o da conta {label} e o que está dentro da pasta.", { label: accountById(selected()!.accountId).label })}</p>
       </Show>
 
       <Show when={inv.loaded} fallback={<div class="loading-rows"><div /><div /><div /></div>}>
-        <div class="inv-cols" classList={{ split: colA().length > 0 && colB().length > 0 }}>
-          <Show when={colA().length}><div class="inv-col"><For each={colA()}>{section}</For></div></Show>
-          <Show when={colB().length}><div class="inv-col"><For each={colB()}>{section}</For></div></Show>
-        </div>
+        <Show
+          when={props.cat === "skills" && keys().length > 0}
+          fallback={
+            <div class="inv-list">
+              <For each={keys()} fallback={<div class="scope-empty">{q() ? tx("Nada com essa busca") : selected() ? tx("Nada disso vale neste projeto") : tx("Nada instalado aqui")}</div>}>
+                {(k, n) => row(k, n())}
+              </For>
+            </div>
+          }
+        >
+          <div class="inv-list">
+            <For each={skillFamilies()}>
+              {(f) => (
+                <FamilyView f={f} open={famOpen(f)} onToggle={() => toggle(`fam:${f.id}`)} first={byKey().get(f.keys[0])}>
+                  <For each={f.keys}>{(k, n) => row(k, n())}</For>
+                </FamilyView>
+              )}
+            </For>
+          </div>
+        </Show>
       </Show>
+
+      <div class="dash-help">
+        <Show when={props.cat === "skills"}>
+          <Explainer
+            id="skills"
+            closed
+            openLabel={tx("O que são receitas, atalhos e ajudantes?")}
+            title={tx("O que são receitas, atalhos e ajudantes?")}
+            intro={tx("O Claude já sabe programar sozinho. Aqui aparecem os extras que alguém instalou para ele:")}
+            terms={[
+              { word: tx("Receitas (skills)"), means: tx("Instruções prontas para um tipo de tarefa, como “fazer um PDF” ou “revisar código”. O Claude usa sozinho quando o pedido combina.") },
+              { word: tx("Atalhos /"), means: tx("Comandos que você digita no chat começando com barra, como /revisar. Cada um manda um pedido pronto.") },
+              { word: tx("Ajudantes"), means: tx("Mini-Claudes especializados que o Claude principal chama para uma parte do trabalho (pesquisar, testar…).") },
+            ]}
+            calm={<>{tx("Você")} <strong>{tx("não precisa mexer em nada aqui")}</strong>{tx(". Clique numa linha para ver os detalhes. Antes de tirar algo, o Veocode pergunta, e o que sai vai para a")} <strong>{tx("Lixeira")}</strong>.</>}
+          />
+        </Show>
+        <Explainer
+          id="onde-fica"
+          closed
+          openLabel={tx("Instalei uma skill ou plugin (do GitHub, por exemplo): fica só no projeto ou no computador?")}
+          title={tx("Fica só no projeto ou no computador todo?")}
+          intro={<>{tx("Depende de")} <strong>{tx("como")}</strong> {tx("foi instalado. São duas perguntas diferentes:")} <strong>{tx("onde os arquivos ficam guardados")}</strong> e <strong>{tx("em quais projetos valem")}</strong>{tx(". Cada linha da lista abaixo responde as duas (“vale em” e “guardado”).")}</>}
+          terms={[
+            { word: tx("Skill dentro do projeto"), means: <>{tx("Pasta")} <code>{tx(".claude/skills")}</code> {tx("dentro do projeto, comum quando você baixa um repositório do GitHub que já vem com ela.")} <strong>{tx("Só vale naquele projeto")}</strong> {tx("e vai junto no git.")}</> },
+            { word: tx("Skill na conta"), means: <>{tx("Pasta")} <code>~/.claude/skills</code>{tx(", fora dos projetos.")} <strong>{tx("Vale em todos os projetos")}</strong> {tx("daquela conta neste computador.")}</> },
+            { word: tx("Plugin (/plugin, do GitHub)"), means: <><strong>{tx("Sempre é baixado para o computador")}</strong> (<code>~/.claude/plugins</code>{tx("). Na instalação você escolhe onde ele liga:")} <em>user</em> {tx("= todos os projetos;")} <em>project</em> {tx("ou")} <em>local</em> {tx("= só no projeto onde instalou.")}</> },
+            { word: tx("Conexão (claude mcp add)"), means: <>{tx("Sem nada a mais,")} <strong>{tx("vale só na pasta")}</strong> {tx("onde você rodou o comando (guardada no computador). Com")} <code>--scope project</code> {tx("vai para")} <code>.mcp.json</code> {tx("no projeto; com")} <code>--scope user</code>{tx(", vale em todos.")}</> },
+            { word: tx("Programas que a skill instala"), means: <>{tx("Coisas instaladas com npm, pip ou brew ficam")} <strong>{tx("no computador todo")}</strong>{tx(", para qualquer projeto. Veja em")} <em>{tx("Painel → Instalado pelas IAs")}</em>.</> },
+          ]}
+          calm={<>{tx("No Veocode, cada conta do Claude tem a sua pasta: o que foi instalado “no computador” por uma conta")} <strong>{tx("não aparece")}</strong> {tx("para outra. Quer ver só o que vale num projeto? Escolha ele no seletor do topo.")}</>}
+        />
+      </div>
 
       <Show when={reading()}>{(i) => <SkillDetail i={i()} onClose={() => setReading(null)} />}</Show>
       <Show when={confirm()}>
@@ -471,16 +420,6 @@ function ProjectPicker(props: { value: string; onChange: (id: string) => void })
           </For>
         </div>
       </Show>
-    </div>
-  );
-}
-
-function Tile(props: { icon: JSX.Element; label: string; hint: string; live?: boolean; children: JSX.Element }) {
-  return (
-    <div class="inv-tile" classList={{ live: props.live }}>
-      <span class="inv-tile-label">{props.icon} {props.label}<Show when={props.live}><i class="pulse-dot" /></Show></span>
-      <strong>{props.children}</strong>
-      <small>{props.hint}</small>
     </div>
   );
 }

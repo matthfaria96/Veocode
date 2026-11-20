@@ -247,6 +247,73 @@ pub fn kill(sys: &mut System, pid: u32) -> Result<(), String> {
         _ => Err(crate::i18n::tr("o sistema não deixou encerrar", "the system didn't allow ending it").into()),
     }
 }
+// ---------------------------------------------------------------- parar de verdade
+
+/// Os agentes abertos nesta pasta (ou dentro dela) por fora do Veocode: Terminal, editor, app do Claude.
+pub fn outside(sys: &mut System, root: &std::path::Path) -> Vec<AgentGroup> {
+    snapshot(sys)
+        .into_iter()
+        .filter(|g| g.host != "Veocode" && g.cwd.as_deref().is_some_and(|c| std::path::Path::new(c).starts_with(root)))
+        .collect()
+}
+
+/// Para um agente de fora como o botão de parar do Claude: interrompe (o mesmo que Ctrl+C) e, se
+/// em 3 s ele continuar aberto, fecha ele e tudo o que ele abriu (comandos, servidores, ajudantes).
+/// A conversa fica guardada no arquivo dela.
+pub fn stop_outside(sys: &mut System, root: &std::path::Path, pid: u32) -> Result<(), String> {
+    let g = outside(sys, root)
+        .into_iter()
+        .find(|g| g.pid == pid)
+        .ok_or(crate::i18n::tr("essa IA não está mais aberta nesta pasta", "that AI isn't open in this folder anymore"))?;
+    // o Claude em si (o de cima ou, quando há um invólucro, o filho direto com esse nome)
+    let heads: Vec<u32> = std::iter::once(g.pid)
+        .chain(g.children.iter().filter(|c| c.depth == 1 && c.name.to_lowercase().contains("claude")).map(|c| c.pid))
+        .collect();
+    for h in &heads {
+        if let Some(p) = sys.process(Pid::from_u32(*h)) {
+            let _ = p.kill_with(Signal::Interrupt);
+        }
+    }
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_secs(3));
+        kill_tree(pid);
+    });
+    Ok(())
+}
+
+/// Fecha um processo e todos os que ele abriu, de baixo para cima (para nada ficar órfão rodando).
+pub fn kill_tree(pid: u32) {
+    let Ok(mut sys) = System::new() else { return };
+    sys.refresh_processes_specifics(ProcessesToUpdate::All, true, ProcessRefreshKind::nothing());
+    let procs = sys.processes();
+    let mut children: HashMap<Pid, Vec<Pid>> = HashMap::new();
+    for (p, x) in procs {
+        if let Some(parent) = x.parent() {
+            children.entry(parent).or_default().push(*p);
+        }
+    }
+    let root = Pid::from_u32(pid);
+    if !procs.contains_key(&root) {
+        return;
+    }
+    // em largura: pais antes dos filhos; fecha de trás para frente
+    let mut order = vec![root];
+    let mut i = 0;
+    while i < order.len() && order.len() < 2000 {
+        if let Some(c) = children.get(&order[i]) {
+            order.extend(c.iter().copied());
+        }
+        i += 1;
+    }
+    for p in order.iter().rev() {
+        if let Some(x) = procs.get(p) {
+            if x.kill_with(Signal::Term) != Some(true) {
+                x.kill();
+            }
+        }
+    }
+}
+
 // ---------------------------------------------------------------- portas abertas
 
 /// Um servidor que ficou rodando depois que quem o abriu (agente, terminal) fechou.

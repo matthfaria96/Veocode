@@ -2,7 +2,7 @@
 // tema (classes .il-* em styles.css). Mais leves que capturas de tela, nunca mostram dados
 // pessoais e acompanham o tema.
 
-import { Bot, Database, Eye, FolderOpen, KeyRound, Lock, MessageSquare, Package, Puzzle, Server, Trash2, User } from "lucide-solid";
+import { Eye, FolderOpen, KeyRound, Lock, MessageSquare, User } from "lucide-solid";
 import { For, type JSX } from "solid-js";
 import { FileIcon, FolderIcon, ProjectIcon } from "../components/icons";
 import type { TopicId } from "./topics";
@@ -62,48 +62,64 @@ function Inicio() {
 }
 
 function Painel() {
-  // quatro cantos, cada um com uma conta trabalhando; o de baixo à direita pede permissão
+  // a grade de projetos, cada um com a conversa ao vivo; o de baixo à direita pede permissão
   const cells = [
-    { x: 14, y: 12, c: C.claude, lines: [70, 120, 92], state: "work" },
-    { x: 266, y: 12, c: C.deep, lines: [110, 80, 130], state: "work" },
-    { x: 14, y: 116, c: C.local, lines: [90, 60, 0], state: "idle" },
-    { x: 266, y: 116, c: C.claude, lines: [80, 0, 0], state: "ask" },
+    { x: 14, y: 10, c: C.claude, lines: [70, 120, 92], state: "work" },
+    { x: 266, y: 10, c: C.deep, lines: [110, 80, 130], state: "work" },
+    { x: 14, y: 94, c: C.local, lines: [90, 60, 0], state: "idle" },
+    { x: 266, y: 94, c: C.claude, lines: [80, 0, 0], state: "ask" },
   ];
+  const dock = [C.purple, C.info, C.ok];
   return (
     <Svg>
       <For each={cells}>
         {(k, i) => (
           <g class="il-rise" style={rise(i())}>
-            <rect x={k.x} y={k.y} width={240} height={94} rx={10} class={k.state === "ask" ? "il-win il-pulse-box" : "il-win"} style={k.state === "ask" ? { stroke: C.warn } : k.state === "work" ? { stroke: k.c } : {}} />
+            <rect x={k.x} y={k.y} width={240} height={76} rx={10} class={k.state === "ask" ? "il-win il-pulse-box" : "il-win"} style={k.state === "ask" ? { stroke: C.warn } : k.state === "work" ? { stroke: k.c } : {}} />
             <rect x={k.x + 10} y={k.y + 9} width={14} height={14} rx={4} style={{ fill: k.c, opacity: 0.85 }} />
             <Bar x={k.x + 30} y={k.y + 13} w={58} />
             <circle cx={k.x + 100} cy={k.y + 16} r={3.5} class={k.state === "idle" ? "" : "il-blink"} style={{ fill: k.state === "ask" ? C.warn : k.state === "work" ? C.ok : "var(--text-3)" }} />
-            <line x1={k.x} y1={k.y + 30} x2={k.x + 240} y2={k.y + 30} class="il-sep" />
-            <rect x={k.x + 150} y={k.y + 38} width={80} height={12} rx={6} class="il-bubble-me" />
+            <rect x={k.x + 150} y={k.y + 30} width={80} height={11} rx={5.5} class="il-bubble-me" />
             <For each={k.lines.filter((w) => w)}>
-              {(w, j) => <Bar x={k.x + 12} y={k.y + 56 + j() * 11} w={w} h={5} cls={j() === k.lines.filter((x) => x).length - 1 && k.state === "work" ? "il-bar il-typing" : "il-bar"} />}
+              {(w, j) => <Bar x={k.x + 12} y={k.y + 48 + j() * 9} w={w} h={4} cls={j() === k.lines.filter((x) => x).length - 1 && k.state === "work" ? "il-bar il-typing" : "il-bar"} />}
             </For>
             {k.state === "ask" && (
               <g>
-                <rect x={k.x + 12} y={k.y + 64} width={216} height={22} rx={6} style={{ fill: "color-mix(in srgb, #fbbf24 12%, transparent)", stroke: "color-mix(in srgb, #fbbf24 45%, transparent)" }} />
-                <rect x={k.x + 128} y={k.y + 69} width={42} height={12} rx={6} class="il-bar" />
-                <rect x={k.x + 176} y={k.y + 69} width={44} height={12} rx={6} style={{ fill: C.ok }} />
+                <rect x={k.x + 12} y={k.y + 48} width={216} height={20} rx={6} style={{ fill: "color-mix(in srgb, #fbbf24 12%, transparent)", stroke: "color-mix(in srgb, #fbbf24 45%, transparent)" }} />
+                <rect x={k.x + 128} y={k.y + 52} width={42} height={12} rx={6} class="il-bar" />
+                <rect x={k.x + 176} y={k.y + 52} width={44} height={12} rx={6} style={{ fill: C.ok }} />
               </g>
             )}
           </g>
         )}
       </For>
+      {/* a barra "Outros projetos": clique põe na tela, arrastar troca */}
+      <g class="il-rise" style={rise(4)}>
+        <rect x={14} y={180} width={492} height={32} rx={10} class="il-card" />
+        <text x={28} y={200} class="il-t il-tiny il-dim">{tx("Outros projetos")}</text>
+        <For each={dock}>
+          {(c, i) => (
+            <g>
+              <rect x={124 + i() * 86} y={188} width={78} height={16} rx={8} class="il-item" />
+              <rect x={130 + i() * 86} y={192} width={8} height={8} rx={2.5} style={{ fill: c, opacity: 0.85 }} />
+              <Bar x={144 + i() * 86} y={193} w={44} h={5} />
+            </g>
+          )}
+        </For>
+        <rect x={420} y={188} width={78} height={16} rx={8} class="il-pill" style={{ "--c": C.info }} />
+        <text x={459} y={199.5} class="il-t il-mid il-tiny" style={{ fill: C.info }}>{tx("+ Adicionar")}</text>
+      </g>
     </Svg>
   );
 }
-
 function Projetos() {
-  const code = [70, 120, 96, 140, 60, 110, 130, 84];
+  const code = [70, 120, 96, 140, 60, 110, 130, 84, 100, 76, 118, 64];
+  const tabs: [string, number][] = [["Git", 36], ["Terminal", 58], [tx("Ambiente"), 58]];
   return (
     <Svg>
       <rect x={10} y={8} width={500} height={204} rx={12} class="il-win" />
       {/* árvore */}
-      <For each={[0, 1, 2, 3, 4, 5, 6]}>
+      <For each={[0, 1, 2, 3, 4, 5, 6, 7]}>
         {(r) => (
           <>
             <Bar x={r === 2 || r === 3 ? 32 : 22} y={30 + r * 20} w={r === 3 ? 62 : 48 + ((r * 13) % 30)} cls={r === 3 ? "il-bar il-hl" : "il-bar"} />
@@ -117,37 +133,35 @@ function Projetos() {
       <For each={code}>
         {(w, i) => (
           <>
-            {i() === 4 && <rect x={128} y={26 + i() * 13} width={232} height={11} class="il-changed" />}
-            <Bar x={140 + (i() % 3 === 1 ? 14 : 0)} y={28 + i() * 13} w={w} h={5} cls={i() === 4 ? "il-bar il-typing" : "il-bar"} />
+            {i() === 4 && <rect x={128} y={26 + i() * 14} width={186} height={12} class="il-changed" />}
+            <Bar x={140 + (i() % 3 === 1 ? 14 : 0)} y={29 + i() * 14} w={Math.min(w, 150)} h={5} cls={i() === 4 ? "il-bar il-typing" : "il-bar"} />
           </>
         )}
       </For>
-      {/* painel de baixo: o terminal do projeto */}
-      <line x1={126} y1={140} x2={362} y2={140} class="il-sep" />
-      <text x={138} y={155} class="il-t il-tiny il-dim">{tx("Atividade")}</text>
-      <rect x={186} y={145} width={50} height={14} rx={7} class="il-pill" style={{ "--c": C.info }} />
-      <text x={211} y={155} class="il-t il-mid il-tiny">Terminal</text>
-      <rect x={134} y={164} width={220} height={42} rx={6} class="il-term" />
+      <line x1={316} y1={8} x2={316} y2={212} class="il-sep" />
+      {/* painel da direita: abas Git, Terminal e Ambiente; o terminal aberto */}
+      <For each={tabs}>
+        {([label, w], i) => {
+          const x = 326 + [0, 42, 106][i()];
+          return (
+            <>
+              {i() === 1 && <rect x={x} y={18} width={w} height={18} rx={6} class="il-pill" style={{ "--c": C.info }} />}
+              <text x={x + w / 2} y={30.5} class={i() === 1 ? "il-t il-mid il-tiny" : "il-t il-mid il-tiny il-dim"}>{label}</text>
+            </>
+          );
+        }}
+      </For>
+      <rect x={326} y={46} width={174} height={156} rx={8} class="il-term" />
       <g class="il-rise" style={rise(1)}>
-        <text x={142} y={178} class="il-t il-mono il-tiny"><tspan class="il-term-p">{tx("loja $")}</tspan> {tx("npm test")}</text>
+        <text x={336} y={64} class="il-t il-mono il-tiny"><tspan class="il-term-p">{tx("loja $")}</tspan> {tx("npm test")}</text>
       </g>
       <g class="il-rise" style={rise(2)}>
-        <text x={142} y={191} class="il-t il-mono il-tiny il-term-ok">{tx("✓ 12 testes passaram")}</text>
+        <text x={336} y={80} class="il-t il-mono il-tiny il-term-ok">{tx("✓ 12 testes passaram")}</text>
       </g>
       <g class="il-rise" style={rise(3)}>
-        <text x={142} y={202} class="il-t il-mono il-tiny"><tspan class="il-term-p">{tx("loja $")}</tspan></text>
-        <rect x={177} y={195} width={5} height={9} class="il-blink" style={{ fill: C.info }} />
+        <text x={336} y={96} class="il-t il-mono il-tiny"><tspan class="il-term-p">{tx("loja $")}</tspan></text>
+        <rect x={371} y={89} width={5} height={9} class="il-blink" style={{ fill: C.info }} />
       </g>
-      <line x1={362} y1={8} x2={362} y2={212} class="il-sep" />
-      {/* chat */}
-      <rect x={410} y={26} width={88} height={22} rx={9} class="il-bubble-me il-rise" />
-      <g class="il-rise" style={rise(1)}>
-        <rect x={374} y={58} width={120} height={46} rx={9} class="il-bubble" />
-        <Bar x={384} y={68} w={92} h={5} />
-        <Bar x={384} y={79} w={70} h={5} />
-        <Bar x={384} y={90} w={84} h={5} />
-      </g>
-      <rect x={372} y={178} width={128} height={24} rx={8} class="il-input" />
       {/* cursor da conta */}
       <g class="il-cursor" style={{ "--c": C.claude }}>
         <path d="M0 0 L0 14 L4 10 L7 17 L9.5 16 L6.5 9 L12 9 Z" />
@@ -157,39 +171,6 @@ function Projetos() {
     </Svg>
   );
 }
-
-function Nivel() {
-  const rules: [string, string, string][] = [
-    [tx("Editar arquivos"), tx("Permitido"), C.ok],
-    [tx("Rodar comandos"), tx("Pergunta"), C.warn],
-    ["git push", tx("Bloqueado"), C.err],
-  ];
-  return (
-    <Svg>
-      <line x1={70} y1={74} x2={450} y2={74} class="il-track" />
-      <For each={levels}>
-        {([label, c], i) => (
-          <>
-            <circle cx={70 + i() * 126.6} cy={74} r={7} style={{ fill: c }} />
-            <text x={70 + i() * 126.6} y={104} class="il-t il-mid" style={{ fill: c }}>{tx(label)}</text>
-          </>
-        )}
-      </For>
-      <circle cx={0} cy={74} r={13} class="il-knob il-steps" />
-      <For each={rules}>
-        {([label, rule, c], i) => (
-          <g class="il-rise" style={{ ...rise(i()), "--c": c }}>
-            <rect x={28 + i() * 160} y={136} width={146} height={52} rx={10} class="il-card" />
-            <text x={40 + i() * 160} y={156} class="il-t">{label}</text>
-            <rect x={40 + i() * 160} y={164} width={70} height={16} rx={8} class="il-pill" />
-            <text x={75 + i() * 160} y={175.5} class="il-t il-mid il-tiny il-c">{rule}</text>
-          </g>
-        )}
-      </For>
-    </Svg>
-  );
-}
-
 function Chat() {
   return (
     <Svg>
@@ -293,45 +274,6 @@ function Contas() {
   );
 }
 
-function Inventario() {
-  const rows: { ico: (p: { x: number; y: number; size: number; class: string }) => JSX.Element; c: string; where: string; wc: string; st: string; sc: string; run?: boolean; w: number }[] = [
-    { ico: (p) => <Bot {...p} />, c: C.claude, where: tx("meu-app"), wc: C.info, st: tx("rodando"), sc: C.ok, run: true, w: 60 },
-    { ico: (p) => <Package {...p} />, c: C.claude, where: tx("toda a conta"), wc: C.purple, st: tx("ligado"), sc: C.ok, w: 40 },
-    { ico: (p) => <Server {...p} />, c: C.claude, where: tx("toda a conta"), wc: C.purple, st: tx("parado"), sc: "#6c7589", w: 24 },
-    { ico: (p) => <Database {...p} />, c: "#6c7589", where: tx("computador"), wc: "#6c7589", st: "2,1 GB", sc: C.warn, w: 80 },
-  ];
-  return (
-    <Svg>
-      <rect x={20} y={12} width={480} height={196} rx={12} class="il-card" />
-      <For each={rows}>
-        {(r, i) => {
-          const y = 22 + i() * 46;
-          return (
-            <g class="il-rise" style={{ ...rise(i()), "--c": r.c }}>
-              {i() > 0 && <line x1={20} y1={y - 5} x2={500} y2={y - 5} class="il-sep" />}
-              <rect x={34} y={y + 4} width={28} height={28} rx={8} class="il-tint" classList={{ "il-pulse-box": !!r.run }} />
-              {r.ico({ x: 40, y: y + 10, size: 16, class: "il-ico" })}
-              <Bar x={74} y={y + 8} w={90 + ((i() * 17) % 40)} />
-              <rect x={74} y={y + 20} width={70} height={13} rx={6.5} class="il-pill" style={{ "--c": r.wc }} />
-              <text x={109} y={y + 29.5} class="il-t il-mid il-tiny" style={{ fill: r.wc }}>{r.where}</text>
-              <rect x={286} y={y + 9} width={64} height={18} rx={9} class="il-pill" style={{ "--c": r.sc }} />
-              <text x={318} y={y + 21.5} class="il-t il-mid il-tiny" style={{ fill: r.sc }}>{r.st}</text>
-              <rect x={366} y={y + 15} width={80} height={6} rx={3} class="il-bar" />
-              <rect x={366} y={y + 15} width={r.w} height={6} rx={3} class="il-weight" style={{ fill: r.sc }} />
-              {i() === 3 && (
-                <g class="il-blink">
-                  <rect x={456} y={y + 8} width={30} height={20} rx={6} class="il-btn" />
-                  <Trash2 x={464} y={y + 12} size={13} class="il-ico-dim" />
-                </g>
-              )}
-            </g>
-          );
-        }}
-      </For>
-    </Svg>
-  );
-}
-
 function RaioX() {
   const caches: [string, number, string][] = [
     ["npm", 150, C.err],
@@ -359,42 +301,6 @@ function RaioX() {
           </g>
         )}
       </For>
-    </Svg>
-  );
-}
-
-function Skills() {
-  const cols: [string, string, (p: { x: number; y: number; size: number; class: string }) => JSX.Element][] = [
-    [tx("Da conta"), C.claude, (p) => <User {...p} />],
-    [tx("Plugins"), C.purple, (p) => <Package {...p} />],
-    [tx("Do projeto"), C.info, (p) => <FolderOpen {...p} />],
-  ];
-  return (
-    <Svg>
-      <For each={cols}>
-        {([label, c, Icon], i) => {
-          const x = 22 + i() * 168;
-          return (
-            <g class="il-rise" style={{ ...rise(i()), "--c": c }}>
-              <rect x={x} y={14} width={140} height={192} rx={12} class="il-card" />
-              <Icon x={x + 12} y={26} size={15} class="il-ico" />
-              <text x={x + 34} y={38} class="il-t">{label}</text>
-              <For each={[0, 1, 2]}>
-                {(r) => (
-                  <g>
-                    <rect x={x + 10} y={54 + r * 46} width={120} height={38} rx={8} class="il-item" />
-                    <Puzzle x={x + 18} y={62 + r * 46} size={12} class="il-ico" />
-                    <Bar x={x + 36} y={63 + r * 46} w={60 + ((r * 19 + i() * 7) % 30)} h={5} />
-                    <Bar x={x + 36} y={74 + r * 46} w={50} h={4} />
-                  </g>
-                )}
-              </For>
-            </g>
-          );
-        }}
-      </For>
-      <path d="M164 110 H188" class="il-flow" style={{ "--c": C.claude }} />
-      <path d="M332 110 H356" class="il-flow" style={{ "--c": C.purple }} />
     </Svg>
   );
 }
@@ -465,13 +371,10 @@ export const scenes: Record<TopicId, () => JSX.Element> = {
   inicio: Inicio,
   painel: Painel,
   projetos: Projetos,
-  nivel: Nivel,
   chat: Chat,
   livre: Livre,
   contas: Contas,
-  inventario: Inventario,
-  raiox: RaioX,
-  skills: Skills,
+  sistema: RaioX,
   ajustes: Ajustes,
   palavras: Palavras,
 };

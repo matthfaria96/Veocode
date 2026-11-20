@@ -1,32 +1,26 @@
-import { ArrowUpRight, FolderMinus, Maximize, FolderOpen, FolderPlus, GripVertical, Hand, LayoutGrid, MoreHorizontal, Plus, SquareArrowOutUpRight } from "lucide-solid";
+import { ArrowUpRight, FolderMinus, FolderOpen, FolderPlus, GripVertical, LayoutGrid, Plus, SquareArrowOutUpRight } from "lucide-solid";
 import { askCloseProject } from "../components/CloseProject";
-import { createEffect, createMemo, createSignal, For, Index, on, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import { accountById } from "../accounts";
 import { api, isTauri } from "../api";
-import { homeFocus, inGrid, maximized, panes, projectState, replacePane, setHomeFocus, setMaximized, toneOrder } from "../board";
+import { inGrid, maximized, panes, projectState, replacePane, setMaximized, toneOrder } from "../board";
 import { gridFit, spanOf, useWidth } from "../gridFit";
 import { drag, dropOver, startDrag } from "../drag";
-import { feedOf, watchFeeds } from "../feeds";
+import { watchFeeds } from "../feeds";
 import { found, foundLoaded, loadFound, type Found } from "../found";
-import { git, gitWords, loadSummaries, since } from "../git";
+import { loadSummaries, since } from "../git";
 import { needs } from "../attention";
 import { absPathOf, addProjectFromPicker, addProjectPath, projects, projectsReady, projectsSlow, setProjectId, setView, showToast } from "../store";
 import { every } from "../every";
 import { dismissable } from "../dismiss";
 import ChatPane from "../components/ChatPane";
 import { ProjectIcon } from "../components/icons";
-import { CountUp, ProviderMark, Toggle } from "../components/ui";
-import { locale, tx, txn } from "../i18n";
+import { tx, txn } from "../i18n";
 
-const greet = () => {
-  const h = new Date().getHours();
-  return h < 5 ? tx("Boa madrugada") : h < 12 ? tx("Bom dia") : h < 18 ? tx("Boa tarde") : tx("Boa noite");
-};
-const today = () => new Date().toLocaleDateString(locale(), { weekday: "long", day: "numeric", month: "long" });
 const ago = (secs: number) => since(secs);
 
-/** Visão geral: a tela de boas-vindas. Mostra o dia, os projetos ao vivo (arrastáveis) e o que dá para adicionar. */
+/** Visão geral: os projetos na tela, cada um com a conversa ao vivo (arrastáveis), e os outros numa faixa embaixo. */
 export default function Board() {
   const real = () => projects.filter((p) => !p.demo);
 
@@ -43,13 +37,7 @@ export default function Board() {
   onCleanup(every(() => void loadSummaries(), 15000));
   onMount(() => void loadFound());
   const key = (e: KeyboardEvent) => {
-    if (e.key === "Escape" && maximized()) return setMaximized(null);
-    // F liga/desliga o foco (fora de campos de texto)
-    const t = e.target as HTMLElement | null;
-    if ((e.key === "f" || e.key === "F") && !e.metaKey && !e.ctrlKey && !e.altKey && !(t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) && real().length) {
-      e.preventDefault();
-      setHomeFocus(!homeFocus());
-    }
+    if (e.key === "Escape" && maximized()) setMaximized(null);
   };
   window.addEventListener("keydown", key);
   onCleanup(() => window.removeEventListener("keydown", key));
@@ -67,31 +55,45 @@ export default function Board() {
     }),
   );
 
+  // uma linha no topo: como estão as IAs agora (o detalhe fica em cada painel)
+  const working = () => real().filter((p) => projectState(p.id).tone === "work").length;
+  const asking = () => real().filter((p) => ["ask", "error"].includes(projectState(p.id).tone)).length;
+  const status = () => {
+    if (asking()) return { tone: "warn", text: txn(asking(), "Um projeto precisa de você", "{n} projetos precisam de você") };
+    if (working()) return { tone: "ok", text: working() === 1 ? tx("Uma IA está trabalhando agora") : tx("{working} IAs estão trabalhando agora", { working: working() }) };
+    return { tone: "idle", text: txn(real().length, "Tudo calmo · {n} projeto", "Tudo calmo · {n} projetos") };
+  };
+
   return (
-    <div class="page board home" ref={page} classList={{ focus: homeFocus() && real().length > 0 }}>
-      <Show when={!homeFocus() || !real().length}>
-        <Welcome />
-        <NeedsStrip />
-      </Show>
-      <Show when={real().length} fallback={<Show when={projectsReady()} fallback={<Show when={projectsSlow()} fallback={<div class="loading-rows"><div /><div /></div>}><PermWait /></Show>}><Discover /></Show>}>
-        <div class="home-bar">
-          <div>
-            <h2>{tx("Na tela agora")}</h2>
-            <small><Hand size={12} /> {tx("Arraste pelo título para trocar de lugar · o ✕ tira da tela · arraste um projeto lá de baixo para pôr")}</small>
+    <div class="page board home focus" ref={page}>
+      <Show
+        when={real().length}
+        fallback={
+          <div class="home-start">
+            <header class="home-top">
+              <div class="home-title">
+                <h1>{tx("Visão geral")}</h1>
+                <p class="home-status"><i />{tx("Vamos começar: escolha as pastas em que você quer trabalhar com IA.")}</p>
+              </div>
+            </header>
+            <Show when={projectsReady()} fallback={<Show when={projectsSlow()} fallback={<div class="loading-rows"><div /><div /></div>}><PermWait /></Show>}><Discover /></Show>
           </div>
-          <label class="focus-switch" classList={{ on: homeFocus() }} title={homeFocus() ? tx("Sair do modo foco (volta o resumo do dia e os cartões)") : tx("Modo foco: só os projetos na tela, os outros numa faixa embaixo (F)")}>
-            <Maximize size={13} />
-            <span>{tx("Foco")}</span>
-            <Toggle on={homeFocus()} onChange={setHomeFocus} />
-          </label>
-        </div>
+        }
+      >
+        <header class="home-top">
+          <div class="home-title">
+            <h1>{tx("Visão geral")}</h1>
+            <p class="home-status" data-tone={status().tone}><i />{status().text}</p>
+          </div>
+          <NeedsStrip />
+        </header>
         <Show
           when={shown().length}
           fallback={
             <div class="board-empty" classList={{ "drop-on": dropOver() === "__empty", "is-dragging": !!drag() }} data-drop-pane="__empty">
               <span class="board-empty-icon"><LayoutGrid size={22} /></span>
               <strong>{tx("Nenhum projeto na tela")}</strong>
-              <span>{tx("Arraste um projeto lá de baixo para cá, ou use o")} <b>+</b> {tx("do cartão dele.")}</span>
+              <span>{tx("Clique num projeto aqui embaixo, ou arraste ele para cá.")}</span>
             </div>
           }
         >
@@ -103,22 +105,7 @@ export default function Board() {
             <For each={shown()}>{(id, i) => <ChatPane pid={id} index={i()} span={spanOf(fit(), i())} />}</For>
           </div>
         </Show>
-
-        <Show when={homeFocus()}>
-          <Dock />
-        </Show>
-        <div class="home-shelf" classList={{ hidden: homeFocus() }}>
-          <div class="home-bar">
-            <div>
-              <h2>{tx("Seus projetos")}</h2>
-              <small>{txn(real().length, "{n} projeto · clique para abrir, arraste para a tela", "{n} projetos · clique para abrir, arraste para a tela")}</small>
-            </div>
-          </div>
-          <div class="shelf-list">
-            <For each={shelf()}>{(p, i) => <ShelfCard id={p.id} i={i()} />}</For>
-            <AddCard />
-          </div>
-        </div>
+        <Dock />
       </Show>
 
       <Show when={drag()}>
@@ -133,117 +120,6 @@ export default function Board() {
       </Show>
     </div>
   );
-
-  /** Topo: saudação, números do dia e o gráfico das últimas 24 h de todos os projetos. */
-  function Welcome() {
-    const hours = createMemo(() => {
-      const now = Date.now();
-      const b = Array.from({ length: 24 }, () => 0);
-      for (const p of real()) {
-        for (const it of feedOf(p.id).items) {
-          const h = Math.floor((now - it.ts) / 3_600_000);
-          if (h >= 0 && h < 24) b[23 - h]++;
-        }
-      }
-      return b;
-    });
-    const steps = () => hours().reduce((a, b) => a + b, 0);
-    const working = () => real().filter((p) => projectState(p.id).tone === "work").length;
-    const asking = () => real().filter((p) => ["ask", "error"].includes(projectState(p.id).tone)).length;
-    const changed = () => real().reduce((t, p) => t + (git.summaries[p.id]?.changed ?? 0), 0);
-    const line = () => {
-      if (!real().length) return tx("Vamos começar: escolha abaixo as pastas em que você quer trabalhar com IA.");
-      if (asking()) return txn(asking(), "Um projeto precisa de você.", "{n} projetos precisam de você.");
-      if (working()) return tx("{v} trabalhando agora.", { v: working() === 1 ? tx("Uma IA está") : tx("{working} IAs estão", { working: working() }) });
-      return steps() ? tx("Tudo em ordem. Veja abaixo como foi o dia.") : tx("Tudo calmo por aqui. Peça algo em qualquer projeto abaixo.");
-    };
-    const W = 520;
-    const H = 86;
-    const path = (close: boolean) => {
-      const h = hours();
-      const max = Math.max(1, ...h);
-      const pts = h.map((v, i) => [(i / 23) * W, H - 6 - (v / max) * (H - 14)] as const);
-      let d = `M ${pts[0][0]} ${pts[0][1]}`;
-      for (let i = 1; i < pts.length; i++) {
-        const [x0, y0] = pts[i - 1];
-        const [x1, y1] = pts[i];
-        const cx = (x0 + x1) / 2;
-        d += ` C ${cx} ${y0}, ${cx} ${y1}, ${x1} ${y1}`;
-      }
-      return close ? `${d} L ${W} ${H} L 0 ${H} Z` : d;
-    };
-    // Os números ficam num array fixo: cada cartão nasce uma vez e só o valor muda
-    // (antes o array era recriado a cada leitura e os cartões sumiam e voltavam).
-    const stats: { label: () => string; value: () => number; tone?: "ok" | "warn" }[] = [
-      { label: () => tx("Projetos"), value: () => real().length },
-      { label: () => tx("Trabalhando agora"), value: working, tone: "ok" },
-      { label: () => tx("Esperando você"), value: asking, tone: "warn" },
-      { label: () => tx("Passos da IA hoje"), value: steps },
-      { label: () => tx("Arquivos mudados"), value: changed },
-    ];
-    const tone = () => (asking() ? "warn" : working() ? "ok" : "idle");
-    const date = () => {
-      const d = today();
-      return d.charAt(0).toUpperCase() + d.slice(1);
-    };
-    // leitura do gráfico ao passar o mouse
-    const [hover, setHover] = createSignal<number | null>(null);
-    const pointAt = (i: number) => {
-      const h = hours();
-      const max = Math.max(1, ...h);
-      return { x: (i / 23) * 100, y: ((H - 6 - (h[i] / max) * (H - 14)) / H) * 100 };
-    };
-    const onMove = (e: PointerEvent) => {
-      const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-      setHover(Math.max(0, Math.min(23, Math.round(((e.clientX - r.left) / r.width) * 23))));
-    };
-    return (
-      <section class="home-hero">
-        <div class="home-hero-top">
-          <div class="home-hello">
-            <span class="home-date">{date()}</span>
-            <h1>{greet()}</h1>
-            <p class="home-status" data-tone={tone()}><i />{line()}</p>
-          </div>
-          <div class="home-chart" title={tx("Passos das IAs em todos os projetos, hora a hora, nas últimas 24 h")} onPointerMove={onMove} onPointerLeave={() => setHover(null)}>
-            <div class="home-chart-plot">
-              <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
-                <defs>
-                  <linearGradient id="home-area" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stop-color="var(--accent)" stop-opacity="0.16" />
-                    <stop offset="100%" stop-color="var(--accent)" stop-opacity="0" />
-                  </linearGradient>
-                </defs>
-                <line x1="0" x2={W} y1={H - 0.5} y2={H - 0.5} class="home-base" vector-effect="non-scaling-stroke" />
-                <path d={path(true)} fill="url(#home-area)" class="home-area" />
-                <path d={path(false)} fill="none" class="home-line" vector-effect="non-scaling-stroke" />
-              </svg>
-              <Show when={hover() !== null}>
-                <span class="home-guide" style={{ left: `${pointAt(hover()!).x}%` }} />
-                <span class="home-dot" style={{ left: `${pointAt(hover()!).x}%`, top: `${pointAt(hover()!).y}%` }} />
-              </Show>
-            </div>
-            <div class="home-chart-axis" classList={{ reading: hover() !== null }}>
-              <span>{tx("24 h atrás")}</span><span>12 h</span><span>{tx("agora")}</span>
-              <Show when={hover() !== null}>
-                <span class="home-readout" classList={{ end: hover()! > 18, start: hover()! < 5 }} style={{ left: `${pointAt(hover()!).x}%` }}>
-                  <b>{txn(hours()[hover()!], "{n} passo", "{n} passos")}</b> · {hover() === 23 ? tx("agora") : tx("há {n} h", { n: 23 - hover()! })}
-                </span>
-              </Show>
-            </div>
-          </div>
-        </div>
-        <dl class="home-stats">
-          {stats.map((s) => (
-            <div class="home-stat" data-tone={s.tone} classList={{ live: !!s.tone && s.value() > 0 }}>
-              <dt>{s.tone && <i />}{s.label()}</dt>
-              <dd><CountUp value={s.value()} ms={600} /></dd>
-            </div>
-          ))}
-        </dl>
-      </section>
-    );
-  }
 
   /** Sem projetos: as pastas onde você já usou o Claude, para adicionar com um clique. */
   function Discover() {
@@ -287,102 +163,35 @@ export default function Board() {
     );
   }
 
-  /** Um projeto na lista de baixo: arraste para um painel ou clique para abrir. */
-  function ShelfCard(props: { id: string; i: number }) {
-    const p = () => projects.find((x) => x.id === props.id)!;
-    const a = () => accountById(p().accountId);
-    const st = () => projectState(props.id);
-    const g = () => git.summaries[props.id];
-    const last = () => [...feedOf(props.id).items].reverse().find((x) => x.kind === "say" || x.kind === "user");
-    const [flash, setFlash] = createSignal("");
-    createEffect(on(() => st().tone, (t, prev) => {
-      if (!prev || t === prev) return;
-      const kind = prev === "work" && t === "idle" ? "done" : t === "ask" ? "ask" : t === "error" ? "err" : "";
-      if (!kind) return;
-      setFlash(kind);
-      setTimeout(() => setFlash(""), 1800);
-    }));
-    const open = () => {
-      setProjectId(props.id);
-      setView("workspace");
-    };
+  /** Clique direito num projeto da faixa: abrir, pôr na tela, mostrar no Finder e fechar o projeto. */
+  function ProjectMenu(props: { id: string; at: { x: number; y: number }; onClose: () => void }) {
+    const open = () => (setProjectId(props.id), setView("workspace"));
+    const act = (f: () => void) => (e: MouseEvent) => (e.stopPropagation(), props.onClose(), f());
+    const h = 170;
+    const left = Math.max(12, Math.min(props.at.x, window.innerWidth - 232));
+    const top = props.at.y + h + 12 > window.innerHeight ? props.at.y - h - 6 : props.at.y + 6;
     return (
-      <div
-        class={`board-card mini shelf ${st().tone}`}
-        classList={{ [`flash-${flash()}`]: !!flash(), onscreen: inGrid(props.id), lifted: drag()?.id === props.id }}
-        style={{ "--c": a().color, "--i": props.i }}
-        onPointerDown={(e) => startDrag(e, props.id, "project", p().name, (target) => replacePane(target, props.id))}
-        onClick={open}
-        title={tx("Clique para abrir · arraste para um painel da tela")}
-      >
-        <div class="board-card-top">
-          <ProjectIcon id={p().id} name={p().name} stack={p().stack} size={22} />
-          <div class="board-card-name">
-            <strong>{p().name}</strong>
-            <span class={`board-state ${st().tone}`}><i /><span>{st().label}</span><small>{st().at ? since(st().at / 1000) : ""}</small></span>
-          </div>
-          <Show when={inGrid(props.id)} fallback={<button class="board-pin" title={tx("Pôr na tela")} onPointerDown={(e) => e.stopPropagation()} onClick={(e) => (e.stopPropagation(), replacePane(undefined, props.id))}><Plus size={13} /></button>}>
-            <span class="shelf-on" title={tx("Está na tela agora")}>{tx("na tela")}</span>
+      <Portal>
+        <div class="menu pop-in card-menu" role="menu" ref={(el) => dismissable(el, props.onClose)} style={{ left: `${left}px`, top: `${top}px` }} onPointerDown={(e) => e.stopPropagation()}>
+          <button class="menu-item" onClick={act(open)}><SquareArrowOutUpRight size={15} /><span>{tx("Abrir")}</span></button>
+          <Show when={!inGrid(props.id)}>
+            <button class="menu-item" onClick={act(() => replacePane(undefined, props.id))}><LayoutGrid size={15} /><span>{tx("Pôr na tela")}</span></button>
           </Show>
-          <CardMenu id={props.id} open={open} />
+          <button class="menu-item" onClick={act(() => { const a = absPathOf(props.id); if (a) api.reveal(a).catch((e) => showToast(String(e))); })}><FolderOpen size={15} /><span>{tx("Mostrar no Finder")}</span></button>
+          <div class="menu-sep" />
+          <button class="menu-item danger" onClick={act(() => askCloseProject(props.id))}><FolderMinus size={15} /><span>{tx("Fechar projeto…")}</span></button>
         </div>
-        <div class="board-last" classList={{ none: !last() }}>
-          <Show when={last()} fallback={<span>{tx("Nenhuma conversa nas últimas 24 h")}</span>}>
-            {(l) => <span><b>{l().kind === "user" ? tx("Você: ") : `${a().label}: `}</b>{l().title.replace(/[#*`>_]/g, "").slice(0, 140)}</span>}
-          </Show>
-        </div>
-        <DayStrip id={props.id} />
-        <div class="board-chips">
-          <span class="board-chip" title={tx("Conta: {label}", { label: a().label })}><ProviderMark id={a().id} size={13} /> {a().label}</span>
-          <Show when={g()?.repo}>
-            <For each={gitWords(g()).slice(0, 2)}>{(w) => <span class="board-chip" title={w.tip}>{w.text}</span>}</For>
-          </Show>
-        </div>
-      </div>
+      </Portal>
     );
   }
 
-  /** Menu "⋯" do cartão: abrir, pôr na tela, mostrar no Finder e fechar o projeto. */
-  function CardMenu(props: { id: string; open: () => void }) {
-    const [pos, setPos] = createSignal<{ left: number; top: number } | null>(null);
-    let btn!: HTMLButtonElement;
-    const toggle = (e: MouseEvent) => {
-      e.stopPropagation();
-      if (pos()) return setPos(null);
-      const r = btn.getBoundingClientRect();
-      const h = 190;
-      setPos({ left: Math.max(12, Math.min(r.right - 220, window.innerWidth - 232)), top: r.bottom + h + 12 > window.innerHeight ? r.top - h - 6 : r.bottom + 6 });
-    };
-    const close = () => setPos(null);
-    const act = (f: () => void) => (e: MouseEvent) => (e.stopPropagation(), close(), f());
-    return (
-      <>
-        <button class="board-more" ref={btn} title={tx("Mais opções")} aria-haspopup="menu" aria-expanded={!!pos()} onPointerDown={(e) => e.stopPropagation()} onClick={toggle}><MoreHorizontal size={15} /></button>
-        <Show when={pos()}>
-          {(p) => (
-            <Portal>
-              <div class="menu pop-in card-menu" role="menu" ref={(el) => dismissable(el, close, () => btn)} style={{ left: `${p().left}px`, top: `${p().top}px` }} onPointerDown={(e) => e.stopPropagation()}>
-                <button class="menu-item" onClick={act(props.open)}><SquareArrowOutUpRight size={15} /><span>{tx("Abrir")}</span></button>
-                <Show when={!inGrid(props.id)}>
-                  <button class="menu-item" onClick={act(() => replacePane(undefined, props.id))}><LayoutGrid size={15} /><span>{tx("Pôr na tela")}</span></button>
-                </Show>
-                <button class="menu-item" onClick={act(() => { const a = absPathOf(props.id); if (a) api.reveal(a).catch((e) => showToast(String(e))); })}><FolderOpen size={15} /><span>{tx("Mostrar no Finder")}</span></button>
-                <div class="menu-sep" />
-                <button class="menu-item danger" onClick={act(() => askCloseProject(props.id))}><FolderMinus size={15} /><span>{tx("Fechar projeto…")}</span></button>
-              </div>
-            </Portal>
-          )}
-        </Show>
-      </>
-    );
-  }
-
-  /** Último cartão da lista: adiciona uma pasta (sugestões do histórico do Claude ou o Finder). */
-  /** Modo foco: os projetos fora da tela numa faixa fina (clique põe na tela, arraste escolhe o lugar). */
+  /** Embaixo, numa faixa: os projetos que não estão na tela (clique põe na tela, arraste escolhe o lugar, clique direito abre o menu). */
   function Dock() {
     const off = () => shelf().filter((p) => !inGrid(p.id));
+    const [menu, setMenu] = createSignal<{ id: string; x: number; y: number } | null>(null);
     return (
       <div class="home-dock" role="list" aria-label={tx("Projetos fora da tela")}>
+        <span class="dock-label">{tx("Outros projetos")}</span>
         <For each={off()}>
           {(p, i) => {
             const st = () => projectState(p.id);
@@ -394,9 +203,10 @@ export default function Board() {
                 role="listitem"
                 classList={{ lifted: drag()?.id === p.id }}
                 style={{ "--c": a().color, "--i": i() }}
-                title={tx("{name} · {label}\nClique para pôr na tela · arraste até um painel para trocar", { name: p.name, label: st().label })}
-                onPointerDown={(e) => startDrag(e, p.id, "project", p.name, (target) => replacePane(target, p.id))}
+                title={tx("{name} · {label}\nClique para pôr na tela · arraste até um painel para trocar · clique direito para mais", { name: p.name, label: st().label })}
+                onPointerDown={(e) => e.button === 0 && startDrag(e, p.id, "project", p.name, (target) => replacePane(target, p.id))}
                 onClick={() => replacePane(undefined, p.id)}
+                onContextMenu={(e) => (e.preventDefault(), setMenu({ id: p.id, x: e.clientX, y: e.clientY }))}
               >
                 <ProjectIcon id={p.id} name={p.name} stack={p.stack} size={18} />
                 <span class="dock-name">{p.name}</span>
@@ -409,12 +219,14 @@ export default function Board() {
         <Show when={!off().length}>
           <span class="dock-note">{tx("Todos os projetos estão na tela")}</span>
         </Show>
+        <span class="dock-gap" />
         <AddCard dock />
+        <Show when={menu()}>{(m) => <ProjectMenu id={m().id} at={{ x: m().x, y: m().y }} onClose={() => setMenu(null)} />}</Show>
       </div>
     );
   }
 
-  function AddCard(props: { dock?: boolean }) {
+  function AddCard(_props: { dock?: boolean }) {
     const [pos, setPos] = createSignal<{ left: number; top?: number; bottom?: number; max: number } | null>(null);
     let btn!: HTMLButtonElement;
     const toggle = () => {
@@ -440,20 +252,9 @@ export default function Board() {
     });
     return (
       <div class="shelf-add-wrap">
-        <Show
-          when={props.dock}
-          fallback={
-            <button class="board-card mini shelf-add" classList={{ open: !!pos() }} ref={btn} onClick={toggle} style={{ "--i": shelf().length }}>
-              <span class="found-icon"><Plus size={20} /></span>
-              <strong>{tx("Adicionar projeto")}</strong>
-              <small>{found().length ? txn(found().length, "{n} pasta sugerida", "{n} pastas sugeridas") : tx("escolher uma pasta")}</small>
-            </button>
-          }
-        >
-          <button class="dock-add" classList={{ open: !!pos() }} ref={btn} onClick={toggle} title={tx("Adicionar projeto")}>
-            <Plus size={14} /> <span>{tx("Adicionar")}</span>
-          </button>
-        </Show>
+        <button class="dock-add" classList={{ open: !!pos() }} ref={btn} onClick={toggle} title={tx("Adicionar projeto")}>
+          <Plus size={14} /> <span>{tx("Adicionar projeto")}</span>
+        </button>
         <Show when={pos()}>
           {(p) => (
             <Portal>
@@ -497,37 +298,6 @@ function NeedsStrip() {
             </button>
           )}
         </For>
-      </div>
-    </Show>
-  );
-}
-
-/** O dia do projeto: quantos passos a IA deu em cada hora das últimas 24 h. */
-function DayStrip(props: { id: string }) {
-  const hours = () => {
-    const now = Date.now();
-    const b = Array.from({ length: 24 }, () => 0);
-    for (const it of feedOf(props.id).items) {
-      const ago = Math.floor((now - it.ts) / 3_600_000);
-      if (ago >= 0 && ago < 24) b[23 - ago]++;
-    }
-    return b;
-  };
-  const total = () => hours().reduce((a, x) => a + x, 0);
-  const max = () => Math.max(1, ...hours());
-  const busiest = () => {
-    const h = hours();
-    const i = h.indexOf(Math.max(...h));
-    const d = new Date(Date.now() - (23 - i) * 3_600_000);
-    return `${d.getHours()}h`;
-  };
-  return (
-    <Show when={total() > 0}>
-      <div class="day-strip" title={tx("Passos da IA em cada hora das últimas 24 h (a última barra é a hora atual)")}>
-        <div class="day-bars" aria-hidden="true">
-          <Index each={hours()}>{(n, i) => <span classList={{ now: i === 23, zero: !n() }} style={{ height: `${n() ? Math.max(12, (n() / max()) * 100) : 6}%` }} />}</Index>
-        </div>
-        <small>{txn(total(), "{n} passo nas últimas 24 h · mais movimento por volta das {busiest}", "{n} passos nas últimas 24 h · mais movimento por volta das {busiest}", { busiest: busiest() })}</small>
       </div>
     </Show>
   );

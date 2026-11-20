@@ -1,13 +1,15 @@
-import { ArrowUpRight, Bot, MessagesSquare, CircleHelp, Settings2, FolderPlus, HardDrive, Puzzle, Search, LayoutDashboard, Gauge } from "lucide-solid";
+import { ArrowUpRight, Bot, MessagesSquare, CircleHelp, Settings2, FolderPlus, HardDrive, Puzzle, Search, LayoutDashboard, Gauge, Waypoints } from "lucide-solid";
 import { FileIcon, ProjectIcon } from "./icons";
 import { api } from "../api";
 import { revealAndOpen } from "../fileActions";
 import { createMemo, createResource, createSignal, For, onMount, type JSX } from "solid-js";
 import { addProjectFromPicker, currentProject, setHelpOpen, setPaletteOpen, setProjectId, setView, projects } from "../store";
 import { tx } from "../i18n";
+import { openPanel } from "../panel";
 import { toggleCtx, ctxPanel } from "../contextInfo";
 import { activeKey } from "../convTabs";
 import { accountById } from "../accounts";
+import { openMap } from "../projmap";
 
 interface Action {
   label: string;
@@ -39,14 +41,15 @@ export default function CommandPalette() {
           if (ctxPanel() !== k) setTimeout(() => toggleCtx(k), 60);
         } }]
       : []),
-    { label: tx("Liberar espaço: caches e históricos das IAs"), hint: tx("Computador → Uso da máquina"), icon: () => <HardDrive size={15} />, run: () => setView("system") },
-    { label: tx("Ver programas e máquinas virtuais que as IAs usam"), hint: tx("Computador → Uso da máquina"), icon: () => <HardDrive size={15} />, run: () => setView("system") },
+    { label: tx("Mapa do projeto: as áreas, os arquivos e quem usa quem"), hint: tx("Projetos → Código"), icon: () => <Waypoints size={15} />, run: () => (setView("workspace"), openMap()) },
+    { label: tx("Liberar espaço: caches e históricos das IAs"), hint: tx("Painel → Caches e restos"), icon: () => <HardDrive size={15} />, run: () => openPanel("caches") },
+    { label: tx("Painel: espaço, IAs abertas, máquinas virtuais e extras"), hint: tx("Painel → Visão geral"), icon: () => <HardDrive size={15} />, run: () => openPanel("overview") },
     { label: tx("Trocar conta de um projeto"), hint: tx("Contas e IAs"), icon: () => <Bot size={15} />, run: () => setView("accounts") },
     { label: tx("Visão geral: todos os projetos com as conversas ao vivo"), hint: tx("Visão geral"), icon: () => <LayoutDashboard size={15} />, run: () => setView("board") },
     { label: tx("Chat livre: conversar sem projeto"), hint: tx("Chat livre"), icon: () => <MessagesSquare size={15} />, run: () => setView("livre") },
     { label: tx("Ajustes: ícones e animações"), hint: tx("Ajustes"), icon: () => <Settings2 size={15} />, run: () => setView("settings") },
     { label: tx("Ajuda: como o Veocode funciona"), hint: "F1", icon: () => <CircleHelp size={15} />, run: () => setHelpOpen(true) },
-    { label: tx("Extras do Claude: receitas, atalhos e conexões (skills e MCP)"), hint: tx("Computador → Extras do Claude"), icon: () => <Puzzle size={15} />, run: () => setView("inventory") },
+    { label: tx("Extras do Claude: receitas, atalhos e conexões (skills e MCP)"), hint: tx("Painel → Receitas e atalhos"), icon: () => <Puzzle size={15} />, run: () => openPanel("skills") },
   ];
 
   // arquivos do projeto aberto (o que o .gitignore esconde fica de fora)

@@ -1,10 +1,10 @@
-import { ChevronDown, Code2, FilePlus, FlaskConical, FolderMinus, FolderPlus, FolderSearch, GitBranch, MessagesSquare, PanelLeft, PanelRight, Pause, Play, RefreshCw, SquareTerminal } from "lucide-solid";
+import { ArrowDown, ArrowUp, ChevronDown, Code2, FilePlus, FlaskConical, FolderMinus, FolderPlus, FolderSearch, GitBranch, MessagesSquare, PanelLeft, PanelRight, Pause, Play, RefreshCw } from "lucide-solid";
 import { askCloseProject } from "../components/CloseProject";
 import { ProjectIcon } from "../components/icons";
 import { createEffect, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
 import { accessLevels } from "../data/mock";
 import { accountById } from "../accounts";
-import { git, gitWords, loadSummaries, setGitTab } from "../git";
+import { git, loadSummaries, setGitTab } from "../git";
 import CodeSide, { GitCount } from "../components/CodeSide";
 import { absPathOf, addProjectFromPicker, currentProject, isDiffTab, projectId, projects, resetWorkspace, setProjectId, setWs, showToast, ws } from "../store";
 import ConvSidebar from "../components/ConvSidebar";
@@ -22,9 +22,9 @@ import Editor from "../components/Editor";
 import ChatPanel from "../components/ChatPanel";
 import AgentCursors from "../components/AgentCursors";
 import { ProviderMark } from "../components/ui";
-import { closeSheets, codeSideOpen, codeSideW, debugOpen, debugW, focusMode, leftSheet, narrowLeft, narrowRight, projMode, reviewWide, setCodeSideOpen, setCodeSideW, setDebugOpen, setDebugW, setLeftSheet, setProjMode, setReviewWide, sheetOpen, showTerm, termShown, toggleTerm } from "../layoutMode";
+import { closeSheets, codeSideOpen, codeSideW, debugOpen, debugW, focusMode, leftSheet, narrowLeft, narrowRight, projMode, reviewWide, setCodeSideOpen, setCodeSideW, setDebugOpen, setDebugW, setLeftSheet, setProjMode, setReviewWide, sheetOpen, showTerm, toggleTerm } from "../layoutMode";
 
-import { tx } from "../i18n";
+import { tx, txn } from "../i18n";
 
 const [dragging, setDragging] = createSignal(false);
 /** Arrastar uma borda: `apply` recebe o quanto o ponteiro andou desde o começo; `done` grava. */
@@ -211,11 +211,22 @@ export default function Workspace() {
 
         <div class="sidebar-meta">
           <button class="meta-git" title={tx("Git e GitHub deste projeto (painel da direita)")} onClick={() => setGitTab("git")}>
-            <GitBranch size={12} /> {git.summaries[p().id]?.branch ?? p().branch}
-            <For each={gitWords(git.summaries[p().id])}>{(w) => <span class="meta-n edit" title={w.tip}>· {w.text}</span>}</For>
+            <GitBranch size={12} />
+            <span class="meta-branch">{git.summaries[p().id]?.branch ?? p().branch}</span>
+            <Show when={git.summaries[p().id]?.changed}>
+              {(n) => <span class="meta-n edit" title={tx("Arquivos mudados desde o último commit (ainda não salvos no git)")}>{txn(n(), "{n} mudado", "{n} mudados")}</span>}
+            </Show>
+            <Show when={git.summaries[p().id]?.ahead}>
+              {(n) => <span class="meta-n up" title={tx("Commits que só existem neste computador")}><ArrowUp size={10} stroke-width={2.4} />{n()}</span>}
+            </Show>
+            <Show when={git.summaries[p().id]?.behind}>
+              {(n) => <span class="meta-n down" title={tx("Commits que estão no remoto e ainda não aqui")}><ArrowDown size={10} stroke-width={2.4} />{n()}</span>}
+            </Show>
           </button>
-          <span class="meta-dot" style={{ background: accountById(p().accountId).color }} />
-          <span>{accountById(p().accountId).label}</span>
+          <span class="meta-acc" title={tx("Conta de IA deste projeto")}>
+            <span class="meta-dot" style={{ background: accountById(p().accountId).color }} />
+            <span class="meta-acc-name">{accountById(p().accountId).label}</span>
+          </span>
         </div>
 
           <div class="sidebar-title">
@@ -273,10 +284,7 @@ export default function Workspace() {
             <Editor
               tools={
                 <>
-                  <button class="icon-btn small" classList={{ on: termShown() && !wide() }} title={termShown() && !wide() ? tx("Esconder o terminal (⌘J)") : tx("Terminal desta pasta, no painel da direita (⌘J)")} onClick={() => (wide() ? (setReviewWide(false), showTerm()) : toggleTerm())}>
-                    <SquareTerminal size={14} />
-                  </button>
-                  <button class="icon-btn small side-toggle" classList={{ on: codeSideOpen() && !wide() }} title={codeSideOpen() && !wide() ? tx("Esconder o painel da direita (⌥⌘B)") : tx("Mostrar o painel da direita: Git, terminal e Ambiente (⌥⌘B)")} onClick={() => (wide() ? (setReviewWide(false), setCodeSideOpen(true)) : setCodeSideOpen(!codeSideOpen()))}>
+                  <button class="icon-btn small side-toggle" classList={{ on: codeSideOpen() && !wide() }} title={codeSideOpen() && !wide() ? tx("Esconder o painel da direita (⌥⌘B)") : tx("Mostrar o painel da direita: Git, Terminal (⌘J) e Ambiente (⌥⌘B)")} onClick={() => (wide() ? (setReviewWide(false), setCodeSideOpen(true)) : setCodeSideOpen(!codeSideOpen()))}>
                     <PanelRight size={14} />
                     <Show when={!codeSideOpen() || wide()}><GitCount pid={p().id} /></Show>
                   </button>

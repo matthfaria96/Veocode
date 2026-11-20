@@ -97,7 +97,7 @@ export const setDebugTab = (v: DebugTab) => (setDebugTabRaw(v), v !== "file" && 
 /** Painel da direita do modo Código (⌥⌘B): o Git, o terminal da pasta e o Ambiente. Aberto,
  *  largura e aba lembrados. O resto (comandos, atividade, rastro) é do modo IA; a conversa com a
  *  IA mora no modo IA (⌘E). */
-export type CodeSideTab = "git" | "term" | "env";
+export type CodeSideTab = "git" | "term" | "env" | "map";
 const [codeSidePref, setCodeSidePref] = createSignal(recall("veocode.code.side") === "1");
 export const codeSideOpen = () => (narrowRight() ? codeSheet() : codeSidePref());
 export const setCodeSideOpen = (v: boolean) => (narrowRight() ? setCodeSheet(v) : (setCodeSidePref(v), remember("veocode.code.side", v ? "1" : "0")));
@@ -105,7 +105,7 @@ const [codeSideW, setCodeSideWRaw] = createSignal(size("veocode.code.sideW", 400
 export { codeSideW };
 export const setCodeSideW = (v: number, save = false) => (setCodeSideWRaw(v), save && remember("veocode.code.sideW", String(v)));
 const savedSide = recall("veocode.code.sideTab");
-const [codeSideTab, setCodeSideTabRaw] = createSignal<CodeSideTab>(savedSide === "term" || savedSide === "env" ? savedSide : "git");
+const [codeSideTab, setCodeSideTabRaw] = createSignal<CodeSideTab>(savedSide === "term" || savedSide === "env" || savedSide === "map" ? savedSide : "git");
 export { codeSideTab };
 export const setCodeSideTab = (v: CodeSideTab) => (setCodeSideTabRaw(v), remember("veocode.code.sideTab", v));
 

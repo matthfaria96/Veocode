@@ -1,6 +1,7 @@
-import { AlertTriangle, Check, ExternalLink, FileText, GitCommitHorizontal, GitCompareArrows, MessageSquare, Search, SquareTerminal, X } from "lucide-solid";
+import { AlertTriangle, Check, ExternalLink, FileText, GitCommitHorizontal, GitCompareArrows, MessageSquare, Search, SquareTerminal, Waypoints, X } from "lucide-solid";
 import DiffView, { AllChanges } from "./DiffView";
 import CommitView from "./CommitView";
+import ProjectMap from "./ProjectMap";
 import { commitByHash } from "../git";
 import { projMode } from "../layoutMode";
 import { FileIcon } from "./icons";
@@ -12,7 +13,7 @@ import { ask } from "../dialogs";
 import { draftOf, dropDraft, edit, isUnsaved, saveNow, textOf } from "../editing";
 import { openRealFile } from "../realProject";
 import { defaultFileContent, fileContents } from "../data/mock";
-import { ALL_CHANGES, closeTab, commitOfTab, currentProject, diffPathOf, isCommitTab, isDiffTab, openFile, projectId, showToast, ws } from "../store";
+import { ALL_CHANGES, MAP_TAB, closeTab, commitOfTab, currentProject, diffPathOf, isCommitTab, isDiffTab, openFile, projectId, showToast, ws } from "../store";
 import { tx } from "../i18n";
 import { tokenize } from "../syntax";
 
@@ -188,6 +189,7 @@ export default function Editor(props: { tools?: JSX.Element }) {
             const diff = isDiffTab(path);
             const all = path === ALL_CHANGES;
             const commit = isCommitTab(path);
+            const map = path === MAP_TAB;
             const file = diff ? diffPathOf(path) : path;
             const cm = () => (commit ? commitByHash(projectId(), commitOfTab(path)) : undefined);
             const cmName = () => {
@@ -195,10 +197,10 @@ export default function Editor(props: { tools?: JSX.Element }) {
               return sub.length > 34 ? `${sub.slice(0, 33)}…` : sub;
             };
             return (
-              <div class="tab" classList={{ active: ws.activeFile === path, diff, commit, edited: !diff && !currentProject().demo && isUnsaved(path) }} title={commit ? tx("Commit {v}: os arquivos e o que mudou em cada um", { v: commitOfTab(path).slice(0, 7) }) : all ? tx("Todas as mudanças desde o último commit") : diff ? tx("{path}: o que mudou desde o último commit", { path: file }) : !currentProject().demo && isUnsaved(path) ? tx("Salvando…") : path} onClick={() => (diff || currentProject().demo ? openFile(path) : openRealFile(path))}>
-                <span class="tab-icon">{commit ? <GitCommitHorizontal size={12} /> : diff ? <GitCompareArrows size={12} /> : <FileIcon name={file.split("/").pop() ?? file} size={12} />}</span>
-                <span class="tab-name">{commit ? cmName() : all ? tx("Todas as mudanças") : file.split("/").pop()}</span>
-                <Show when={diff && !all}><small class="tab-sub">{commit ? tx("commit") : tx("mudanças")}</small></Show>
+              <div class="tab" classList={{ active: ws.activeFile === path, diff, commit, edited: !diff && !currentProject().demo && isUnsaved(path) }} title={map ? tx("Mapa do projeto: as áreas, os arquivos e quem usa quem") : commit ? tx("Commit {v}: os arquivos e o que mudou em cada um", { v: commitOfTab(path).slice(0, 7) }) : all ? tx("Todas as mudanças desde o último commit") : diff ? tx("{path}: o que mudou desde o último commit", { path: file }) : !currentProject().demo && isUnsaved(path) ? tx("Salvando…") : path} onClick={() => (diff || currentProject().demo ? openFile(path) : openRealFile(path))}>
+                <span class="tab-icon">{map ? <Waypoints size={12} /> : commit ? <GitCommitHorizontal size={12} /> : diff ? <GitCompareArrows size={12} /> : <FileIcon name={file.split("/").pop() ?? file} size={12} />}</span>
+                <span class="tab-name">{map ? tx("Mapa do projeto") : commit ? cmName() : all ? tx("Todas as mudanças") : file.split("/").pop()}</span>
+                <Show when={diff && !all && !map}><small class="tab-sub">{commit ? tx("commit") : tx("mudanças")}</small></Show>
                 <span class="tab-dot" />
                 <button
                   class="tab-close"
@@ -223,6 +225,7 @@ export default function Editor(props: { tools?: JSX.Element }) {
           <Switch fallback={<DiffView path={diffPathOf(ws.activeFile)} />}>
             <Match when={ws.activeFile === ALL_CHANGES}><AllChanges /></Match>
             <Match when={isCommitTab(ws.activeFile)}><CommitView hash={commitOfTab(ws.activeFile)} /></Match>
+            <Match when={ws.activeFile === MAP_TAB}><ProjectMap /></Match>
           </Switch>
         }
       >

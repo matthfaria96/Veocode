@@ -11,6 +11,7 @@ mod accounts;
 mod files;
 mod git;
 mod projects;
+mod projmap;
 mod livre;
 mod memory;
 mod term;
@@ -608,13 +609,19 @@ fn access_preview(level: u8, overrides: std::collections::BTreeMap<String, acces
 
 /// Abre o Claude Code no projeto, com a conta dele.
 #[tauri::command(async)]
-fn open_claude(state: State<'_, AppState>, project_id: String, resume: Option<String>) -> Result<(), String> {
+fn open_claude(state: State<'_, AppState>, project_id: String, resume: Option<String>, cloud: Option<String>, teleport: Option<String>) -> Result<(), String> {
     let p = state.store.lock().map_err(|e| e.to_string())?.get(&project_id).cloned().ok_or(crate::i18n::tr("projeto não encontrado", "project not found"))?;
     let a = state.accounts.lock().map_err(|e| e.to_string())?.get(&p.account_id).cloned().ok_or(crate::i18n::tr("conta não encontrada", "account not found"))?;
     if a.provider != Provider::Claude {
         return Err(crate::trf!("{} não é uma conta do Claude. Troque a conta do projeto para abrir o Claude Code.", "{} isn't a Claude account. Change the project's account to open Claude Code.", a.label));
     }
-    accounts::claude::open_terminal(&a, Some(std::path::Path::new(&p.path)), resume.as_deref())
+    let how = match (cloud.as_deref(), teleport.as_deref(), resume.as_deref()) {
+        (Some(c), _, _) => accounts::claude::Launch::Cloud(c),
+        (_, Some(t), _) => accounts::claude::Launch::Teleport(t),
+        (_, _, Some(r)) if !r.is_empty() => accounts::claude::Launch::Resume(r),
+        _ => accounts::claude::Launch::New,
+    };
+    accounts::claude::launch_terminal(&a, Some(std::path::Path::new(&p.path)), how)
 }
 
 /// Abre a pasta do projeto no VS Code.
@@ -1298,6 +1305,39 @@ async fn xray_kill(state: State<'_, AppState>, pid: u32) -> Result<(), String> {
     xray::procs::kill(sys, pid)
 }
 
+/// As IAs abertas na pasta do projeto por fora do Veocode (para o botão Parar da conversa).
+#[tauri::command]
+async fn outside_agents(state: State<'_, AppState>, project_id: String) -> Result<Vec<xray::procs::AgentGroup>, String> {
+    let root = state.root_of(&project_id)?;
+    let mut guard = state.sys.lock().map_err(|e| e.to_string())?;
+    let sys = guard.as_mut().ok_or(crate::i18n::tr("não deu para ler os processos do sistema", "couldn't read the system processes"))?;
+    Ok(xray::procs::outside(sys, &root))
+}
+
+/// O mapa do projeto salvo em `.veocode/map.json` (texto e quando mudou), se houver.
+#[tauri::command]
+async fn map_read(state: State<'_, AppState>, project_id: String) -> Result<Option<(String, u64)>, String> {
+    let root = state.root_of(&project_id)?;
+    Ok(projmap::read(&root))
+}
+
+/// Lê o código do projeto e grava o mapa (áreas, arquivos e quem importa quem).
+#[tauri::command]
+async fn map_scan(state: State<'_, AppState>, project_id: String) -> Result<String, String> {
+    let root = state.root_of(&project_id)?;
+    let title = root.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+    tauri::async_runtime::spawn_blocking(move || projmap::scan(&root, &title)).await.map_err(|e| e.to_string())?
+}
+
+/// Para uma IA aberta por fora nesta pasta: interrompe e, se não fechar, encerra com o que ela abriu.
+#[tauri::command]
+async fn outside_stop(state: State<'_, AppState>, project_id: String, pid: u32) -> Result<(), String> {
+    let root = state.root_of(&project_id)?;
+    let mut guard = state.sys.lock().map_err(|e| e.to_string())?;
+    let sys = guard.as_mut().ok_or(crate::i18n::tr("não deu para ler os processos do sistema", "couldn't read the system processes"))?;
+    xray::procs::stop_outside(sys, &root, pid)
+}
+
 /// Todas as portas abertas, com o que sobrou de sessões já fechadas.
 #[tauri::command]
 async fn xray_ports(state: State<'_, AppState>) -> Result<xray::procs::PortReport, String> {
@@ -1506,6 +1546,10 @@ pub fn run() {
             xray_toggle_machine,
             xray_processes,
             xray_kill,
+            outside_agents,
+            outside_stop,
+            map_read,
+            map_scan,
             project_procs,
             project_kill,
             xray_ports,

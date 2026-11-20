@@ -6,11 +6,12 @@ import { createEffect, createMemo, createResource, createSignal, For, on, Show, 
 import { api, copyText, isTauri, prettyPath, type Trail, type TrailLeftover, type TrailSource } from "../api";
 import { since } from "../git";
 import { formatBytes } from "../data/mock";
-import { absPathOf, addProjectPath, currentProject, setView, showToast } from "../store";
+import { absPathOf, addProjectPath, currentProject, showToast } from "../store";
 import { loadInstalls, xray } from "../xray";
 import { confirmAction } from "../dialogs";
 import { markOwn } from "../editing";
 import { locale, tx, txn } from "../i18n";
+import { openPanel } from "../panel";
 
 const ago = (ms: number) => (ms ? since(ms / 1000) : "");
 const inside = (path: string, root: string | null | undefined) => {
@@ -148,7 +149,7 @@ function TrailBody() {
 
           {/* ---------------- no computador */}
           <Show when={installs().length || x().models.length}>
-            <Block icon={<HardDrive size={14} />} title={tx("Instalado no computador")} count={installs().length + x().models.length} right={<button class="git-link" onClick={() => setView("system")}>{tx("Ver no Computador")}</button>}>
+            <Block icon={<HardDrive size={14} />} title={tx("Instalado no computador")} count={installs().length + x().models.length} right={<button class="git-link" onClick={() => openPanel("installed")}>{tx("Ver no Painel")}</button>}>
               <For each={x().models}>
                 {(m) => (
                   <div class="trail-row">

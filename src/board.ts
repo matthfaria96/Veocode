@@ -26,10 +26,6 @@ const save = (key: string, v: unknown) => {
 
 /** Projetos fixados pela pessoa: ficam sempre na tela, no mesmo lugar. */
 const [pinsRaw, setPinsRaw] = createSignal<string[]>(load("veocode.board.pins", []));
-/** Modo foco da tela Início: some o banner, os painéis ocupam a tela e os outros projetos viram uma faixa embaixo. */
-const [focusRaw, setFocusRaw] = createSignal<boolean>(load("veocode.home.focus", false));
-export const homeFocus = focusRaw;
-export const setHomeFocus = (v: boolean) => (setFocusRaw(v), save("veocode.home.focus", v));
 /** Um painel aberto em tela cheia (os outros continuam rodando). */
 export const [maximized, setMaximized] = createSignal<string | null>(null);
 

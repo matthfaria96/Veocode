@@ -68,6 +68,21 @@ export function startAgentSim(root: HTMLElement) {
   const agentLabel = () => accountById(currentProject().accountId).label;
   const agentColor = () => accountById(currentProject().accountId).color;
 
+  // a lista de tarefas do agente de exemplo (o Claude manda a lista inteira a cada mudança)
+  const todos = [
+    ["Entender a tela atual", "Entendendo a tela atual"],
+    ["Achar onde os caches são medidos", "Procurando onde os caches são medidos"],
+    ["Criar o medidor na tela Raio-X", "Criando o medidor na tela Raio-X"],
+    ["Conferir o build", "Conferindo o build"],
+  ];
+  const plan = (done: number) =>
+    finishEvent(pushEvent({
+      kind: "plan",
+      title: tx("Atualizou a lista de tarefas"),
+      detail: JSON.stringify(todos.map(([c, a], i) => ({ content: tx(c), active: tx(a), status: i < done ? "completed" : i === done ? "in_progress" : "pending" }))),
+      agent: agentLabel(),
+    }));
+
   async function run() {
     const paused = ws.paused; // começa parada até a pessoa pedir para assistir
     resetWorkspace();
@@ -83,6 +98,7 @@ export function startAgentSim(root: HTMLElement) {
     await move("main", "chat", false);
     await wait(900);
     finishEvent(e);
+    plan(0);
 
     // 1. lê App.tsx
     e = pushEvent({ kind: "read", title: tx("Lendo src/App.tsx"), agent: agentLabel() });
@@ -91,6 +107,7 @@ export function startAgentSim(root: HTMLElement) {
     mark("src/App.tsx", "read");
     await wait(800);
     finishEvent(e, tx("{n} linhas", { n: 18 }));
+    plan(1);
 
     // 2. enxame de subagentes vasculhando o projeto
     e = pushEvent({ kind: "swarm", title: tx("3 subagentes procurando “cache”"), detail: tx("varrendo src/ e src-tauri/"), agent: agentLabel() });
@@ -139,6 +156,7 @@ export function startAgentSim(root: HTMLElement) {
     await wait(900);
     finishEvent(e, tx("{n} linhas", { n: 15 }));
 
+    plan(2);
     // 4. edita System.tsx
     e = pushEvent({ kind: "edit", title: tx("Editando src/views/System.tsx"), agent: agentLabel() });
     mark("src/views/System.tsx", "edit");
@@ -166,6 +184,7 @@ export function startAgentSim(root: HTMLElement) {
     }
     finishEvent(e, tx("{n} linhas", { n: gaugeLines.length }));
 
+    plan(3);
     // 6. roda o build
     e = pushEvent({ kind: "run", title: tx("Rodando npm run build"), agent: agentLabel() });
     await move("main", "terminal");
@@ -185,6 +204,7 @@ export function startAgentSim(root: HTMLElement) {
     e = pushEvent({ kind: "tool", title: "MCP filesystem · medir ~/.npm/_cacache", detail: tx("somente leitura"), agent: agentLabel() });
     await wait(1100);
     finishEvent(e, "3,2 GB");
+    plan(4);
 
     pushEvent({ kind: "done", title: tx("Pronto: Raio-X criado"), detail: tx("2 arquivos alterados · build ok"), agent: agentLabel(), status: "ok" });
     await move("main", "chat", false);

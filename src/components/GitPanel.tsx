@@ -398,15 +398,15 @@ export default function GitPanel() {
             }}
           />
           <Show when={need()}><small class="git-need">{tx("Escreva em uma linha o que mudou, por exemplo “Corrige o login”.")}</small></Show>
-          <div class="git-split">
-            <button class="git-primary" classList={{ dim: !msg().trim() }} disabled={!!acting()} onClick={() => void doCommit(false)} title={what()}>
+          <div class="git-split" classList={{ dim: !msg().trim(), busy: !!acting() }}>
+            <button class="git-primary" disabled={!!acting()} onClick={() => void doCommit(false)} title={what()}>
               <Show when={acting() === "commit"} fallback={<Check size={14} />}><span class="spinner inline" /></Show>
               {tx("Commit")}
               <i class="git-primary-n">{staged() || changed()}</i>
             </button>
             <Show when={canPush()}>
               <div class="git-split-more">
-                <button class="git-primary git-caret" classList={{ dim: !msg().trim() }} disabled={!!acting()} aria-haspopup="menu" aria-expanded={menu()} title={tx("Mais opções de commit")} onClick={() => setMenu(!menu())}>
+                <button class="git-primary git-caret" classList={{ on: menu() }} disabled={!!acting()} aria-haspopup="menu" aria-expanded={menu()} title={tx("Mais opções de commit")} onClick={() => setMenu(!menu())}>
                   <ChevronDown size={14} />
                 </button>
                 <Show when={menu()}>

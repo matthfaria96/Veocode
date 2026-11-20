@@ -36,3 +36,6 @@ export function loadHist(pid: string, maxAge = 10_000): Promise<void> {
 
 /** Conversa apagada ou renomeada por aqui: a lista muda já, sem esperar a próxima leitura. */
 export const dropFromHist = (pid: string, ids: string[]) => hist[pid] && setHist(pid, "items", (l) => l.filter((c) => !ids.includes(c.id)));
+
+/** Modo navegador (capturas de tela e testes): uma lista de conversas de exemplo. */
+export const seedHist = (pid: string, items: Convo[]) => setHist(pid, { items, loading: false, at: Date.now(), error: null });
