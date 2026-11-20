@@ -98,11 +98,13 @@ export const topics: Topic[] = [
       {
         title: "As partes da tela",
         items: [
-          "Esquerda: a árvore de arquivos. Marcas coloridas mostram o que foi lido, editado, criado ou apagado.",
-          "Meio: o editor. Clique no texto e escreva: ele grava sozinho (em cima aparece Salvando… e depois Salvo). ⌘S (Ctrl+S) grava na hora. As linhas que a IA mudou ficam destacadas.",
-          "Embaixo: Atividade (cada passo da IA e cada mudança no disco), Comandos do agente (o que a IA rodou e a saída) e Terminal (um terminal seu, de verdade, nesta pasta). Arraste a borda de cima para deixar o painel mais alto.",
-          "Direita: o painel do agente, com três abas: Agente (a conversa; o nível de acesso abre clicando no selo do nível), Git e Rastro (o que a IA deixou fora e dentro da pasta).",
-          "Clique no nome da conta, no topo do painel do agente, para trocar a conta, o modelo do Claude (Opus, Fable, Sonnet, Haiku) e a força do raciocínio. Vale a partir da próxima mensagem e a conversa continua.",
+          "Embaixo do nome do projeto, Código | IA troca o jeito de ver o projeto (⌘E alterna). Cada modo lembra como você deixou.",
+          "Modo Código, como um editor: à esquerda a árvore de arquivos, o Git e o Rastro; no meio os arquivos em abas. Clique no texto e escreva: ele grava sozinho. ⌘S (Ctrl+S) grava na hora. Marcas coloridas na árvore mostram o que a IA leu, editou, criou ou apagou.",
+          "No Git do modo Código, clique num arquivo mudado para ver o que era (no último commit) e o que é agora, lado a lado ou numa coluna só.",
+          "O terminal do modo Código abre com ⌘J ou pelo botão ao lado das abas. O botão de painel no terminal põe ele embaixo ou à direita; arraste a borda para mudar o tamanho.",
+          "Modo IA: à esquerda as conversas do projeto (as abertas e as anteriores); um clique troca a conversa do meio. Embaixo da lista ficam Fora do Veocode, Memória e Nível de acesso.",
+          "À direita do modo IA, o painel de depuração: Navegador (o app desta pasta rodando, em tela de computador ou de celular), Comandos (servidores e builds rodando na pasta, e cada comando da IA com o resultado), Subagentes (cada ajudante e o que está fazendo) e Atividade.",
+          "Clique no nome da conta, na caixa de mensagem, para trocar a conta, o modelo do Claude (Opus, Fable, Sonnet, Haiku) e a força do raciocínio. Vale a partir da próxima mensagem e a conversa continua.",
           "Terminou um projeto? No menu do nome do projeto (em cima, à esquerda) ou no ⋯ do cartão na tela inicial, use \"Fechar projeto…\": dá para só tirar do Veocode (a pasta fica) ou também mandar a pasta para a Lixeira.",
           "Embaixo, o botão Simples/Avançado: no Avançado aparece à esquerda uma coluna com todos os projetos, um embaixo do outro, para trocar com um clique sem sair da tela.",
           "Em cima, \"IAs abertas\" conta cada Claude aberto agora no computador (no VS Code, no app do Claude, no Terminal…). Passe o mouse para ver onde estão.",
@@ -122,7 +124,7 @@ export const topics: Topic[] = [
       {
         title: "Terminal do projeto",
         items: [
-          "Cada projeto tem os terminais dele (até 6, em abas). O primeiro abre sozinho quando você entra na aba Terminal.",
+          "Cada projeto tem os terminais dele (até 6, em abas), no modo Código. O primeiro abre sozinho quando você abre o terminal (⌘J).",
           "Ele nasce na pasta do projeto, com o seu shell de sempre (zsh, bash ou PowerShell) e a sua configuração.",
           "O histórico de comandos (setas ↑ ↓) é só deste projeto: o que você digitou em outro projeto não aparece aqui.",
           "Digitar claude aqui usa a conta do projeto, a mesma do chat, e o que ele fizer aparece na Atividade.",
@@ -217,12 +219,12 @@ export const topics: Topic[] = [
       {
         title: "Conversas anteriores",
         items: [
-          "O botão de relógio lista as conversas desta pasta (as do chat, as do Terminal e as do editor). Clique para continuar de onde parou.",
+          "Em Anteriores, na lista do modo IA, ficam as conversas desta pasta (as do chat, as do Terminal e as do editor). Clique para continuar de onde parou; Ver todas abre a lista completa.",
           "\"Nova conversa\" começa do zero.",
-          "Várias conversas ao mesmo tempo: o + na barra de cima abre outra aba; as outras continuam trabalhando.",
+          "Várias conversas ao mesmo tempo: Nova, em cima da lista, abre outra; as outras continuam trabalhando.",
           "Modo foco (o botão de grade na barra de cima): todas as conversas do projeto lado a lado, cada uma com a sua caixa. A grade se ajusta sozinha a 2, 3, 4, 6 ou 8 conversas. Clique de novo para voltar.",
-          "Contexto (o medidor ao lado das abas): clique para ver quanto da janela do Claude a conversa ocupa e com o quê (mensagens, ferramentas, MCP, skills, memória). \"Compactar conversa\" resume o que veio antes e libera espaço.",
-          "O painel de baixo (atividade e terminal) começa fechado; em Ajustes → Painel de baixo dá para fazer ele já abrir aberto.",
+          "Contexto (o medidor em cima da conversa): clique para ver quanto da janela do Claude a conversa ocupa e com o quê (mensagens, ferramentas, MCP, skills, memória). \"Compactar conversa\" resume o que veio antes e libera espaço.",
+          "O terminal do modo Código começa fechado; em Ajustes → Terminal no modo Código dá para fazer ele já abrir aberto.",
           "Conversas de outra conta aparecem com cadeado: troque a conta do projeto antes.",
           "O botão de terminal abre o Claude no Terminal do sistema, na pasta e com a conta do projeto.",
         ],

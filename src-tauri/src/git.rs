@@ -394,6 +394,35 @@ pub fn commit_diff(root: &Path, hash: &str, path: &str) -> Result<String, String
     Ok(d)
 }
 
+/// O que mudou num arquivo desde o último commit: o que está no disco contra o HEAD, em diff
+/// unificado. Arquivo novo (que o git ainda não acompanha) entra inteiro como adicionado.
+pub fn file_diff(root: &Path, path: &str) -> Result<String, String> {
+    if path.is_empty() || path.starts_with('/') || path.split(['/', '\\']).any(|p| p == "..") {
+        return Err(crate::i18n::tr("caminho inválido", "invalid path").into());
+    }
+    let bin = git_bin()?;
+    let g = Git { bin: bin.clone(), root: root.to_path_buf() };
+    let tracked = g.out(&["ls-files", "--error-unmatch", "--", path]).is_some() || g.out(&["cat-file", "-e", &format!("HEAD:./{path}")]).is_some();
+    let mut d = if tracked {
+        // repositório sem commit ainda: compara com a árvore vazia
+        let base = if g.out(&["rev-parse", "--verify", "-q", "HEAD"]).is_some() { "HEAD" } else { "4b825dc642cb6eb9a060e54bf8d69288fbee4904" };
+        g.out(&["diff", "--no-color", "--no-ext-diff", "-M", "-U4", base, "--", path]).unwrap_or_default()
+    } else {
+        // --no-index sai com 1 quando há diferença: lê a saída mesmo assim
+        let (_, out, _) = run_cmd(command(&bin, root, &["diff", "--no-color", "--no-ext-diff", "--no-index", "--", "/dev/null", path]), Duration::from_secs(15))?;
+        out
+    };
+    if d.len() > 400_000 {
+        let mut cut = 400_000;
+        while !d.is_char_boundary(cut) {
+            cut -= 1;
+        }
+        d.truncate(cut);
+        d.push_str(crate::i18n::tr("\n… (diff muito grande, cortado aqui)", "\n… (diff too large, cut here)"));
+    }
+    Ok(d)
+}
+
 fn lines(o: Option<String>) -> HashSet<String> {
     o.unwrap_or_default().lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect()
 }
@@ -759,6 +788,7 @@ fn slim_pr(mut pr: serde_json::Value) -> serde_json::Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
 
     #[test]
     fn reads_porcelain_v2() {

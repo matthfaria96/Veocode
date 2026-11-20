@@ -65,3 +65,42 @@ export function setFocusMode(v: boolean) {
   setFocusRaw(v);
   remember("veocode.ws.focus", v ? "1" : "0");
 }
+
+/** Tela Projetos em dois modos: "code" (como um editor: árvore, arquivos, git, terminal) ou
+ *  "ai" (conversas à esquerda, a conversa no meio e o painel de depuração à direita). */
+export type ProjMode = "code" | "ai";
+const [projMode, setProjModeRaw] = createSignal<ProjMode>(recall("veocode.ws.view") === "code" ? "code" : "ai");
+export { projMode };
+export function setProjMode(m: ProjMode) {
+  setProjModeRaw(m);
+  remember("veocode.ws.view", m);
+}
+
+/** Terminal do modo Código: aberto ou não, embaixo ou à direita, e o tamanho de cada lado. */
+export type TermAt = "bottom" | "right";
+const [termAt, setTermAtRaw] = createSignal<TermAt>(recall("veocode.code.termAt") === "right" ? "right" : "bottom");
+export { termAt };
+export const setTermAt = (v: TermAt) => (setTermAtRaw(v), remember("veocode.code.termAt", v));
+export const [termOpen, setTermOpen] = createSignal(false);
+const size = (k: string, d: number, lo: number, hi: number) => {
+  const n = Number(recall(k));
+  return n >= lo && n <= hi ? n : d;
+};
+const [termH, setTermHRaw] = createSignal(size("veocode.code.termH", 260, 120, 2000));
+const [termW, setTermWRaw] = createSignal(size("veocode.code.termW", 460, 260, 2000));
+export { termH, termW };
+export const setTermH = (v: number, save = false) => (setTermHRaw(v), save && remember("veocode.code.termH", String(v)));
+export const setTermW = (v: number, save = false) => (setTermWRaw(v), save && remember("veocode.code.termW", String(v)));
+
+/** Painel de depuração do modo IA (à direita): aberto, largura e a aba da frente. */
+export type DebugTab = "browser" | "procs" | "subs" | "activity" | "file";
+const [debugOpen, setDebugOpenRaw] = createSignal(recall("veocode.ai.debug") !== "0");
+export { debugOpen };
+export const setDebugOpen = (v: boolean) => (setDebugOpenRaw(v), remember("veocode.ai.debug", v ? "1" : "0"));
+const [debugW, setDebugWRaw] = createSignal(size("veocode.ai.debugW", 440, 320, 1400));
+export { debugW };
+export const setDebugW = (v: number, save = false) => (setDebugWRaw(v), save && remember("veocode.ai.debugW", String(v)));
+const savedTab = recall("veocode.ai.debugTab");
+const [debugTab, setDebugTabRaw] = createSignal<DebugTab>(savedTab === "procs" || savedTab === "subs" || savedTab === "activity" ? savedTab : "browser");
+export { debugTab };
+export const setDebugTab = (v: DebugTab) => (setDebugTabRaw(v), v !== "file" && remember("veocode.ai.debugTab", v));

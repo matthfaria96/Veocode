@@ -13,7 +13,7 @@ import { createStore, produce } from "solid-js/store";
 import { accountById } from "./accounts";
 import { isTauri } from "./api";
 import { feedAgentEvent, setSeenAgent, type AgentEvent } from "./agentFeed";
-import { absPathOf, projectId, projects, pushEvent, setWs, showToast, ws, type ActivityEvent } from "./store";
+import { absPathOf, isDiffTab, projectId, projects, pushEvent, setWs, showToast, ws, type ActivityEvent } from "./store";
 import { handleLivre, LIVRE, newLivre } from "./livre";
 import { confirmAction } from "./dialogs";
 import { feedChat, feedUser } from "./feeds";
@@ -248,7 +248,7 @@ export async function sendChat(pid: string, rewind?: string) {
   if (!text || c.busy) return;
   // pode vir do Painel, de um projeto que não é o aberto na tela Projetos
   const here = projectId() === baseOf(pid);
-  const attach = here && c.attach && ws.activeFile ? ws.activeFile : null;
+  const attach = here && c.attach && ws.activeFile && !isDiffTab(ws.activeFile) ? ws.activeFile : null;
   setChats(pid, produce((x) => {
     x.busy = true;
     x.draft = "";

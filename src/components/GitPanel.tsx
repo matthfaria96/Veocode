@@ -25,9 +25,8 @@ import {
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show, type JSX } from "solid-js";
 import { api } from "../api";
 import { changeLabel, fetchGit, gitOf, loadGit, loadGithub, operationLabel, since, sinceIso, type GitChange, type GitCommit, type GhRun } from "../git";
-import { openRealFile } from "../realProject";
 import CommitGraph from "./CommitGraph";
-import { currentProject, showToast } from "../store";
+import { currentProject, DIFF, openDiff, showToast, ws } from "../store";
 import { every } from "../every";
 import { locale, tx } from "../i18n";
 
@@ -267,7 +266,7 @@ export default function GitPanel() {
             const r = rel(c.path);
             const isDir = c.path.endsWith("/");
             return (
-              <button class="git-file" classList={{ off: r === null || isDir || l.tone === "deleted" }} title={`${c.path}: ${tx(l.word)}`} onClick={() => r !== null && !isDir && l.tone !== "deleted" && openRealFile(r)}>
+              <button class="git-file" classList={{ off: r === null || isDir, sel: r !== null && ws.activeFile === DIFF + r }} title={`${c.path}: ${tx(l.word)} · ${tx("clique para ver o que mudou")}`} onClick={() => r !== null && !isDir && openDiff(r)}>
                 <span class={`git-letter ${l.tone}`}>{l.letter}</span>
                 <span class="git-file-name">{c.path.split("/").filter(Boolean).pop()}{isDir ? "/" : ""}</span>
                 <span class="git-file-dir">{c.path.split("/").filter(Boolean).slice(0, -1).join("/")}</span>

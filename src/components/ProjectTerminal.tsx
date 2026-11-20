@@ -1,5 +1,5 @@
 import { Bot, FolderOpen, Plus, SquareTerminal, X } from "lucide-solid";
-import { createEffect, For, on, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, For, on, onCleanup, onMount, Show, type JSX } from "solid-js";
 import { accountById } from "../accounts";
 import { isTauri, prettyPath } from "../api";
 import { currentProject } from "../store";
@@ -11,7 +11,7 @@ import { tx } from "../i18n";
 const short = (s: string) => (s.length > 44 ? `…${s.slice(-43)}` : s);
 
 /** Terminal de verdade do projeto: abas, um shell por aba, aberto na pasta do projeto. */
-export default function ProjectTerminal() {
+export default function ProjectTerminal(props: { tools?: JSX.Element }) {
   const p = currentProject;
   const pid = () => p().id;
   const list = () => terms.byProject[pid()] ?? [];
@@ -48,6 +48,7 @@ export default function ProjectTerminal() {
         when={real()}
         fallback={
           <div class="pterm-empty">
+            <Show when={props.tools}><div class="pterm-tools floating">{props.tools}</div></Show>
             <SquareTerminal size={18} />
             <span>{isTauri ? tx("O projeto de demonstração não tem terminal: adicione uma pasta sua para abrir um.") : tx("O terminal precisa do app: no navegador não dá para abrir um shell.")}</span>
           </div>
@@ -70,6 +71,7 @@ export default function ProjectTerminal() {
               <span class="pterm-acc" style={{ "--c": acc().color }} title={tx("O comando claude digitado aqui usa a conta deste projeto")}><Bot size={11} /> {tx("claude = {label}", { label: acc().label })}</span>
             </Show>
           </div>
+          <Show when={props.tools}><div class="pterm-tools">{props.tools}</div></Show>
         </div>
       </Show>
       <div class="pterm-box" ref={box} classList={{ hidden: !real() }} />

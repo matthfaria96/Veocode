@@ -1,41 +1,18 @@
-import { AlertTriangle, Check, ExternalLink, FileText, MessageSquare, Search, X } from "lucide-solid";
+import { AlertTriangle, Check, ExternalLink, FileText, GitCompareArrows, MessageSquare, Search, SquareTerminal, X } from "lucide-solid";
+import DiffView from "./DiffView";
+import { projMode } from "../layoutMode";
 import { FileIcon } from "./icons";
 import { ImageView } from "./Media";
 import { isImagePath } from "../media";
-import { createMemo, For, Index, Match, Show, Switch } from "solid-js";
+import { createMemo, For, Index, Match, Show, Switch, type JSX } from "solid-js";
 import { api, formatSize } from "../api";
 import { ask } from "../dialogs";
 import { draftOf, dropDraft, edit, isUnsaved, saveNow, textOf } from "../editing";
 import { openRealFile } from "../realProject";
 import { defaultFileContent, fileContents } from "../data/mock";
-import { closeTab, currentProject, openFile, projectId, showToast, ws } from "../store";
+import { closeTab, currentProject, diffPathOf, isDiffTab, openFile, projectId, showToast, ws } from "../store";
 import { tx } from "../i18n";
-
-type Tok = { t: string; c?: string };
-
-const KW =
-  /^(import|from|export|default|function|return|const|let|fn|pub|use|mod|struct|impl|mut|for|if|else|match|type|interface|async|await|new|self|Self|true|false)$/;
-
-/** Realce de sintaxe simplificado — suficiente para o protótipo. */
-function tokenize(line: string, ext: string): Tok[] {
-  if (ext === "md") return [{ t: line, c: line.startsWith("#") ? "tk-head" : line.startsWith("-") ? "tk-str" : undefined }];
-  const re = /(\/\/.*$|\/\*.*\*\/|\/\/\/.*$)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`[^`]*`)|(<\/?[A-Za-z][\w.]*|\/?>)|(\b\d+(?:\.\d+)?\b)|([A-Za-z_][\w]*)(?=\s*\()|([A-Za-z_][\w]*)/g;
-  const out: Tok[] = [];
-  let last = 0;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(line))) {
-    if (m.index > last) out.push({ t: line.slice(last, m.index) });
-    if (m[1]) out.push({ t: m[0], c: "tk-com" });
-    else if (m[2]) out.push({ t: m[0], c: "tk-str" });
-    else if (m[3]) out.push({ t: m[0], c: "tk-tag" });
-    else if (m[4]) out.push({ t: m[0], c: "tk-num" });
-    else if (m[5]) out.push({ t: m[0], c: KW.test(m[0]) ? "tk-kw" : "tk-fn" });
-    else out.push({ t: m[0], c: KW.test(m[0]) ? "tk-kw" : /^[A-Z]/.test(m[0]) ? "tk-type" : undefined });
-    last = m.index + m[0].length;
-  }
-  if (last < line.length) out.push({ t: line.slice(last) });
-  return out;
-}
+import { tokenize } from "../syntax";
 
 /** Arquivos com mais linhas que isso mostram só o começo (virtualização fica para depois). */
 const MAX_LINES = 3000;
@@ -188,7 +165,7 @@ async function closeRealTab(path: string) {
   closeTab(path);
 }
 
-export default function Editor() {
+export default function Editor(props: { tools?: JSX.Element }) {
   const lines = createMemo(() => {
     const path = ws.activeFile;
     const base = path in fileContents ? fileContents[path].split("\n") : path === "src/components/Gauge.tsx" ? [] : defaultFileContent(path).split("\n");
@@ -205,26 +182,33 @@ export default function Editor() {
     <div class="editor">
       <div class="tabs">
         <For each={ws.openTabs}>
-          {(path) => (
-            <div class="tab" classList={{ active: ws.activeFile === path, edited: !currentProject().demo && isUnsaved(path) }} title={!currentProject().demo && isUnsaved(path) ? tx("Salvando…") : path} onClick={() => (currentProject().demo ? openFile(path) : openRealFile(path))}>
-              <span class="tab-icon"><FileIcon name={path.split("/").pop() ?? path} size={12} /></span>
-              <span class="tab-name">{path.split("/").pop()}</span>
-              <span class="tab-dot" />
-              <button
-                class="tab-close"
-                title={tx("Fechar")}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (currentProject().demo) closeTab(path);
-                  else void closeRealTab(path);
-                }}
-              >
-                <X size={12} />
-              </button>
-            </div>
-          )}
+          {(path) => {
+            const diff = isDiffTab(path);
+            const file = diff ? diffPathOf(path) : path;
+            return (
+              <div class="tab" classList={{ active: ws.activeFile === path, diff, edited: !diff && !currentProject().demo && isUnsaved(path) }} title={diff ? tx("{path}: o que mudou desde o último commit", { path: file }) : !currentProject().demo && isUnsaved(path) ? tx("Salvando…") : path} onClick={() => (diff || currentProject().demo ? openFile(path) : openRealFile(path))}>
+                <span class="tab-icon">{diff ? <GitCompareArrows size={12} /> : <FileIcon name={file.split("/").pop() ?? file} size={12} />}</span>
+                <span class="tab-name">{file.split("/").pop()}</span>
+                <Show when={diff}><small class="tab-sub">{tx("mudanças")}</small></Show>
+                <span class="tab-dot" />
+                <button
+                  class="tab-close"
+                  title={tx("Fechar")}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (diff || currentProject().demo) closeTab(path);
+                    else void closeRealTab(path);
+                  }}
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            );
+          }}
         </For>
+        <Show when={props.tools}><div class="tabs-tools">{props.tools}</div></Show>
       </div>
+      <Show when={!isDiffTab(ws.activeFile)} fallback={<DiffView path={diffPathOf(ws.activeFile)} />}>
       <Show when={ws.activeFile} fallback={<EditorHome />}>
         <div class="breadcrumb">
           <span>{ws.activeFile.split("/").join("  ›  ")}</span>
@@ -233,6 +217,7 @@ export default function Editor() {
         <Show when={currentProject().demo} fallback={<RealCode ext={ext()} />}>
           <CodeLines lines={lines()} ext={ext()} plusGutter />
         </Show>
+      </Show>
       </Show>
     </div>
   );
@@ -245,12 +230,27 @@ function EditorHome() {
     <div class="editor-empty editor-home">
       <div class="eh-glow" aria-hidden="true" />
       <strong>{p().name}</strong>
-      <p>{p().demo ? tx("Nenhum arquivo aberto.") : tx("Converse com a IA no centro, ou abra um arquivo para ler e editar.")}</p>
-      <div class="eh-tips">
-        <span style={{ "--i": 0 }}><MessageSquare size={14} /> {tx("Peça algo à IA")} <em>{tx("no centro")}</em></span>
-        <span style={{ "--i": 1 }}><FileText size={14} /> {tx("Abra um arquivo")} <em>{tx("na árvore à esquerda")}</em></span>
-        <span style={{ "--i": 2 }}><Search size={14} /> {tx("Busque qualquer coisa")} <kbd>⌘K</kbd></span>
-      </div>
+      <Show
+        when={projMode() === "code"}
+        fallback={
+          <>
+            <p>{p().demo ? tx("Nenhum arquivo aberto.") : tx("Converse com a IA no centro, ou abra um arquivo para ler e editar.")}</p>
+            <div class="eh-tips">
+              <span style={{ "--i": 0 }}><MessageSquare size={14} /> {tx("Peça algo à IA")} <em>{tx("no centro")}</em></span>
+              <span style={{ "--i": 1 }}><FileText size={14} /> {tx("Abra um arquivo")} <em>{tx("na árvore à esquerda")}</em></span>
+              <span style={{ "--i": 2 }}><Search size={14} /> {tx("Busque qualquer coisa")} <kbd>⌘K</kbd></span>
+            </div>
+          </>
+        }
+      >
+        <p>{tx("Abra um arquivo na árvore para editar, ou veja o que mudou na aba Git.")}</p>
+        <div class="eh-tips">
+          <span style={{ "--i": 0 }}><FileText size={14} /> {tx("Abra um arquivo")} <em>{tx("na árvore à esquerda")}</em></span>
+          <span style={{ "--i": 1 }}><GitCompareArrows size={14} /> {tx("Veja o que mudou")} <em>{tx("na aba Git")}</em></span>
+          <span style={{ "--i": 2 }}><SquareTerminal size={14} /> {tx("Terminal")} <kbd>⌘J</kbd></span>
+          <span style={{ "--i": 3 }}><Search size={14} /> {tx("Busque qualquer coisa")} <kbd>⌘K</kbd></span>
+        </div>
+      </Show>
     </div>
   );
 }

@@ -6,7 +6,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { createSignal } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import { isTauri } from "./api";
+import { setProjMode } from "./layoutMode";
 import { projects } from "./store";
+import { defaultFileContent, fileContents } from "./data/mock";
 import { tx, txn } from "./i18n";
 
 /** No navegador e no projeto de demonstração, um exemplo no lugar do git de verdade. */
@@ -157,8 +159,9 @@ export const [gitTab, setChatTab] = createSignal<"chat" | "access">("chat");
 export const [sideTab, setSideTab] = createSignal<"files" | "git" | "trail">("files");
 /** Abre a aba pedida no lugar certo (Git e Rastro ficam na lateral; conversa e nível, no chat). */
 export function setGitTab(t: "chat" | "access" | "trail" | "git" | "files") {
-  if (t === "git" || t === "trail" || t === "files") setSideTab(t);
-  else setChatTab(t);
+  // arquivos, Git e Rastro moram no modo Código; a conversa e o nível de acesso, no modo IA
+  if (t === "git" || t === "trail" || t === "files") (setSideTab(t), setProjMode("code"));
+  else (setChatTab(t), setProjMode("ai"));
 }
 
 export const [git, setGit] = createStore<State>({ byProject: {}, summaries: {} });
@@ -254,6 +257,24 @@ export async function commitFiles(pid: string, hash: string): Promise<CommitFile
 export async function commitDiff(pid: string, hash: string, path: string): Promise<string> {
   if (!real(pid)) return tx("@@ -1,3 +1,4 @@\n import x from \"y\";\n-const velho = 1;\n+const novo = 2;\n+const outro = 3;\n export default x;");
   return invoke<string>("git_commit_diff", { projectId: pid, hash, path });
+}
+
+/** O que mudou num arquivo desde o último commit (disco contra o HEAD), em diff unificado. */
+export async function fileDiff(pid: string, path: string): Promise<string> {
+  if (!real(pid)) return demoDiff(path);
+  return invoke<string>("git_file_diff", { projectId: pid, path });
+}
+
+/** Simulação: o arquivo de exemplo com duas linhas trocadas e uma nova. */
+function demoDiff(path: string): string {
+  const lines = (fileContents[path] ?? defaultFileContent(path)).split("\n");
+  const at = Math.min(3, Math.max(0, lines.length - 2));
+  const out = [`diff --git a/${path} b/${path}`, `--- a/${path}`, `+++ b/${path}`, `@@ -1,${lines.length} +1,${lines.length + 1} @@`];
+  lines.forEach((l, i) => {
+    if (i === at) out.push(`-${l}`, `+${l.replace(/;?$/, "")}; // ${tx("ajustado")}`, `+// ${tx("linha nova")}`);
+    else out.push(` ${l}`);
+  });
+  return out.join("\n");
 }
 
 // ---------------------------------------------------------------- textos

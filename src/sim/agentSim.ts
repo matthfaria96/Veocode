@@ -108,11 +108,18 @@ export function startAgentSim(root: HTMLElement) {
     await Promise.all(
       subs.map(async (s, i) => {
         await wait(i * 180);
+        const who = { agent: `${agentLabel()} · sub-${i + 1}`, color: agentColor(), sub: s.id, subLabel: [tx("Procurar no Rust"), tx("Procurar nas telas"), tx("Ler a documentação")][i] };
+        const a = pushEvent({ ...who, kind: "search", title: tx("Procurando “cache” em {path}", { path: s.path }) });
         await move(s.id, `file:${s.path}`);
         mark(s.path, "search");
         await wait(400);
-        await move(s.id, i === 0 ? "file:src-tauri/src/lib.rs" : i === 1 ? "file:src/views/Accounts.tsx" : "file:package.json");
-        mark(i === 0 ? "src-tauri/src/lib.rs" : i === 1 ? "src/views/Accounts.tsx" : "package.json", "search");
+        finishEvent(a, tx("{n} ocorrências", { n: 2 - (i % 2) }));
+        const next = i === 0 ? "src-tauri/src/lib.rs" : i === 1 ? "src/views/Accounts.tsx" : "package.json";
+        const b = pushEvent({ ...who, kind: "read", title: tx("Lendo {path}", { path: next }) });
+        await move(s.id, `file:${next}`);
+        mark(next, "search");
+        await wait(500);
+        finishEvent(b);
       }),
     );
     finishEvent(e, tx("4 ocorrências em 2 arquivos"));

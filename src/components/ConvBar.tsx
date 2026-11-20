@@ -1,9 +1,9 @@
 // Barra de conversas do projeto (abas), medidor de contexto, aviso de conversa pesada e
 // memória do projeto.
-import { Activity, Brain, Check, Eye, Gauge, History, LayoutGrid, PanelBottom, Plus, Sparkles, X } from "lucide-solid";
+import { Activity, Brain, Check, Eye, Gauge, History, LayoutGrid, PanelBottom, PanelRight, Plus, Sparkles, X } from "lucide-solid";
 import { createSignal, For, Show, type Component, type JSX } from "solid-js";
 import { Dynamic } from "solid-js/web";
-import { bottomOpen, focusMode, setBottomOpen, setFocusMode } from "../layoutMode";
+import { bottomOpen, debugOpen, focusMode, setBottomOpen, setDebugOpen, setFocusMode } from "../layoutMode";
 import { chatOf } from "../chat";
 import { activeKey, CACHE_TTL, closeTab, concludeTab, continueFresh, fmtTokens, newTab, renameTab, selectTab, tabsOf, weightOf } from "../convTabs";
 import { projects, ws } from "../store";
@@ -36,15 +36,42 @@ function Tool(props: { icon: Component<{ size?: number }>; name: string; hint: s
   );
 }
 
-export function ConvTabsBar(props: { pid: string; view: View; onView: (v: View) => void; extCount: number }) {
+export function ConvTabsBar(props: { pid: string; view: View; onView: (v: View) => void; extCount: number; slim?: boolean }) {
   const [editing, setEditing] = createSignal<string | null>(null);
   const k = () => activeKey(props.pid);
   // tamanho ao vivo (cada resposta) ou, antes da primeira, o da última medição do painel
   const ctx = () => chatOf(k()).context ?? ctxOf(k()).data?.used ?? null;
   const claude = () => accountById(projects.find((p) => p.id === props.pid)?.accountId ?? "").provider === "claude";
+  const cur = () => tabsOf(props.pid).find((t) => t.key === k());
   return (
-    <div class="conv-bar">
-      <div class="conv-tabs" role="tablist">
+    <div class="conv-bar" classList={{ slim: props.slim }}>
+      <Show when={props.slim}>
+        <div class="conv-now">
+          <Show
+            when={props.view === "chat"}
+            fallback={<strong>{props.view === "ext" ? tx("Fora do Veocode") : props.view === "hist" ? tx("Conversas anteriores") : props.view === "mem" ? tx("Memória do projeto") : tx("Atividade")}</strong>}
+          >
+            <i class="conv-dot" classList={{ busy: chatOf(k()).busy, ask: chatOf(k()).perms.length > 0, err: !!chatOf(k()).error }} />
+            <Show when={editing() === k()} fallback={<strong title={tx("Dois cliques para renomear")} onDblClick={() => setEditing(k())}>{tx(cur()?.title ?? "Conversa")}</strong>}>
+              <input
+                class="conv-rename"
+                value={cur()?.title ?? ""}
+                ref={(el) => requestAnimationFrame(() => (el.focus(), el.select()))}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") e.currentTarget.blur();
+                  if (e.key === "Escape") setEditing(null);
+                }}
+                onBlur={(e) => {
+                  if (editing() === k()) renameTab(props.pid, k(), e.currentTarget.value);
+                  setEditing(null);
+                }}
+              />
+            </Show>
+            <small>{chatOf(k()).busy ? tx("trabalhando") : chatOf(k()).perms.length ? tx("esperando você") : ""}</small>
+          </Show>
+        </div>
+      </Show>
+      <div class="conv-tabs" role="tablist" classList={{ hidden: props.slim }}>
         <For each={tabsOf(props.pid)}>
           {(t) => {
             const c = () => chatOf(t.key);
@@ -126,6 +153,10 @@ export function ConvTabsBar(props: { pid: string; view: View; onView: (v: View) 
         >
           <Show when={focusMode() && tabsOf(props.pid).length > 1}><i class="ctool-badge">{tabsOf(props.pid).length}</i></Show>
         </Tool>
+        <Show when={props.slim}>
+          <Tool icon={PanelRight} name={debugOpen() ? tx("Esconder o painel da direita") : tx("Mostrar o painel da direita")} hint={tx("Navegador, comandos rodando, subagentes e atividade, ao lado da conversa")} on={debugOpen()} onClick={() => setDebugOpen(!debugOpen())} />
+        </Show>
+        <Show when={!props.slim}>
         <i class="conv-sep" />
         <Tool icon={Eye} name={tx("Fora do Veocode")} hint={tx("Claude rodando nesta pasta pelo Terminal, editor ou app do Claude. Só para acompanhar.")} on={props.view === "ext"} onClick={() => props.onView("ext")}>
           <Show when={props.extCount > 0}><i class="ctool-badge">{props.extCount > 9 ? "9+" : props.extCount}</i></Show>
@@ -140,6 +171,7 @@ export function ConvTabsBar(props: { pid: string; view: View; onView: (v: View) 
         <i class="conv-sep" />
         <Tool icon={History} name={tx("Histórico")} hint={tx("Conversas anteriores deste projeto")} on={props.view === "hist"} onClick={() => props.onView("hist")} />
         <Tool icon={Brain} name={tx("Memória")} hint={tx("O que o Claude já sabe deste projeto sem reler conversas antigas")} on={props.view === "mem"} onClick={() => props.onView("mem")} />
+        </Show>
       </div>
     </div>
   );

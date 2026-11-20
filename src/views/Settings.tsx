@@ -190,12 +190,12 @@ export default function Settings() {
         </div>
       </Section>
 
-      <Section icon={<PanelBottom size={15} />} title={tx("Painel de baixo")} desc={tx("Atividade, comandos do agente e terminal embaixo da conversa, na tela Projetos. Abre e fecha pelo botão ao lado das abas.")} delay={120}>
-        <div class="set-cards" role="radiogroup" aria-label={tx("Painel de baixo")}>
-          <Choice value="fechado" current={settings.bottomPanel ? "aberto" : "fechado"} title={tx("Começa fechado")} desc={tx("Mais espaço para a conversa. Quando quiser ver a atividade, é um clique.")} onPick={() => updateSettings({ bottomPanel: false })}>
+      <Section icon={<PanelBottom size={15} />} title={tx("Terminal no modo Código")} desc={tx("O terminal embaixo (ou à direita) dos arquivos, na tela Projetos. Abre e fecha pelo botão ao lado das abas ou com ⌘J.")} delay={120}>
+        <div class="set-cards" role="radiogroup" aria-label={tx("Terminal no modo Código")}>
+          <Choice value="fechado" current={settings.bottomPanel ? "aberto" : "fechado"} title={tx("Começa fechado")} desc={tx("Mais espaço para o código. Quando quiser o terminal, é um clique.")} onPick={() => updateSettings({ bottomPanel: false })}>
             <PanelPreview open={false} />
           </Choice>
-          <Choice value="aberto" current={settings.bottomPanel ? "aberto" : "fechado"} title={tx("Começa aberto")} desc={tx("A atividade e o terminal já aparecem embaixo da conversa ao abrir o app.")} onPick={() => updateSettings({ bottomPanel: true })}>
+          <Choice value="aberto" current={settings.bottomPanel ? "aberto" : "fechado"} title={tx("Começa aberto")} desc={tx("O terminal já aparece aberto na pasta do projeto ao abrir o app.")} onPick={() => updateSettings({ bottomPanel: true })}>
             <PanelPreview open={true} />
           </Choice>
         </div>

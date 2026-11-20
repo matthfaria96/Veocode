@@ -326,6 +326,12 @@ async fn git_commit_diff(state: State<'_, AppState>, project_id: String, hash: S
 }
 
 #[tauri::command]
+async fn git_file_diff(state: State<'_, AppState>, project_id: String, path: String) -> Result<String, String> {
+    let root = state.root_of(&project_id)?;
+    blocking(move || git::file_diff(&root, &path)).await?
+}
+
+#[tauri::command]
 async fn git_github(state: State<'_, AppState>, project_id: String, branch: Option<String>) -> Result<git::GitHub, String> {
     let root = state.root_of(&project_id)?;
     blocking(move || git::github(&root, branch.as_deref())).await?
@@ -1138,6 +1144,23 @@ async fn xray_ports(state: State<'_, AppState>) -> Result<xray::procs::PortRepor
     Ok(xray::procs::ports(sys, &roots, &xray::util::home()))
 }
 
+/// O que está rodando dentro da pasta do projeto agora (servidores de dev, builds, testes).
+#[tauri::command]
+async fn project_procs(state: State<'_, AppState>, project_id: String) -> Result<Vec<xray::procs::ProjProc>, String> {
+    let root = state.root_of(&project_id)?;
+    let mut guard = state.sys.lock().map_err(|e| e.to_string())?;
+    let sys = guard.as_mut().ok_or(crate::i18n::tr("não deu para ler os processos do sistema", "couldn't read the system processes"))?;
+    Ok(xray::procs::project_procs(sys, &root))
+}
+
+#[tauri::command]
+async fn project_kill(state: State<'_, AppState>, project_id: String, pid: u32) -> Result<(), String> {
+    let root = state.root_of(&project_id)?;
+    let mut guard = state.sys.lock().map_err(|e| e.to_string())?;
+    let sys = guard.as_mut().ok_or(crate::i18n::tr("não deu para ler os processos do sistema", "couldn't read the system processes"))?;
+    xray::procs::kill_in_project(sys, &root, pid)
+}
+
 #[tauri::command]
 async fn xray_kill_leftover(state: State<'_, AppState>, pid: u32) -> Result<(), String> {
     let roots = state.project_roots();
@@ -1237,6 +1260,7 @@ pub fn run() {
             git_github,
             git_commit_files,
             git_commit_diff,
+            git_file_diff,
             settings_get,
             i18n_set,
             settings_set,
@@ -1312,6 +1336,8 @@ pub fn run() {
             xray_toggle_machine,
             xray_processes,
             xray_kill,
+            project_procs,
+            project_kill,
             xray_ports,
             xray_kill_leftover,
             term_open,

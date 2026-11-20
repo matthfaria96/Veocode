@@ -92,24 +92,7 @@ export default function BottomPanel(props: { asTab?: boolean }) {
       </div>
       <Switch>
         <Match when={tab() === "activity"}>
-          <div class="timeline" ref={activityEl}>
-            <Show when={ws.events.length === 0 && !currentProject().demo}>
-              <div class="tl-empty">{tx("Nada ainda. Quando um agente trabalhar nesta pasta (pelo chat, pelo Terminal ou pelo editor), cada passo aparece aqui. Mudanças feitas por você ou por outro programa também.")}</div>
-            </Show>
-            <For each={ws.events}>
-              {(e) => (
-                <div class="tl-row slide-in" classList={{ running: e.status === "running", error: e.status === "error" }}>
-                  <span class="tl-time">{e.time}</span>
-                  <span class="tl-node" style={{ "--k": kindColor[e.kind] }}>
-                    <ActivityIcon kind={e.kind} size={11} />
-                  </span>
-                  <span class="tl-agent" style={e.color ? { color: e.color } : undefined}>{tx(e.agent)}</span>
-                  <span class="tl-title">{e.title}</span>
-                  <span class="tl-detail">{e.status === "running" ? "…" : e.detail}</span>
-                </div>
-              )}
-            </For>
-          </div>
+          <ActivityTimeline ref={(el) => (activityEl = el)} />
         </Match>
         <Match when={tab() === "terminal"}>
           <Suspense fallback={<div class="pterm-empty"><span class="spinner" /> {tx("Carregando o terminal…")}</div>}>
@@ -127,5 +110,29 @@ export default function BottomPanel(props: { asTab?: boolean }) {
         </Match>
       </Switch>
     </section>
+  );
+}
+
+/** A linha do tempo da Atividade: cada passo do agente (e mudanças no disco), com hora e quem fez. */
+export function ActivityTimeline(props: { ref?: (el: HTMLDivElement) => void }) {
+  return (
+    <div class="timeline" ref={(el) => props.ref?.(el)}>
+      <Show when={ws.events.length === 0 && !currentProject().demo}>
+        <div class="tl-empty">{tx("Nada ainda. Quando um agente trabalhar nesta pasta (pelo chat, pelo Terminal ou pelo editor), cada passo aparece aqui. Mudanças feitas por você ou por outro programa também.")}</div>
+      </Show>
+      <For each={ws.events}>
+        {(e) => (
+          <div class="tl-row slide-in" classList={{ running: e.status === "running", error: e.status === "error" }}>
+            <span class="tl-time">{e.time}</span>
+            <span class="tl-node" style={{ "--k": kindColor[e.kind] }}>
+              <ActivityIcon kind={e.kind} size={11} />
+            </span>
+            <span class="tl-agent" style={e.color ? { color: e.color } : undefined}>{tx(e.agent)}</span>
+            <span class="tl-title">{e.title}</span>
+            <span class="tl-detail">{e.status === "running" ? "…" : e.detail}</span>
+          </div>
+        )}
+      </For>
+    </div>
   );
 }

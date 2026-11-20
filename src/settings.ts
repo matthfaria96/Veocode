@@ -6,7 +6,7 @@ import { createStore } from "solid-js/store";
 import { isTauri } from "./api";
 import { showToast } from "./store";
 import { setLanguagePref, tx } from "./i18n";
-import { setPanelAt } from "./layoutMode";
+import { setTermOpen } from "./layoutMode";
 
 export type IconStyle = "minimalista" | "detalhado";
 export type Motion = "completa" | "reduzida";
@@ -58,8 +58,8 @@ export async function loadSettings() {
     /* fica o padrão */
   }
   applyMotion();
-  // o painel de baixo começa como o ajuste manda (fechado, a não ser que a pessoa prefira aberto)
-  setPanelAt(settings.bottomPanel ? "bottom" : "none");
+  // o terminal do modo Código começa como o ajuste manda (fechado, a não ser que a pessoa prefira aberto)
+  setTermOpen(!!settings.bottomPanel);
 }
 
 /** Muda na hora e grava; se a gravação falhar, volta ao que estava. */

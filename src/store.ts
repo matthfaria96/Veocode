@@ -138,6 +138,9 @@ export interface ActivityEvent {
   session?: string;
   /** aba do chat (pedidos e respostas enviados por ela) */
   tab?: string;
+  /** subagente que fez o passo (id) e o rótulo dele */
+  sub?: string;
+  subLabel?: string;
 }
 
 export interface Cursor {
@@ -190,6 +193,12 @@ const initialWorkspace = (demo = true): WorkspaceState => ({
 
 export const [ws, setWs] = createStore<WorkspaceState>(initialWorkspace());
 export const resetWorkspace = (demo = true) => setWs(reconcile(initialWorkspace(demo)));
+
+/** Aba de "o que mudou" de um arquivo (no editor, ao lado das abas de arquivo). */
+export const DIFF = "diff:";
+export const isDiffTab = (t: string) => t.startsWith(DIFF);
+export const diffPathOf = (t: string) => t.slice(DIFF.length);
+export const openDiff = (path: string) => openFile(DIFF + path);
 
 export function openFile(path: string) {
   if (!ws.openTabs.includes(path)) setWs("openTabs", (t) => [...t, path]);

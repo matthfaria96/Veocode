@@ -448,9 +448,153 @@ pub fn kill_leftover(sys: &mut System, pid: u32, projects: &[(String, PathBuf)],
     if failed == l.pids.len() { Err(crate::i18n::tr("o sistema não deixou encerrar", "the system didn't allow ending it").into()) } else { Ok(()) }
 }
 
+// ---------------------------------------------------------------- o que roda num projeto
+
+/// O que está rodando dentro da pasta de um projeto (servidor de dev, build, testes…), já
+/// agrupado: `npm run dev` e o `vite` que ele abriu viram uma linha só.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjProc {
+    /// O de cima do grupo (encerrar leva junto os de baixo).
+    pub pid: u32,
+    pub cmd: String,
+    pub ports: Vec<u16>,
+    pub cpu: f32,
+    pub mem: u64,
+    pub run_secs: u64,
+    /// Agente de IA que iniciou (Claude Code, Codex…), se foi um.
+    pub agent: Option<String>,
+    pub pids: Vec<u32>,
+}
+
+/// Shells abertos na pasta (o terminal da pessoa) não contam como "rodando".
+fn is_shell(name: &str) -> bool {
+    let n = name.trim_start_matches('-').to_lowercase();
+    matches!(n.as_str(), "zsh" | "bash" | "sh" | "fish" | "dash" | "tcsh" | "csh" | "login" | "nu" | "pwsh" | "powershell.exe" | "cmd.exe" | "conhost.exe")
+}
+
+/// Comando mais legível: sem a pasta do projeto na frente dos caminhos e, nos atalhos do npm
+/// (`node …/node_modules/.bin/vite --port 5173`), só o nome da ferramenta (`vite --port 5173`).
+fn short_cmd(cmd: &str, root: &std::path::Path) -> String {
+    let base = format!("{}/", root.to_string_lossy().trim_end_matches('/'));
+    let c = cmd.replace(&base, "");
+    let mut parts = c.splitn(3, ' ');
+    if let (Some("node"), Some(script)) = (parts.next(), parts.next()) {
+        if script.contains("node_modules/.bin/") || (script.contains("node_modules/") && script.contains("/bin/")) {
+            let name = script.rsplit('/').next().unwrap_or(script).trim_end_matches(".js");
+            return match parts.next() {
+                Some(rest) => format!("{name} {rest}"),
+                None => name.to_string(),
+            };
+        }
+    }
+    c
+}
+
+pub fn project_procs(sys: &mut System, root: &std::path::Path) -> Vec<ProjProc> {
+    refresh(sys);
+    let ports = listening_ports();
+    let procs = sys.processes();
+    let me = std::process::id();
+    // a pasta como foi escrita e a real (sem links: /tmp → /private/tmp)
+    let real = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+    let inside = |cwd: &std::path::Path| cwd.starts_with(root) || cwd.starts_with(&real);
+    let kind_of = |p: &sysinfo::Process| agent_kind(&p.name().to_string_lossy(), &cmd_line(p));
+
+    // quem só embrulha um agente (o lançador do app do Claude, por exemplo) também não conta
+    let wraps_agent: std::collections::HashSet<u32> = procs.values().filter(|p| kind_of(p).is_some()).filter_map(|p| p.parent()).map(|x| x.as_u32()).collect();
+
+    let mut listed: HashMap<u32, &sysinfo::Process> = HashMap::new();
+    for (pid, p) in procs {
+        let id = pid.as_u32();
+        if id == me || p.thread_kind().is_some() || wraps_agent.contains(&id) {
+            continue;
+        }
+        let Some(cwd) = p.cwd() else { continue };
+        if !inside(cwd) || is_shell(&p.name().to_string_lossy()) || kind_of(p).is_some() {
+            continue;
+        }
+        listed.insert(id, p);
+    }
+    // cada um vai para o grupo do ancestral listado mais alto
+    let top_of = |id: u32| {
+        let mut top = id;
+        for _ in 0..16 {
+            match listed.get(&top).and_then(|p| p.parent()).map(|x| x.as_u32()) {
+                Some(par) if listed.contains_key(&par) => top = par,
+                _ => break,
+            }
+        }
+        top
+    };
+    let mut groups: HashMap<u32, Vec<u32>> = HashMap::new();
+    for id in listed.keys() {
+        groups.entry(top_of(*id)).or_default().push(*id);
+    }
+    let mut out: Vec<ProjProc> = groups
+        .into_iter()
+        .filter_map(|(top, mut pids)| {
+            let p = *listed.get(&top)?;
+            pids.sort_unstable();
+            let mut ps: Vec<u16> = pids.iter().flat_map(|x| ports.get(x).into_iter().flatten().copied()).collect();
+            ps.sort_unstable();
+            ps.dedup();
+            // o comando mais útil é o de quem abriu a porta (ex.: "vite"), não o "npm run dev" de cima
+            let opener = pids.iter().find(|x| ports.contains_key(x)).and_then(|x| listed.get(x).copied()).unwrap_or(p);
+            let mut agent = None;
+            let mut a = p.parent();
+            for _ in 0..12 {
+                let Some(x) = a else { break };
+                let Some(pp) = procs.get(&x) else { break };
+                if let Some(k) = kind_of(pp) {
+                    agent = Some(k.to_string());
+                    break;
+                }
+                a = pp.parent();
+            }
+            Some(ProjProc {
+                pid: top,
+                cmd: short_cmd(&cmd_line(opener), root),
+                cpu: pids.iter().filter_map(|x| listed.get(x)).map(|x| x.cpu_usage()).sum(),
+                mem: pids.iter().filter_map(|x| listed.get(x)).map(|x| x.memory()).sum(),
+                run_secs: p.run_time(),
+                ports: ps,
+                agent,
+                pids,
+            })
+        })
+        .collect();
+    // servidores primeiro, depois os mais novos
+    out.sort_by(|a, b| a.ports.is_empty().cmp(&b.ports.is_empty()).then(a.run_secs.cmp(&b.run_secs)));
+    out
+}
+
+/// Encerra um grupo da lista do projeto (e só desta lista: nada de fora da pasta).
+pub fn kill_in_project(sys: &mut System, root: &std::path::Path, pid: u32) -> Result<(), String> {
+    let list = project_procs(sys, root);
+    let g = list.iter().find(|p| p.pid == pid).ok_or(crate::i18n::tr("esse processo não está rodando nesta pasta", "that process isn't running in this folder"))?;
+    let mut failed = 0;
+    for p in g.pids.iter().rev() {
+        if let Some(proc_) = sys.process(Pid::from_u32(*p)) {
+            if !matches!(proc_.kill_with(Signal::Term), Some(true)) && !proc_.kill() {
+                failed += 1;
+            }
+        }
+    }
+    if failed == g.pids.len() { Err(crate::i18n::tr("o sistema não deixou encerrar", "the system didn't allow ending it").into()) } else { Ok(()) }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn short_commands() {
+        let root = std::path::Path::new("/Users/eu/dev/site");
+        assert_eq!(short_cmd("node /Users/eu/dev/site/node_modules/.bin/vite --port 5173", root), "vite --port 5173");
+        assert_eq!(short_cmd("node /Users/eu/dev/site/node_modules/next/dist/bin/next dev", root), "next dev");
+        assert_eq!(short_cmd("cargo run --bin /Users/eu/dev/site/x", root), "cargo run --bin x");
+    }
 
     fn node(parent: u32, name: &str, exe: &str, cwd: &str) -> Node {
         Node { parent: Some(parent), name: name.into(), exe: exe.into(), cwd: Some(cwd.into()) }

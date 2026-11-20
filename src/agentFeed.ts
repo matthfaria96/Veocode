@@ -169,7 +169,7 @@ export function startAgentFeed(root: HTMLElement): () => void {
 
   const apply = async (e: AgentEvent) => {
     // de qual conversa é (a aba do chat filtra por isso)
-    const tag = { session: e.session || undefined, tab: e.tab };
+    const tag = { session: e.session || undefined, tab: e.tab, sub: e.sub ?? undefined, subLabel: e.sub ? (e.subLabel ?? undefined) : undefined };
     const live = !e.history;
     const who = e.sub ? `${accountById(e.account).label} · ${label(e)}` : accountById(e.account).label;
     const color = accountById(e.account).color;

@@ -2,7 +2,7 @@ import { AlertTriangle, Eye, ArrowLeft, Ban, Check, ChevronDown, FileCode2, Hist
 import { createEffect, createMemo, createResource, createSignal, For, Match, on, Show, Switch } from "solid-js";
 import { accessLevels } from "../data/mock";
 import { accountById } from "../accounts";
-import { currentProject, showToast, ws, type ActivityEvent } from "../store";
+import { currentProject, isDiffTab, showToast, ws, type ActivityEvent } from "../store";
 import { seenAgent } from "../agentFeed";
 import { acc, loadAccess, openClaude } from "../access";
 import { answerPermission, chatOf, clearError, deleteConvos, listConversations, ofChat, resendEdited, sendChat, setAttach, setInput, stopChat, type Convo } from "../chat";
@@ -364,7 +364,7 @@ function Composer(props: { onLevel: () => void; levelOn?: boolean; k?: string; c
   const a = () => accountById(p().accountId);
   const level = () => accessLevels[p().access];
   const demo = () => p().demo || !isTauri;
-  const canAttach = () => !demo() && !!ws.activeFile;
+  const canAttach = () => !demo() && !!ws.activeFile && !isDiffTab(ws.activeFile);
   const [menu, setMenu] = createSignal(false);
   // bolinha no nível enquanto ele não vale de verdade no projeto
   const unapplied = () => isTauri && !p().demo && acc.reports[p().id]?.fileState.state !== "aplicado";
@@ -519,14 +519,21 @@ function FocusTile(props: { pid: string; tab: ConvTab; span: number; onLevel: ()
   );
 }
 
-type Pane = "chat" | "ext" | "mem" | "hist";
+export type Pane = "chat" | "ext" | "mem" | "hist";
 export type View = Pane | "act";
+// o que aparece no lugar da conversa: ela mesma, sessões de fora, histórico ou memória. Fica fora do
+// componente para a lista de conversas (modo IA, à esquerda) poder trocar.
+const [pane, setPane] = createSignal<Pane>("chat");
+export const chatPane = pane;
+export function showChatPane(v: Pane) {
+  if (panelAt() === "tab") setPanelAt("none");
+  setChatTab("chat");
+  setPane(v);
+}
 
-export default function ChatPanel() {
+export default function ChatPanel(props: { slim?: boolean }) {
   const [tab, setTab] = [gitTab, setChatTab];
   const project = currentProject;
-  // o que aparece no lugar da conversa: ela mesma, sessões de fora, histórico, memória ou atividade (aba fixa)
-  const [pane, setPane] = createSignal<Pane>("chat");
   const view = (): View => (panelAt() === "tab" ? "act" : pane());
   const go = (v: View) => {
     if (v === "act") {
@@ -577,7 +584,7 @@ export default function ChatPanel() {
       <Switch>
         <Match when={tab() === "chat"}>
           <Show when={real()}>
-            <ConvTabsBar pid={project().id} view={view()} onView={go} extCount={new Set(extEvents().map((e) => e.session)).size} />
+            <ConvTabsBar pid={project().id} view={view()} onView={go} extCount={new Set(extEvents().map((e) => e.session)).size} slim={props.slim} />
           </Show>
           <Show when={memSeen() && real()}>
             <div class="chat-scroll mem-scroll" classList={{ hidden: !mem() }}>
