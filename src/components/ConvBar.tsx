@@ -1,9 +1,9 @@
 // Barra de conversas do projeto (abas), medidor de contexto, aviso de conversa pesada e
 // memória do projeto.
-import { Activity, Brain, Check, Eye, GitBranch, History, LayoutGrid, PanelBottom, PanelRight, Plus, Sparkles, X } from "lucide-solid";
+import { Activity, Brain, Check, Eye, GitBranch, History, Maximize2, Minimize2, PanelBottom, PanelRight, Plus, Sparkles, X } from "lucide-solid";
 import { createSignal, For, Show, type Component, type JSX } from "solid-js";
 import { Dynamic } from "solid-js/web";
-import { bottomOpen, debugOpen, focusMode, setBottomOpen, setDebugOpen, setFocusMode } from "../layoutMode";
+import { bottomOpen, chatFull, debugOpen, setBottomOpen, setChatFull, setDebugOpen } from "../layoutMode";
 import { chatOf } from "../chat";
 import { activeKey, CACHE_TTL, closeTab, concludeTab, continueFresh, fmtTokens, forkConversation, newTab, renameTab, selectTab, tabsOf, weightOf } from "../convTabs";
 import { customName, forkParentOf } from "../forks";
@@ -145,17 +145,15 @@ export function ConvTabsBar(props: { pid: string; view: View; onView: (v: View) 
       </div>
       <div class="conv-tools">
         <Tool
-          icon={LayoutGrid}
-          name={focusMode() ? tx("Sair do modo foco") : tx("Modo foco")}
-          hint={tx("Todas as conversas deste projeto lado a lado, cada uma com a sua caixa. Abra mais com o +.")}
-          on={focusMode()}
+          icon={chatFull() ? Minimize2 : Maximize2}
+          name={chatFull() ? tx("Sair da tela cheia") : tx("Tela cheia")}
+          hint={chatFull() ? tx("Volta a lista de conversas e o painel da direita (Esc)") : tx("Só a conversa na tela, sem a lista e o painel da direita (Esc sai)")}
+          on={chatFull()}
           onClick={() => {
             if (props.view !== "chat") props.onView("chat");
-            setFocusMode(!focusMode());
+            setChatFull(!chatFull());
           }}
-        >
-          <Show when={focusMode() && tabsOf(props.pid).length > 1}><i class="ctool-badge">{tabsOf(props.pid).length}</i></Show>
-        </Tool>
+        />
         <Show when={props.slim && canFork()}>
           <Tool icon={GitBranch} name={tx("Bifurcar")} hint={tx("Uma conversa nova que começa com tudo desta. Para tentar outro caminho sem perder este.")} onClick={fork} />
         </Show>
@@ -186,10 +184,10 @@ export function ConvTabsBar(props: { pid: string; view: View; onView: (v: View) 
 }
 
 /** Aviso em cima da caixa: conversa pesada ou parada há muito tempo (a próxima mensagem sai cara). */
-export function EconomyHint(props: { pid: string }) {
+export function EconomyHint(props: { pid: string; k?: string }) {
   useClock();
   const [hidden, setHidden] = createSignal<Record<string, boolean>>({});
-  const k = () => activeKey(props.pid);
+  const k = () => props.k ?? activeKey(props.pid);
   const c = () => chatOf(k());
   const idle = () => (c().lastAt ? now() - c().lastAt! : 0);
   const kind = () => {

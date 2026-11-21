@@ -40,9 +40,14 @@ export function togglePin(id: string) {
   setPins(isPinned(id) ? pinsRaw().filter((x) => x !== id) : [...pinsRaw(), id]);
 }
 
-/** Quantos projetos cabem na tela Início ao mesmo tempo: a grade se ajusta sozinha (2, 3, 4, 6, 8, 9). */
-const MAX_ON_SCREEN = 9;
-const slots = () => Math.min(MAX_ON_SCREEN, realIds().filter((id) => !closed().includes(id)).length);
+/** Quantos projetos cabem na tela Início ao mesmo tempo. Cada coluna tem uma largura mínima
+ *  confortável (a conversa e a caixa inteiras): a tela mede quantas cabem (`setBoardCap`) e o
+ *  resto fica na barra de projetos, em cima, com a situação de cada um. */
+const MAX_ON_SCREEN = 8;
+const [cap, setCap] = createSignal(3);
+export const boardCap = cap;
+export const setBoardCap = (n: number) => n !== cap() && setCap(Math.max(1, Math.min(MAX_ON_SCREEN, n)));
+const slots = () => Math.min(cap(), realIds().filter((id) => !closed().includes(id)).length);
 
 // ---------------------------------------------------------------- quem aparece na tela
 // Os projetos entram sozinhos: primeiro os fixados, depois quem precisa de você, quem está trabalhando
@@ -162,7 +167,7 @@ export function projectState(pid: string): ProjectState {
   const procs = xray.procs.filter((g) => inside(g.cwd, root));
   const busyProc = procs.some((g) => g.children.length > 0);
   const recent = Date.now() - f.activeAt < 45_000;
-  const running = f.items.slice(-3).some((x) => x.status === "running" && Date.now() - x.ts < 10 * 60_000);
+  const running = f.items.slice(-3).some((x) => x.status === "running" && Date.now() - (x.ts ?? 0) < 10 * 60_000);
   const at = f.activeAt;
   if (c.perms.length) return { tone: "ask", label: c.perms.length === 1 ? tx("Pedindo sua permissão") : tx("{length} pedidos de permissão", { length: c.perms.length }), agents: procs.length, at };
   if (c.busy) return { tone: "work", label: c.draft ? tx("Escrevendo a resposta") : tx("Trabalhando"), agents: procs.length, at };
@@ -186,4 +191,28 @@ export function swapPanes(a: string, b: string) {
   [l[i], l[j]] = [l[j], l[i]];
   setShown(l);
   save("veocode.board.shown", l);
+}
+
+// ---------------------------------------------------------------- cada coluna
+
+/** IA (a conversa) ou Código (o que mudou e o terminal) em cada coluna da tela Início. */
+export type PaneMode = "ai" | "code";
+const [modes, setModes] = createSignal<Record<string, PaneMode>>(load("veocode.board.modes", {}));
+export const paneMode = (pid: string): PaneMode => modes()[pid] ?? "ai";
+export function setPaneMode(pid: string, m: PaneMode) {
+  const next = { ...modes(), [pid]: m };
+  setModes(next);
+  save("veocode.board.modes", next);
+}
+
+/** A conversa que a coluna mostra, quando a pessoa escolheu uma (aba do Veocode, ou "ext:<sessão>"
+ *  para uma conversa rodando fora). Sem escolha, a coluna mostra a que mexeu por último. */
+const [picks, setPicks] = createSignal<Record<string, string>>(load("veocode.board.chat", {}));
+export const paneChat = (pid: string): string | undefined => picks()[pid];
+export function setPaneChat(pid: string, key: string | null) {
+  const next = { ...picks() };
+  if (key) next[pid] = key;
+  else delete next[pid];
+  setPicks(next);
+  save("veocode.board.chat", next);
 }

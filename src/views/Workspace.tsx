@@ -15,14 +15,14 @@ import { newEntry } from "../fileActions";
 import { startAgentFeed } from "../agentFeed";
 import { anyBusy, restoreChat } from "../chat";
 import { loadDir, openRealProject } from "../realProject";
-import { api, isTauri } from "../api";
+import { api } from "../api";
 import FileTree from "../components/FileTree";
 import RealFileTree from "../components/RealFileTree";
 import Editor from "../components/Editor";
 import ChatPanel from "../components/ChatPanel";
 import AgentCursors from "../components/AgentCursors";
 import { ProviderMark } from "../components/ui";
-import { closeSheets, codeSideOpen, codeSideW, debugOpen, debugTab, debugW, focusMode, leftSheet, narrowLeft, narrowRight, projMode, reviewWide, setCodeSideOpen, setCodeSideW, setDebugOpen, setDebugW, setLeftSheet, setProjMode, setReviewWide, sheetOpen, showTerm, toggleTerm } from "../layoutMode";
+import { chatFull, closeSheets, codeSideOpen, codeSideW, debugOpen, debugTab, debugW, leftSheet, narrowLeft, narrowRight, projMode, reviewWide, setCodeSideOpen, setCodeSideW, setDebugOpen, setDebugW, setLeftSheet, setChatFull, setProjMode, setReviewWide, sheetOpen, showTerm, toggleTerm } from "../layoutMode";
 
 import { tx, txn } from "../i18n";
 import { brFull } from "../browser";
@@ -106,6 +106,8 @@ export default function Workspace() {
         closeSheets();
       } else if (e.key === "Escape" && wide() && !overlay) {
         setReviewWide(false);
+      } else if (e.key === "Escape" && full() && !overlay && !document.querySelector(".menu, .agent-menu")) {
+        setChatFull(false);
       } else if (mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "e") {
         e.preventDefault();
         setProjMode(projMode() === "code" ? "ai" : "code");
@@ -124,6 +126,8 @@ export default function Workspace() {
   });
 
   const code = () => projMode() === "code";
+  // tela cheia: só a conversa (o modo IA sem a lista da esquerda e o painel da direita)
+  const full = () => !code() && chatFull();
   // a simulação é uma demonstração da IA: no modo Código ela para (não fica abrindo arquivos no editor)
   createEffect(() => code() && p().demo && !ws.paused && setWs("paused", true));
   const dragDebug = (e: PointerEvent) => {
@@ -145,7 +149,7 @@ export default function Workspace() {
   return (
     <div
       class="workspace"
-      classList={{ "ws-code": code(), "ws-ai": !code(), "debug-off": !debugOpen(), "cside-on": code() && codeSideOpen() && !wide(), "review-wide": wide(), focus: !code() && focusMode() && isTauri && !p().demo, resizing: dragging(), "left-sheet": narrowLeft() && leftSheet(), "br-full": !code() && debugOpen() && debugTab() === "browser" && brFull() }}
+      classList={{ "ws-code": code(), "ws-ai": !code(), "debug-off": !debugOpen(), "cside-on": code() && codeSideOpen() && !wide(), "review-wide": wide(), focus: full(), resizing: dragging(), "left-sheet": narrowLeft() && leftSheet(), "br-full": !code() && debugOpen() && debugTab() === "browser" && brFull() }}
       style={{ "--debug-w": `${debugW()}px`, "--cside-w": `${codeSideW()}px` }}
       ref={root}
     >

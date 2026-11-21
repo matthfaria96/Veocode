@@ -2,7 +2,7 @@
 // recente para a mais antiga. Ramos (bifurcações) ficam embaixo da conversa de onde saíram, e
 // grupos com nome juntam conversas do mesmo assunto. Um clique abre a conversa no meio; o "+" do
 // projeto começa uma conversa nova nele. Embaixo: novo grupo, "só as ativas" e Local | Nuvem.
-import { Archive, ArchiveRestore, ChevronRight, Cloud, CloudDownload, Code2, ExternalLink, Folder, FolderInput, FolderMinus, FolderPlus, FolderSearch, GitBranch, Laptop, LayoutGrid, Lock, Mail, MailOpen, MoreHorizontal, Pencil, Pin, PinOff, Plus, Search, SquarePen, SquareTerminal, Trash2, Check, Square, X, Zap } from "lucide-solid";
+import { Archive, ArchiveRestore, ChevronRight, Cloud, CloudDownload, Code2, ExternalLink, Folder, FolderInput, FolderMinus, FolderPlus, FolderSearch, GitBranch, Laptop, Lock, Maximize2, Mail, MailOpen, MoreHorizontal, Pencil, Pin, PinOff, Plus, Search, SquarePen, SquareTerminal, Trash2, Check, Square, X, Zap } from "lucide-solid";
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show, type JSX } from "solid-js";
 import { createStore } from "solid-js/store";
 import { accountById } from "../accounts";
@@ -10,7 +10,7 @@ import { api, isTauri } from "../api";
 import { openClaude } from "../access";
 import { chatOf, deleteConvos, onChatDone, stopChat } from "../chat";
 import { isArchived, isPinned, isUnread, setArchived, setPinned, setUnread } from "../convMarks";
-import { focusMode, projMode, setFocusMode } from "../layoutMode";
+import { projMode, setChatFull } from "../layoutMode";
 import { histLoaded, histLoading, loadHist, dropFromHist } from "../convHist";
 import { convItems, projectLive, shortAgo, type ConvItem } from "../convList";
 import { activeKey, closeTab, concludeTab, forkConversation, openInTab, renameConversation, selectTab, startConversation, tabsOf } from "../convTabs";
@@ -121,7 +121,7 @@ onChatDone((key) => {
   const pid = key.split("~")[0];
   const id = idOfTab(pid, key);
   setArchived(id, false);
-  const seen = pid === projectId() && projMode() === "ai" && gitTab() === "chat" && chatPane() === "chat" && (focusMode() || activeKey(pid) === key);
+  const seen = pid === projectId() && projMode() === "ai" && gitTab() === "chat" && chatPane() === "chat" && activeKey(pid) === key;
   if (!seen) setUnread(id, true);
 });
 
@@ -173,7 +173,7 @@ export default function ConvSidebar() {
     const items: MenuEntry[] = [];
     if (!it.locked && real()) {
       const open: MenuEntry[] = [
-        { label: tx("Lado a lado"), hint: tx("No modo foco, junto das outras abertas"), icon: () => <LayoutGrid size={14} />, key: "1", run: () => void openItem(it).then(() => setFocusMode(true)) },
+        { label: tx("Tela cheia"), hint: tx("Só esta conversa na tela (Esc sai)"), icon: () => <Maximize2 size={14} />, key: "1", run: () => void openItem(it).then(() => setChatFull(true)) },
       ];
       if (claudeSession) {
         open.push({

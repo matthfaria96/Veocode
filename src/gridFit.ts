@@ -27,6 +27,18 @@ export function gridFit(n: number, width: number): GridFit {
   return { cols, rows, units, unit: units / cols, lastUnit: units / last, lastStart: (rows - 1) * cols };
 }
 
+/** A mesma grade, com o número máximo de colunas já decidido (a tela Início mede quantas cabem):
+ *  até `max` lado a lado; passou disso, duas linhas (a de baixo dividindo a largura toda). */
+export function gridFitCols(n: number, max: number): GridFit {
+  const count = Math.max(1, n);
+  const m = Math.max(1, max);
+  const cols = count <= m ? count : Math.min(m, Math.ceil(count / Math.ceil(count / m)));
+  const rows = Math.ceil(count / cols);
+  const last = count % cols || cols;
+  const units = (cols * last) / gcd(cols, last);
+  return { cols, rows, units, unit: units / cols, lastUnit: units / last, lastStart: (rows - 1) * cols };
+}
+
 /** Coluna da grade que a janela `i` ocupa. */
 export const spanOf = (g: GridFit, i: number) => (i >= g.lastStart ? g.lastUnit : g.unit);
 

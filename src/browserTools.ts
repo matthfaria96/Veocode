@@ -11,7 +11,7 @@ import {
   pageOf, plain, reloadTab, selectTab, setBrPref, setTabUrl, snapshot, stuckOf, tell, viewports, type Viewport,
 } from "./browser";
 import { portsOfTerm, servicesOf, termOfService } from "./envs";
-import { debugOpen, focusMode, projMode, setDebugOpen, setDebugTab } from "./layoutMode";
+import { chatFull, debugOpen, projMode, setDebugOpen, setDebugTab } from "./layoutMode";
 import { currentProject, projects, view } from "./store";
 
 type Content = { type: "text"; text: string } | { type: "image"; data: string; mimeType: string };
@@ -185,7 +185,7 @@ async function open(pid: string, raw: string, fresh: boolean): Promise<Result> {
 /** Imagem da página como a pessoa vê (no tamanho de tela escolhido). JPEG em 1x: leve para a IA. */
 async function screenshot(pid: string): Promise<Result> {
   const t = await readyTab(pid);
-  if (focusMode()) throw new Refusal("The browser panel is hidden because Veocode is in focus mode (all conversations side by side). Ask the person to leave focus mode to take a screenshot.");
+  if (chatFull()) throw new Refusal("The browser panel is hidden because the conversation is in full screen in Veocode. Ask the person to leave full screen (Esc) to take a screenshot.");
   const f = frameOf(pid, t.id)!;
   await sleep(150);
   const r = f.getBoundingClientRect();

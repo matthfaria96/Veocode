@@ -16,11 +16,10 @@ import { CACHE_TTL, fmtTokens, weightOf } from "../convTabs";
 import MsgTools, { focusComposer } from "../components/MsgTools";
 import { MicButton } from "../components/Mic";
 import { LimitHitCard, UsageRing } from "../components/Limits";
-import { AgentChipButton, AgentMenu } from "../components/AgentMenu";
+import { AgentChipButton, AgentMenu, LevelChip, LevelMenu } from "../components/AgentMenu";
 import { ContextChip } from "../components/ContextPanel";
 import { ProjectIcon } from "../components/icons";
 import { ProviderMark } from "../components/ui";
-import { dismissable } from "../dismiss";
 import { projectLive, shortAgo } from "../convList";
 import { addProjectFromPicker, projects, setProjectId, setView } from "../store";
 import { limitHit } from "../limits";
@@ -344,31 +343,11 @@ function Side(props: { open: boolean }) {
   );
 }
 
-/** O que a IA pode fazer no Chat livre: os quatro níveis, num menu em cima do selo. */
-function LevelMenu(props: { onClose: () => void }) {
-  return (
-    <div class="menu pop-in agent-menu level-menu" ref={(el) => dismissable(el, props.onClose)}>
-      <small class="menu-title">{tx("Permissão no Chat livre")}</small>
-      <For each={freeLevels}>
-        {(l, i) => (
-          <button class="menu-item level-item" classList={{ sel: settings.freeLevel === i() }} style={{ "--lc": l.color }} onClick={() => (props.onClose(), void setFreeLevel(i()))}>
-            <span class="level-dot" />
-            <span class="level-text">
-              <b>{l.name}</b>
-              <small>{l.description}</small>
-            </span>
-            <Show when={settings.freeLevel === i()}><Check size={14} class="menu-check" /></Show>
-          </button>
-        )}
-      </For>
-      <p class="agent-menu-note">{tx("Em qualquer nível, pastas de senhas e chaves (.ssh, .aws, chaveiro) ficam de fora.")}</p>
-    </div>
-  );
-}
-
 export default function Livre() {
   const [menu, setMenu] = createSignal(false);
   const [levelMenu, setLevelMenu] = createSignal(false);
+  let agentBtn: HTMLButtonElement | undefined;
+  let levelBtn: HTMLButtonElement | undefined;
   let scroller!: HTMLDivElement;
   let box!: HTMLTextAreaElement;
   let stick = true;
@@ -506,18 +485,16 @@ export default function Livre() {
                 <button class="icon-btn" classList={{ on: attsOf(LIVRE).length > 0 }} title={tx("Anexar arquivos ou imagens (ou cole com ⌘V, ou arraste do Finder)")} onClick={() => void pickFiles(LIVRE)}>
                   <Paperclip size={14} />
                 </button>
-                <AgentChipButton prefKey={LIVRE} accountId={a().id} open={menu()} disabled={livre.busy} title={livre.busy ? tx("Espere a resposta terminar para trocar") : tx("Conta, modelo e força do raciocínio do Chat livre")} onClick={() => (setLevelMenu(false), setMenu(!menu()))} />
-                <button
-                  class="composer-chip"
-                  classList={{ on: levelMenu() }}
-                  aria-haspopup="menu"
-                  style={{ "--lc": level().color }}
+                <AgentChipButton prefKey={LIVRE} accountId={a().id} open={menu()} btnRef={(el) => (agentBtn = el)} disabled={livre.busy} title={livre.busy ? tx("Espere a resposta terminar para trocar") : tx("Conta, modelo e força do raciocínio do Chat livre")} onClick={() => (setLevelMenu(false), setMenu(!menu()))} />
+                <LevelChip
+                  level={level()}
+                  label={level().name}
+                  open={levelMenu()}
+                  btnRef={(el) => (levelBtn = el)}
                   disabled={livre.busy}
                   title={livre.busy ? tx("Espere a resposta terminar para trocar") : tx("Permissão: o que a IA pode fazer no seu computador (clique para mudar)")}
                   onClick={() => (setMenu(false), setLevelMenu(!levelMenu()))}
-                >
-                  <ShieldCheck size={13} /> <span>{level().name}</span>
-                </button>
+                />
                 <Show when={a().provider === "claude"}>
                   <ContextChip k={LIVRE} />
                 </Show>
@@ -538,10 +515,18 @@ export default function Livre() {
                 </Show>
               </div>
               <Show when={menu()}>
-                <AgentMenu prefKey={LIVRE} accountId={a().id} title={tx("Conta no Chat livre")} onPick={(id) => void setFreeAccount(id)} onClose={() => setMenu(false)} />
+                <AgentMenu anchor={agentBtn} prefKey={LIVRE} accountId={a().id} title={tx("Conta no Chat livre")} onPick={(id) => void setFreeAccount(id)} onClose={() => setMenu(false)} />
               </Show>
               <Show when={levelMenu()}>
-                <LevelMenu onClose={() => setLevelMenu(false)} />
+                <LevelMenu
+                  anchor={levelBtn}
+                  title={tx("Permissão no Chat livre")}
+                  levels={freeLevels}
+                  current={settings.freeLevel}
+                  note={tx("Em qualquer nível, pastas de senhas e chaves (.ssh, .aws, chaveiro) ficam de fora.")}
+                  onPick={(i) => void setFreeLevel(i)}
+                  onClose={() => setLevelMenu(false)}
+                />
               </Show>
             </div>
           </div>

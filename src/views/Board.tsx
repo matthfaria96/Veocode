@@ -1,11 +1,11 @@
-import { ArrowUpRight, FolderMinus, FolderOpen, FolderPlus, GripVertical, LayoutGrid, Plus, SquareArrowOutUpRight } from "lucide-solid";
+import { FolderMinus, FolderOpen, FolderPlus, GripVertical, LayoutGrid, Plus, SquareArrowOutUpRight } from "lucide-solid";
 import { askCloseProject } from "../components/CloseProject";
 import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import { accountById } from "../accounts";
 import { api, isTauri } from "../api";
-import { inGrid, maximized, panes, projectState, replacePane, setMaximized, toneOrder } from "../board";
-import { gridFit, spanOf, useWidth } from "../gridFit";
+import { inGrid, maximized, panes, projectState, replacePane, setBoardCap, setMaximized, toneOrder } from "../board";
+import { gridFitCols, spanOf } from "../gridFit";
 import { drag, dropOver, startDrag } from "../drag";
 import { watchFeeds } from "../feeds";
 import { found, foundLoaded, loadFound, type Found } from "../found";
@@ -43,17 +43,39 @@ export default function Board() {
   onCleanup(() => window.removeEventListener("keydown", key));
 
   const shown = () => (maximized() && panes().includes(maximized()!) ? [maximized()!] : panes());
-  // grade que se ajusta ao número de projetos na tela (2, 3, 4, 6, 8, 9)
+  // quantas colunas cabem com folga (a conversa e a caixa inteiras): medido no espaço da grade.
+  // O que não cabe fica na barra de projetos, em cima, com a situação de cada um.
   let page!: HTMLDivElement;
-  const width = useWidth(() => page);
-  const fit = createMemo(() => gridFit(shown().length, width()));
-  const shelf = createMemo(() =>
-    [...real()].sort((a, b) => {
+  const [maxCols, setMaxCols] = createSignal(3);
+  const MIN_W = 400;
+  const MIN_H = 430;
+  const GAP = 12;
+  const measure = (el: HTMLDivElement) => {
+    const ro = new ResizeObserver(([e]) => {
+      const { width: w, height: h } = e.contentRect;
+      if (!w) return;
+      const cols = Math.max(1, Math.floor((w + GAP) / (MIN_W + GAP)));
+      const rows = h >= 2 * MIN_H + GAP ? 2 : 1;
+      setMaxCols(cols);
+      setBoardCap(cols * rows);
+    });
+    ro.observe(el);
+    onCleanup(() => ro.disconnect());
+  };
+  const fit = createMemo(() => gridFitCols(shown().length, maxCols()));
+  // a barra de cima: primeiro os da tela (na ordem das colunas), depois quem precisa de você,
+  // quem está trabalhando e quem mexeu por último
+  const shelf = createMemo(() => {
+    const on = panes();
+    return [...real()].sort((a, b) => {
+      const ia = on.indexOf(a.id);
+      const ib = on.indexOf(b.id);
+      if (ia >= 0 || ib >= 0) return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
       const sa = projectState(a.id);
       const sb = projectState(b.id);
-      return Number(inGrid(a.id)) - Number(inGrid(b.id)) || toneOrder[sa.tone] - toneOrder[sb.tone] || sb.at - sa.at || a.name.localeCompare(b.name);
-    }),
-  );
+      return toneOrder[sa.tone] - toneOrder[sb.tone] || sb.at - sa.at || a.name.localeCompare(b.name);
+    });
+  });
 
   // uma linha no topo: como estão as IAs agora (o detalhe fica em cada painel)
   const working = () => real().filter((p) => projectState(p.id).tone === "work").length;
@@ -81,37 +103,37 @@ export default function Board() {
         }
       >
         {/* com projetos na tela o espaço é deles: o título e o "como estão as IAs" só aparecem
-            com a tela vazia (o estado de cada um já está no próprio painel) */}
-        <Show when={shown().length} fallback={
+            com a tela vazia (o estado de cada um já está na barra de cima e no próprio painel) */}
+        <Show when={!shown().length}>
           <header class="home-top">
             <div class="home-title">
               <h1>{tx("Visão geral")}</h1>
               <p class="home-status" data-tone={status().tone}><i />{status().text}</p>
             </div>
-            <NeedsStrip />
           </header>
-        }>
-          <NeedsStrip />
-        </Show>
-        <Show
-          when={shown().length}
-          fallback={
-            <div class="board-empty" classList={{ "drop-on": dropOver() === "__empty", "is-dragging": !!drag() }} data-drop-pane="__empty">
-              <span class="board-empty-icon"><LayoutGrid size={22} /></span>
-              <strong>{tx("Nenhum projeto na tela")}</strong>
-              <span>{tx("Clique num projeto aqui embaixo, ou arraste ele para cá.")}</span>
-            </div>
-          }
-        >
-          <div
-            class="board-grid"
-            classList={{ "is-dragging": !!drag(), single: shown().length === 1 }}
-            style={{ "grid-template-columns": `repeat(${fit().units}, minmax(0, 1fr))`, "grid-template-rows": `repeat(${fit().rows}, minmax(${fit().rows > 2 ? 260 : 220}px, 1fr))`, "--rows": fit().rows }}
-          >
-            <For each={shown()}>{(id, i) => <ChatPane pid={id} index={i()} span={spanOf(fit(), i())} />}</For>
-          </div>
         </Show>
         <Dock />
+        <NeedsStrip />
+        <div class="board-cols" ref={measure}>
+          <Show
+            when={shown().length}
+            fallback={
+              <div class="board-empty" classList={{ "drop-on": dropOver() === "__empty", "is-dragging": !!drag() }} data-drop-pane="__empty">
+                <span class="board-empty-icon"><LayoutGrid size={22} /></span>
+                <strong>{tx("Nenhum projeto na tela")}</strong>
+                <span>{tx("Clique num projeto na barra de cima, ou arraste ele para cá.")}</span>
+              </div>
+            }
+          >
+            <div
+              class="board-grid"
+              classList={{ "is-dragging": !!drag(), single: shown().length === 1 }}
+              style={{ "grid-template-columns": `repeat(${fit().units}, minmax(0, 1fr))`, "grid-template-rows": `repeat(${fit().rows}, minmax(0, 1fr))`, "--rows": fit().rows }}
+            >
+              <For each={shown()}>{(id, i) => <ChatPane pid={id} index={i()} span={spanOf(fit(), i())} />}</For>
+            </div>
+          </Show>
+        </div>
       </Show>
 
       <Show when={drag()}>
@@ -191,41 +213,55 @@ export default function Board() {
     );
   }
 
-  /** Embaixo, numa faixa: os projetos que não estão na tela (clique põe na tela, arraste escolhe o lugar, clique direito abre o menu). */
+  /** Em cima, numa barra: todos os projetos, com a situação de cada um. Os da tela ficam
+   *  marcados (clique leva até a coluna); os outros entram na tela com um clique ou arrastando
+   *  até uma coluna. Dois cliques abrem o projeto; clique direito, o menu. */
   function Dock() {
-    const off = () => shelf().filter((p) => !inGrid(p.id));
     const [menu, setMenu] = createSignal<{ id: string; x: number; y: number } | null>(null);
+    const off = () => shelf().filter((p) => !inGrid(p.id)).length;
+    const goTo = (id: string) => {
+      if (maximized() && maximized() !== id) setMaximized(null);
+      const el = document.querySelector<HTMLElement>(`.board-grid [data-drop-pane="${CSS.escape(id)}"]`);
+      if (!el) return;
+      el.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+      el.classList.remove("flash");
+      void el.offsetWidth;
+      el.classList.add("flash");
+    };
     return (
-      <div class="home-dock" role="list" aria-label={tx("Projetos fora da tela")}>
-        <span class="dock-label">{tx("Outros projetos")}</span>
-        <For each={off()}>
-          {(p, i) => {
-            const st = () => projectState(p.id);
-            const a = () => accountById(p.accountId);
-            const open = () => (setProjectId(p.id), setView("workspace"));
-            return (
-              <div
-                class={`dock-item ${st().tone}`}
-                role="listitem"
-                classList={{ lifted: drag()?.id === p.id }}
-                style={{ "--c": a().color, "--i": i() }}
-                title={tx("{name} · {label}\nClique para pôr na tela · arraste até um painel para trocar · clique direito para mais", { name: p.name, label: st().label })}
-                onPointerDown={(e) => e.button === 0 && startDrag(e, p.id, "project", p.name, (target) => replacePane(target, p.id))}
-                onClick={() => replacePane(undefined, p.id)}
-                onContextMenu={(e) => (e.preventDefault(), setMenu({ id: p.id, x: e.clientX, y: e.clientY }))}
-              >
-                <ProjectIcon id={p.id} name={p.name} stack={p.stack} size={18} />
-                <span class="dock-name">{p.name}</span>
-                <i class="dock-dot" />
-                <button class="dock-open" title={tx("Abrir o projeto")} onPointerDown={(e) => e.stopPropagation()} onClick={(e) => (e.stopPropagation(), open())}><ArrowUpRight size={12} /></button>
-              </div>
-            );
-          }}
-        </For>
-        <Show when={!off().length}>
-          <span class="dock-note">{tx("Todos os projetos estão na tela")}</span>
+      <div class="home-dock" role="list" aria-label={tx("Projetos")}>
+        <div class="dock-list">
+          <For each={shelf()}>
+            {(p, i) => {
+              const st = () => projectState(p.id);
+              const a = () => accountById(p.accountId);
+              const here = () => inGrid(p.id);
+              const open = () => (setProjectId(p.id), setView("workspace"));
+              return (
+                <div
+                  class={`dock-item ${st().tone}`}
+                  role="listitem"
+                  classList={{ lifted: drag()?.id === p.id, here: here() }}
+                  style={{ "--c": a().color, "--i": i() }}
+                  title={here()
+                    ? tx("{name} · {label}\nNa tela: clique para ir até a coluna · dois cliques abrem o projeto", { name: p.name, label: st().label })
+                    : tx("{name} · {label}\nClique para pôr na tela · arraste até uma coluna para trocar · clique direito para mais", { name: p.name, label: st().label })}
+                  onPointerDown={(e) => e.button === 0 && startDrag(e, p.id, "project", p.name, (target) => replacePane(target, p.id))}
+                  onClick={() => (here() ? goTo(p.id) : replacePane(undefined, p.id))}
+                  onDblClick={open}
+                  onContextMenu={(e) => (e.preventDefault(), setMenu({ id: p.id, x: e.clientX, y: e.clientY }))}
+                >
+                  <ProjectIcon id={p.id} name={p.name} stack={p.stack} size={16} />
+                  <span class="dock-name">{p.name}</span>
+                  <i class="dock-dot" />
+                </div>
+              );
+            }}
+          </For>
+        </div>
+        <Show when={off() > 0}>
+          <span class="dock-note" title={tx("Projetos fora da tela: abra mais espaço (janela mais larga) ou troque uma coluna")}>{txn(off(), "{n} fora da tela", "{n} fora da tela")}</span>
         </Show>
-        <span class="dock-gap" />
         <AddCard dock />
         <Show when={menu()}>{(m) => <ProjectMenu id={m().id} at={{ x: m().x, y: m().y }} onClose={() => setMenu(null)} />}</Show>
       </div>

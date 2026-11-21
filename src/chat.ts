@@ -16,7 +16,7 @@ import { feedAgentEvent, setSeenAgent, type AgentEvent } from "./agentFeed";
 import { absPathOf, isDiffTab, projectId, projects, pushEvent, setWs, showToast, ws, type ActivityEvent } from "./store";
 import { handleLivre, LIVRE, newLivre } from "./livre";
 import { confirmAction } from "./dialogs";
-import { feedChat, feedUser } from "./feeds";
+import { feedAnchor, feedChat, feedConv, feedDrop, feedUser } from "./feeds";
 import { tx } from "./i18n";
 import { markForkBorn, setForkParent } from "./forks";
 
@@ -161,7 +161,7 @@ export function startChatEvents() {
 
 function handle(pid: string, e: ChatEvent) {
   ensure(pid);
-  feedChat(baseOf(pid), e as Parameters<typeof feedChat>[1]); // conversa guardada para o Painel
+  feedChat(pid, e as Parameters<typeof feedChat>[1]); // conversa guardada para a tela Início
   const here = projectId() === baseOf(pid);
   const acc = accountOf(pid);
   switch (e.kind) {
@@ -287,7 +287,7 @@ export async function sendChat(pid: string, rewind?: string, over?: { model?: st
   echoes.push({ text: norm(text), at: Date.now() });
   const shown = [text, attach ? `📎 ${attach}` : "", attLabel(files)].filter(Boolean).join("\n");
   rememberSent(shown, files.map((f) => f.thumb));
-  feedUser(baseOf(pid), shown);
+  const feedId = feedUser(pid, shown);
   let evId = 0;
   if (here) {
     evId = pushEvent({ kind: "user", title: shown, agent: "Você", status: "ok", tab: pid });
@@ -298,6 +298,7 @@ export async function sendChat(pid: string, rewind?: string, over?: { model?: st
     const anchor = await invoke<string | null>("chat_send", { projectId: pid, text, attach, files: files.map((f) => f.path), rewind: rewind ?? null, ...sendPrefs(baseOf(pid)), ...(over && "model" in over ? { model: over.model ?? null } : {}) });
     // guarda de onde este pedido saiu: dá para editá-lo depois e recomeçar dali
     if (evId && anchor != null) setWs("events", (x) => x.id === evId, "anchor", anchor);
+    if (anchor != null) feedAnchor(pid, feedId, anchor);
   } catch (e) {
     setChats(pid, produce((x) => {
       x.busy = false;
@@ -344,6 +345,8 @@ export async function resendEdited(pid: string, ev: ActivityEvent, text: string)
   }
   const idx = ws.events.findIndex((x) => x.id === ev.id);
   if (idx >= 0) setWs("events", (list) => list.filter((x, i) => i < idx || !ofChat(pid, x)));
+  // o pedido pode ter sido editado na tela Início (o evento é do feed dela)
+  feedDrop(pid, (x) => ofChat(pid, x), ev.id);
   setChats(pid, produce((c) => ((c.error = null), (c.draft = ""))));
   setInput(pid, text);
   await sendChat(pid, ev.anchor);
@@ -371,6 +374,7 @@ export async function answerPermission(pid: string, requestId: string, allow: bo
 /** Nova conversa: o Claude começa uma sessão nova; a API esquece o histórico. */
 export async function newChat(pid: string) {
   await invoke("chat_reset", { projectId: pid }).catch(() => {});
+  feedDrop(pid, (e) => ofChat(pid, e));
   setChats(pid, produce((c) => {
     c.busy = false;
     c.draft = "";
@@ -455,7 +459,10 @@ export async function openConversation(pid: string, c: Convo, quiet = false): Pr
     }));
     // a conversa que estava nesta aba sai da tela; as outras abas e o disco ficam. O pedaço
     // desta sessão que o leitor de fundo já trouxe (o fim dela) dá lugar ao histórico inteiro
-    const mine = new Set(ws.events.filter((e) => ofChat(pid, e) || (c.kind === "claude" && !e.tab && e.session === c.id)).map((e) => e.id));
+    const ours = (e: ActivityEvent) => ofChat(pid, e) || (c.kind === "claude" && !e.tab && e.session === c.id);
+    const mine = new Set(ws.events.filter(ours).map((e) => e.id));
+    // a tela Início também ganha a conversa inteira (lê a sessão de antes de trocar)
+    feedConv(pid, evs, ours, c.kind === "claude" ? c.id : undefined);
     setChats(pid, produce((x) => {
       x.session = c.kind === "claude" ? c.id : null;
       x.context = c.context ?? null;
@@ -495,13 +502,15 @@ export async function forkInto(key: string, parent: string, account: string, at:
       x.fork = { parent, at };
     }));
     setForkParent(key, parent);
+    // até o ponto escolhido: do pedido com essa âncora em diante fica de fora
+    const cut = at ? evs.findIndex((e) => e.kind === "user" && e.anchor === at) : -1;
+    const copied = (cut >= 0 ? evs.slice(0, cut) : evs).map((e) => ({ ...e, session: "" }));
+    feedConv(key, copied, (e) => ofChat(key, e));
     if (projectId() !== baseOf(key)) return true;
     const mine = new Set(ws.events.filter((e) => ofChat(key, e)).map((e) => e.id));
     setWs("events", (l) => l.filter((e) => !mine.has(e.id)));
     setSeenAgent(true);
-    // até o ponto escolhido: do pedido com essa âncora em diante fica de fora
-    const cut = at ? evs.findIndex((e) => e.kind === "user" && e.anchor === at) : -1;
-    for (const e of cut >= 0 ? evs.slice(0, cut) : evs) feedAgentEvent({ ...e, session: "", tab: key });
+    for (const e of copied) feedAgentEvent({ ...e, tab: key });
     return true;
   } catch (e) {
     showToast(errMsg(e));

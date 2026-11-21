@@ -60,21 +60,24 @@ export const topics: Topic[] = [
     title: "Visão geral",
     view: "board",
     where: "Primeiro ícone do menu lateral (⌘1).",
-    lead: "A tela de início: os projetos lado a lado, cada um com a conversa da IA ao vivo. Em cima, uma linha diz se algo precisa de você.",
+    lead: "A tela de início: os projetos lado a lado em colunas, cada uma com o chat completo do projeto. Em cima, a barra com todos os projetos e o estado de cada um.",
     sections: [
       {
         title: "Na tela",
         items: [
           "Os projetos entram sozinhos: quem pede você vem primeiro, depois quem está trabalhando e quem mexeu por último.",
-          "A grade se ajusta ao número de projetos, até nove de uma vez. Dá para conversar direto em cada um.",
+          "Cabem tantas colunas quanto a janela permite, sem ficarem apertadas: janela maior, mais colunas (até oito).",
+          "Cada coluna tem o chat completo do projeto, com uma aba para cada conversa rodando ao mesmo tempo e o + para começar outra.",
+          "Os dois ícones no topo da coluna trocam entre IA (a conversa) e Código (o que mudou, commit e terminal).",
           "Arraste um projeto pelo título até outro para trocar de lugar. O ✕ tira da tela, e a IA continua trabalhando.",
-          "Os botões de cada um ampliam na tela toda e abrem o projeto completo. No ⋯, fixe no lugar para ele não sair sozinho.",
+          "O botão de tela cheia amplia uma coluna, e as outras continuam rodando. No ⋯: abrir o projeto completo, nova conversa e fixar no lugar.",
         ],
       },
       {
-        title: "Outros projetos",
+        title: "Barra de projetos",
         items: [
-          "A barra de baixo tem os projetos que não estão na tela. Clique para pôr na tela, ou arraste até um painel para trocar.",
+          "A barra de cima tem todos os projetos, com uma bolinha de estado. Os que estão na tela ficam marcados, e um clique leva até a coluna.",
+          "Clique num projeto fora da tela para pôr na tela, ou arraste até uma coluna para trocar. Dois cliques abrem o projeto.",
           "O clique direito abre, mostra no Finder ou fecha o projeto.",
           "\"Adicionar projeto\" sugere as pastas onde você já usou o Claude. Também dá para escolher outra no Finder.",
         ],
@@ -154,6 +157,7 @@ export const topics: Topic[] = [
         items: [
           "Os passos ficam numa linha cinza (\"Executou 4 comandos, leu 2 arquivos ›\"). Clique para ver um por um.",
           "A última linha diz o que ela está fazendo e há quanto tempo (\"Executando um comando · 4 min 47 s\").",
+          "Os números verdes e vermelhos (+12 −3) são as linhas que ela mudou. Clique para ver a mudança no Git, no modo Código.",
           "A lista de tarefas dela vira um cartão: ✓ nas feitas, girando na de agora, um círculo nas que faltam.",
           "Quando ela precisa de permissão, aparece um cartão com Permitir e Recusar.",
           "Parar, na linha de baixo (ou Esc na caixa), para tudo: a resposta, os comandos e os ajudantes dela. A conversa fica salva.",
@@ -164,7 +168,7 @@ export const topics: Topic[] = [
         title: "Conversas",
         items: [
           "A lista junta as conversas do Veocode, do Terminal e do editor. Clique para continuar de onde parou.",
-          "Várias conversas podem trabalhar ao mesmo tempo. O botão de grade mostra todas lado a lado.",
+          "Várias conversas podem trabalhar ao mesmo tempo, cada uma na sua aba. A tela cheia (no topo da conversa; Esc sai) esconde a lista e o painel da direita.",
           "Grupos juntam conversas do mesmo assunto: \"Novo grupo\", embaixo da lista, e \"Mover para o grupo\" no ⋯ da conversa.",
           "Embaixo, \"Ativas\" deixa só as que estão trabalhando ou esperando você.",
           "Local | Nuvem troca para as sessões do Claude Code na nuvem (claude.ai/code): comece uma, acompanhe pelo link ou traga para este computador.",

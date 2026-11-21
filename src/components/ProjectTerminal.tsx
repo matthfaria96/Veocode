@@ -3,7 +3,7 @@ import { createEffect, For, on, onCleanup, onMount, Show, type JSX } from "solid
 import { accountById } from "../accounts";
 import { isTauri, prettyPath } from "../api";
 import { prefsOf } from "../chatPrefs";
-import { currentProject } from "../store";
+import { currentProject, projects } from "../store";
 import { closeTerm, pendingRun, setActiveTerm, takeRun, terms, writeTerm } from "../terminal";
 import { fitNow, loadExisting, mount, openIn } from "../termView";
 import { tx } from "../i18n";
@@ -13,8 +13,9 @@ import { ClaudeLogo } from "./ui";
 const short = (s: string) => (s.length > 44 ? `…${s.slice(-43)}` : s);
 
 /** Terminal de verdade do projeto: abas, um shell por aba, aberto na pasta do projeto. */
-export default function ProjectTerminal(props: { tools?: JSX.Element }) {
-  const p = currentProject;
+/** `pid`: o projeto (na tela Início, o da coluna); sem ele, o aberto na tela Projetos. */
+export default function ProjectTerminal(props: { tools?: JSX.Element; pid?: string }) {
+  const p = () => (props.pid && projects.find((x) => x.id === props.pid)) || currentProject();
   const pid = () => p().id;
   const list = () => terms.byProject[pid()] ?? [];
   const active = () => terms.active[pid()] ?? "";

@@ -1,12 +1,12 @@
-import { AlertTriangle, ArrowUp, Eye, ArrowLeft, Ban, Check, FileCode2, History, Loader2, Maximize2, MessageSquarePlus, Pencil, Paperclip, Plus, SendHorizontal, Shrink, ShieldCheck, Square, TerminalSquare, X } from "lucide-solid";
+import { AlertTriangle, ArrowUp, Eye, ArrowLeft, Ban, Check, FileCode2, History, Loader2, MessageSquarePlus, Pencil, Paperclip, Plus, SendHorizontal, Shrink, ShieldCheck, Square, TerminalSquare, X } from "lucide-solid";
 import { createEffect, createMemo, createSignal, For, Match, on, Show, Switch } from "solid-js";
 import { accessLevels } from "../data/mock";
 import { accountById } from "../accounts";
-import { currentProject, isDiffTab, setWs, showToast, ws, type ActivityEvent } from "../store";
+import { currentProject, isDiffTab, projects, setWs, showToast, ws, type ActivityEvent } from "../store";
 import { seenAgent } from "../agentFeed";
-import { acc, loadAccess, openClaude } from "../access";
+import { acc, loadAccess, openClaude, setLevel } from "../access";
 import { answerPermission, chatOf, clearError, deleteConvos, ofChat, resendEdited, sendChat, setAttach, setInput, stopChat, type Convo } from "../chat";
-import { activeKey, closeTab, forkConversation, nameFromPrompt, openInTab, selectTab, startConversation, syncRunning, tabsOf, wakeActive, wakeTab, type ConvTab } from "../convTabs";
+import { activeKey, forkConversation, nameFromPrompt, openInTab, startConversation, syncRunning, tabsOf, wakeActive } from "../convTabs";
 import { dropFromHist, histLoaded, histLoading, histOf, loadHist } from "../convHist";
 import { ConvTabsBar, EconomyHint } from "./ConvBar";
 import { ContextChip } from "./ContextPanel";
@@ -15,7 +15,7 @@ import { ProjectIcon } from "./icons";
 import { isTauri } from "../api";
 import ConvoRow from "./ConvoRow";
 import { setChatTab } from "../git";
-import { focusMode, panelAt, setFocusMode, setPanelAt } from "../layoutMode";
+import { panelAt, setPanelAt } from "../layoutMode";
 import BottomPanel from "./BottomPanel";
 import { MicButton } from "./Mic";
 import { LimitHitCard, requestSwitch, UsageRing } from "./Limits";
@@ -25,20 +25,19 @@ import { attsOf, dropPid, pasteFiles, pickFiles } from "../attachments";
 import AttachBar from "./AttachBar";
 import { MediaStrip, SentThumbs } from "./Media";
 import ActivityIcon, { kindColor } from "./ActivityIcon";
-import { AgentChipButton, AgentMenu } from "./AgentMenu";
+import { AgentChipButton, AgentMenu, LevelChip, LevelMenu } from "./AgentMenu";
 import MsgTools, { focusComposer } from "./MsgTools";
 import Markdown from "./Markdown";
 import { LiveLine, LongText, latestPlan, PlanCard, useClock, WorkFold } from "./Work";
 import StopOutside from "./StopOutside";
 import { markStopped, outsideTurn } from "../outside";
 import { tx, txn } from "../i18n";
-import { gridFit, spanOf, useWidth } from "../gridFit";
 
 /**
  * Rola junto com o fim da conversa só enquanto você está perto dele; subiu para ler, fica onde
  * está (como no Claude). Trocar de conversa ou mandar um pedido volta para o fim.
  */
-function useFollow(el: () => HTMLElement | undefined, changes: () => unknown, reset: () => unknown, force: () => boolean) {
+export function useFollow(el: () => HTMLElement | undefined, changes: () => unknown, reset: () => unknown, force: () => boolean) {
   let stick = true;
   let mine = 0; // rolagem feita aqui (não é você rolando)
   const bottom = (smooth: boolean) =>
@@ -116,13 +115,16 @@ function RealIdle(props: { onAccess: () => void; onConvos: () => void }) {
 }
 
 const fileName = (p: string) => p.slice(p.lastIndexOf("/") + 1);
+/** O projeto destas peças: o da tela Início que pediu (`pid`) ou o aberto na tela Projetos. */
+const projectFor = (pid?: string) => () => (pid && projects.find((x) => x.id === pid)) || currentProject();
 
 type Block = { t: "user" | "say" | "done" | "compact"; e: ActivityEvent } | { t: "work"; items: ActivityEvent[] };
 
 /** Conversa real: pedidos, respostas e os passos do Claude (lidos do histórico dele). */
-function RealConversation(props: { events: () => ActivityEvent[]; tail?: boolean; k?: string }) {
+export function RealConversation(props: { events: () => ActivityEvent[]; tail?: boolean; k?: string; pid?: string }) {
+  const proj = projectFor(props.pid);
   // editar um pedido já mandado (como no Claude): o texto volta na própria bolha
-  const key = () => props.k ?? activeKey(currentProject().id);
+  const key = () => props.k ?? activeKey(proj().id);
   const [editing, setEditing] = createSignal<number | null>(null);
   const [draft, setDraft] = createSignal("");
   const clean = (t: string) => t.replace(/\n📎[^\n]*/g, "").trim();
@@ -166,11 +168,11 @@ function RealConversation(props: { events: () => ActivityEvent[]; tail?: boolean
   };
   // ramo daqui: só nas conversas do Claude que já têm sessão (a âncora vem do histórico dele)
   const forkAt = (e: ActivityEvent) => {
-    const pid = currentProject().id;
+    const pid = proj().id;
     const c = chatOf(key());
     const parent = c.session ?? c.fork?.parent;
     if (!parent || e.anchor === undefined || e.anchor.startsWith("api:")) return undefined;
-    return () => void forkConversation(pid, { session: parent, account: currentProject().accountId, title: tabsOf(pid).find((t) => t.key === key())?.title ?? "Conversa" }, { anchor: e.anchor!, text: clean(e.title) });
+    return () => void forkConversation(pid, { session: parent, account: proj().accountId, title: tabsOf(pid).find((t) => t.key === key())?.title ?? "Conversa" }, { anchor: e.anchor!, text: clean(e.title) });
   };
 
 
@@ -225,7 +227,7 @@ function RealConversation(props: { events: () => ActivityEvent[]; tail?: boolean
               <Match when={b()?.t === "say" && (b() as { e: ActivityEvent }).e}>
                 {(e) => (
                   <Show when={limitHit(e().title)} fallback={<div class="bubble agent pop-in say md-bubble" style={{ "--c": e().color ?? "var(--accent)" }}><Markdown text={e().title} /><MsgTools text={e().title} /></div>}>
-                    {(h) => <LimitHitCard accountId={currentProject().accountId} win={h().win} raw={h().raw} onPick={(id) => requestSwitch(currentProject().id, id)} />}
+                    {(h) => <LimitHitCard accountId={proj().accountId} win={h().win} raw={h().raw} onPick={(id) => requestSwitch(proj().id, id)} />}
                   </Show>
                 )}
               </Match>
@@ -251,13 +253,13 @@ function RealConversation(props: { events: () => ActivityEvent[]; tail?: boolean
                 )}
               </Match>
               <Match when={b()?.t === "work" && (b() as { items: ActivityEvent[] }).items}>
-                {(items) => <WorkFold steps={items()} pid={currentProject().demo ? null : currentProject().id} />}
+                {(items) => <WorkFold steps={items()} pid={proj().demo ? null : proj().id} />}
               </Match>
             </Switch>
           );
         }}
       </For>
-      <Show when={props.tail !== false}><ChatTail k={props.k} events={props.events} /></Show>
+      <Show when={props.tail !== false}><ChatTail k={props.k} pid={props.pid} events={props.events} /></Show>
     </>
   );
 }
@@ -337,8 +339,8 @@ function Conversations(props: { onClose: () => void }) {
 }
 
 /** Lista de tarefas, o que a IA está fazendo agora (e há quanto tempo), texto chegando, pedidos de permissão e erro. */
-function ChatTail(props: { k?: string; events?: () => ActivityEvent[] }) {
-  const p = currentProject;
+export function ChatTail(props: { k?: string; pid?: string; events?: () => ActivityEvent[] }) {
+  const p = projectFor(props.pid);
   const ck = () => props.k ?? activeKey(p().id);
   const chat = () => chatOf(ck());
   const a = () => accountById(p().accountId);
@@ -409,15 +411,19 @@ function ChatTail(props: { k?: string; events?: () => ActivityEvent[] }) {
 }
 
 /** Caixa de mensagem: Enter envia, Shift+Enter quebra linha. */
-function Composer(props: { onLevel: () => void; k?: string; compact?: boolean }) {
-  const p = currentProject;
+export function Composer(props: { onLevel: () => void; k?: string; compact?: boolean; pid?: string; placeholder?: string }) {
+  const p = projectFor(props.pid);
   const k = () => props.k ?? activeKey(p().id);
   const chat = () => chatOf(k());
   const a = () => accountById(p().accountId);
   const level = () => accessLevels[p().access];
   const demo = () => p().demo || !isTauri;
-  const canAttach = () => !demo() && !!ws.activeFile && !isDiffTab(ws.activeFile);
+  // o arquivo aberto no editor só vale na tela do projeto (na tela Início não há editor à vista)
+  const canAttach = () => !props.pid && !demo() && !!ws.activeFile && !isDiffTab(ws.activeFile);
   const [menu, setMenu] = createSignal(false);
+  const [levelMenu, setLevelMenu] = createSignal(false);
+  let agentBtn: HTMLButtonElement | undefined;
+  let levelBtn: HTMLButtonElement | undefined;
   // bolinha no nível enquanto ele não vale de verdade no projeto
   const unapplied = () => isTauri && !p().demo && acc.reports[p().id]?.fileState.state !== "aplicado";
   let box!: HTMLTextAreaElement;
@@ -438,7 +444,7 @@ function Composer(props: { onLevel: () => void; k?: string; compact?: boolean })
   return (
     <>
     <Show when={!demo() && !props.compact}><MediaStrip pid={p().id} /></Show>
-    <Show when={!demo() && !props.compact}><EconomyHint pid={p().id} /></Show>
+    <Show when={!demo() && !props.compact}><EconomyHint pid={p().id} k={k()} /></Show>
     <div class="composer" classList={{ busy: chat().busy, dropping: dropPid() === k(), listening: listeningTo(k()) }} data-attach-pid={demo() ? undefined : k()}>
       <AttachBar
         pid={k()}
@@ -466,7 +472,7 @@ function Composer(props: { onLevel: () => void; k?: string; compact?: boolean })
         rows={props.compact ? 1 : 2}
         value={chat().input}
         readOnly={listeningTo(k())}
-        placeholder={listeningTo(k()) ? tx("Pode falar… (Enter para, Esc cancela)") : props.compact ? tx("Pedir algo… (Enter envia)") : tx("Pedir algo a {label}… (Enter envia, ⌥ Espaço para falar)", { label: a().label })}
+        placeholder={listeningTo(k()) ? tx("Pode falar… (Enter para, Esc cancela)") : props.placeholder ? props.placeholder : props.compact ? tx("Pedir algo… (Enter envia)") : tx("Pedir algo a {label}… (Enter envia, ⌥ Espaço para falar)", { label: a().label })}
         onPaste={(e) => !demo() && void pasteFiles(k(), e)}
         onInput={(e) => {
           setInput(k(), e.currentTarget.value);
@@ -486,10 +492,16 @@ function Composer(props: { onLevel: () => void; k?: string; compact?: boolean })
         <button class="icon-btn" classList={{ on: attsOf(k()).length > 0 }} disabled={demo()} title={tx("Anexar arquivos ou imagens (ou cole com ⌘V, ou arraste do Finder)")} onClick={() => void pickFiles(k())}>
           <Paperclip size={14} />
         </button>
-        <AgentChipButton prefKey={p().id} accountId={a().id} open={menu()} title={tx("Conta, modelo e força do raciocínio deste projeto")} onClick={() => setMenu(!menu())} />
-        <button class="composer-chip" classList={{ on: isOpen("access", p().id), unapplied: unapplied() }} aria-haspopup="dialog" style={{ "--lc": level().color }} title={unapplied() ? tx("Nível de acesso: ainda não vale no Claude Code, clique para gravar") : tx("Nível de acesso: o que a IA pode fazer aqui (clique para mudar)")} onClick={props.onLevel}>
-          <ShieldCheck size={13} /> <span>{level().short}</span>
-        </button>
+        <AgentChipButton prefKey={p().id} accountId={a().id} open={menu()} btnRef={(el) => (agentBtn = el)} title={tx("Conta, modelo e força do raciocínio deste projeto")} onClick={() => (setLevelMenu(false), setMenu(!menu()))} />
+        <LevelChip
+          level={level()}
+          label={level().short}
+          open={levelMenu() || isOpen("access", p().id)}
+          unapplied={unapplied()}
+          btnRef={(el) => (levelBtn = el)}
+          title={unapplied() ? tx("Nível de acesso: ainda não vale no Claude Code, clique para gravar") : tx("Nível de acesso: o que a IA pode fazer aqui (clique para mudar)")}
+          onClick={() => (setMenu(false), setLevelMenu(!levelMenu()))}
+        />
         <Show when={!demo() && !props.compact && a().provider === "claude"}>
           <ContextChip k={k()} />
         </Show>
@@ -510,67 +522,23 @@ function Composer(props: { onLevel: () => void; k?: string; compact?: boolean })
         </Show>
       </div>
       <Show when={menu()}>
-        <AgentMenu prefKey={p().id} accountId={a().id} title={tx("Conta neste projeto")} terminal onPick={(id) => requestSwitch(p().id, id)} onClose={() => setMenu(false)} />
+        <AgentMenu anchor={agentBtn} prefKey={p().id} accountId={a().id} title={tx("Conta neste projeto")} terminal onPick={(id) => requestSwitch(p().id, id)} onClose={() => setMenu(false)} />
+      </Show>
+      <Show when={levelMenu()}>
+        <LevelMenu
+          anchor={levelBtn}
+          title={tx("Acesso neste projeto")}
+          levels={accessLevels.map((l) => ({ name: l.short, description: l.description, color: l.color }))}
+          current={p().access}
+          note={unapplied() ? tx("Ainda não vale no Claude Code: abra as regras para gravar no projeto.") : undefined}
+          onPick={(i) => void setLevel(p().id, i)}
+          onMore={props.onLevel}
+          moreLabel={tx("Regras e arquivo do Claude…")}
+          onClose={() => setLevelMenu(false)}
+        />
       </Show>
     </div>
     </>
-  );
-}
-
-/** Modo foco: todas as conversas (abas) do projeto ao mesmo tempo, cada uma com a sua caixa. */
-function FocusGrid(props: { pid: string; onLevel: () => void }) {
-  const list = () => tabsOf(props.pid);
-  let grid!: HTMLDivElement;
-  const width = useWidth(() => grid);
-  // cada aba carrega a sua conversa (a da frente já está carregada)
-  createEffect(on(() => list().map((t) => t.key).join(","), () => list().forEach((t) => wakeTab(props.pid, t.key))));
-  // a aba escolhida na barra vem para a vista
-  createEffect(on(() => activeKey(props.pid), (k) => requestAnimationFrame(() => grid?.querySelector(`[data-chat-key="${k}"]`)?.scrollIntoView({ block: "nearest", behavior: "smooth" })), { defer: true }));
-  const layout = createMemo(() => gridFit(list().length, width()));
-  return (
-    <div
-      class="focus-grid"
-      ref={grid}
-      style={{ "grid-template-columns": `repeat(${layout().units}, minmax(0, 1fr))`, "grid-template-rows": `repeat(${layout().rows}, minmax(${layout().rows > 2 ? 280 : 240}px, 1fr))` }}
-    >
-      <For each={list()}>
-        {(t, i) => <FocusTile pid={props.pid} tab={t} span={spanOf(layout(), i())} onLevel={props.onLevel} />}
-      </For>
-    </div>
-  );
-}
-
-function FocusTile(props: { pid: string; tab: ConvTab; span: number; onLevel: () => void }) {
-  const k = () => props.tab.key;
-  const c = () => chatOf(k());
-  const events = createMemo(() => ws.events.filter((e) => ofChat(k(), e)));
-  const active = () => activeKey(props.pid) === k();
-  const state = () => (c().perms.length ? tx("esperando você") : c().busy ? tx("trabalhando") : c().error ? tx("com erro") : events().length ? "" : tx("vazia"));
-  let scroller!: HTMLDivElement;
-  const follow = useFollow(() => scroller, () => [events().length, c().draft.length >> 6, c().perms.length, c().error], k, () => events()[events().length - 1]?.kind === "user");
-  return (
-    <section
-      class="focus-tile pop-in"
-      classList={{ on: active(), busy: c().busy, ask: c().perms.length > 0, err: !!c().error }}
-      style={{ "grid-column": `span ${props.span}` }}
-      data-chat-key={k()}
-      onFocusIn={() => !active() && selectTab(props.pid, k())}
-    >
-      <header class="focus-head">
-        <i class="conv-dot" />
-        <strong title={tx(props.tab.title)}>{tx(props.tab.title)}</strong>
-        <small>{state()}</small>
-        <span class="composer-gap" />
-        <button class="icon-btn small" title={tx("Abrir só esta conversa (sai do modo foco)")} onClick={() => (selectTab(props.pid, k()), setFocusMode(false))}><Maximize2 size={13} /></button>
-        <button class="icon-btn small" title={tx("Fechar a aba (a conversa fica no histórico)")} onClick={() => void closeTab(props.pid, k())}><X size={13} /></button>
-      </header>
-      <div class="chat-scroll focus-scroll" ref={scroller} onScroll={follow}>
-        <Show when={events().length > 0 || c().busy || c().error} fallback={<div class="focus-empty"><MessageSquarePlus size={18} /><span>{tx("Conversa nova: peça algo aqui embaixo.")}</span></div>}>
-          <RealConversation events={events} tail k={k()} />
-        </Show>
-      </div>
-      <Composer k={k()} compact onLevel={props.onLevel} />
-    </section>
   );
 }
 
@@ -608,7 +576,6 @@ export default function ChatPanel(props: { slim?: boolean }) {
     }
   }));
   const real = () => isTauri && !project().demo;
-  const focusOn = () => focusMode() && real() && view() === "chat";
   const key = () => activeKey(project().id);
   // aba reaberta depois de fechar o app: a conversa dela está voltando (não é uma conversa nova)
   const waking = () => {
@@ -652,10 +619,7 @@ export default function ChatPanel(props: { slim?: boolean }) {
               <BottomPanel asTab />
             </div>
           </Show>
-          <Show when={focusOn()}>
-            <FocusGrid pid={project().id} onLevel={() => openAccess(project().id)} />
-          </Show>
-          <div class="chat-scroll" ref={scroller} onScroll={follow} data-target="chat" classList={{ hidden: (convos() && real()) || view() === "act" || focusOn() }}>
+          <div class="chat-scroll" ref={scroller} onScroll={follow} data-target="chat" classList={{ hidden: (convos() && real()) || view() === "act" }}>
             <Show when={ext() && real()}>
               <div class="ext-head pop-in">
                 <span class="ext-head-icon"><Eye size={15} /></span>
@@ -691,7 +655,7 @@ export default function ChatPanel(props: { slim?: boolean }) {
               </Show>
             </Show>
           </div>
-          <Show when={!focusOn() && (view() === "chat" || view() === "hist")} fallback={<Show when={ext()}><p class="ext-note">{tx("Sessões do Claude abertas fora do Veocode nesta pasta (Terminal, editor, app do Claude). Aqui é só para acompanhar: para conversar, use uma aba sua.")}</p></Show>}>
+          <Show when={view() === "chat" || view() === "hist"} fallback={<Show when={ext()}><p class="ext-note">{tx("Sessões do Claude abertas fora do Veocode nesta pasta (Terminal, editor, app do Claude). Aqui é só para acompanhar: para conversar, use uma aba sua.")}</p></Show>}>
             <Composer onLevel={() => openAccess(project().id)} />
           </Show>
     </aside>

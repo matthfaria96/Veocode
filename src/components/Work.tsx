@@ -6,6 +6,7 @@ import { ChevronDown, Square } from "lucide-solid";
 import { createMemo, createResource, createSignal, For, onCleanup, Show } from "solid-js";
 import { imageUrl, isImagePath, openViewer } from "../media";
 import { stepsSummary } from "../steps";
+import { lineDelta, showChange } from "../showChange";
 import { tx } from "../i18n";
 import ActivityIcon, { kindColor } from "./ActivityIcon";
 import type { ActivityEvent } from "../store";
@@ -112,21 +113,72 @@ function Thumb(props: { pid: string; path: string; at?: number }) {
 
 // ---------------------------------------------------------------- bloco de passos
 
+// ---------------------------------------------------------------- linhas mudadas
+
+/** "+12 −3" em verde e vermelho; com projeto e arquivo, um clique abre a comparação no modo Código. */
+export function Delta(props: { add: number; del: number; pid?: string | null; path?: string | null; title?: string }) {
+  const can = () => !!props.pid;
+  const open = (e: MouseEvent | KeyboardEvent) => {
+    if (!can()) return;
+    e.stopPropagation();
+    showChange(props.pid!, props.path);
+  };
+  return (
+    <span
+      class="delta"
+      classList={{ link: can() }}
+      role={can() ? "link" : undefined}
+      tabIndex={can() ? 0 : undefined}
+      title={can() ? (props.title ?? (props.path ? tx("Ver o que mudou em {name} (Git, no modo Código)", { name: props.path }) : tx("Ver todas as mudanças (Git, no modo Código)"))) : undefined}
+      onClick={open}
+      onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), open(e))}
+    >
+      <Show when={props.add > 0 || props.del === 0}><b class="add">+{props.add}</b></Show>
+      <Show when={props.del > 0}><b class="del">−{props.del}</b></Show>
+    </span>
+  );
+}
+
+/** Soma das linhas que os passos mudaram (só o que deu certo), e o arquivo, se foi um só. */
+function deltaOf(steps: WorkStep[]): { add: number; del: number; path: string | null } | null {
+  let add = 0;
+  let del = 0;
+  const paths = new Set<string>();
+  let any = false;
+  for (const x of steps) {
+    if (x.status === "error") continue;
+    const d = lineDelta(x.kind, x.detail);
+    if (!d) continue;
+    any = true;
+    add += d.add;
+    del += d.del;
+    if (x.path) paths.add(x.path);
+  }
+  return any && (add || del) ? { add, del, path: paths.size === 1 ? [...paths][0] : null } : null;
+}
+
 /** Uma linha por passo: ícone, o que fez e o detalhe (ou girando, se ainda está rodando). */
-function WorkRows(props: { steps: WorkStep[] }) {
+function WorkRows(props: { steps: WorkStep[]; pid?: string | null }) {
   return (
     <For each={props.steps}>
-      {(x) => (
-        <div class="work-row" classList={{ running: x.status === "running", error: x.status === "error" }} title={x.detail ?? x.title}>
-          <span class="work-icon" style={{ color: kindColor[x.kind as ActivityEvent["kind"]] }}>
-            <ActivityIcon kind={x.kind as ActivityEvent["kind"]} />
-          </span>
-          <span class="work-title">{x.title}</span>
-          <Show when={x.status === "running"} fallback={<small class="work-detail">{x.status === "error" ? tx("falhou") : x.kind === "run" || x.kind === "plan" ? "" : x.detail}</small>}>
-            <span class="spinner" />
-          </Show>
-        </div>
-      )}
+      {(x) => {
+        const d = () => (x.status === "ok" ? lineDelta(x.kind, x.detail) : null);
+        return (
+          <div class="work-row" classList={{ running: x.status === "running", error: x.status === "error" }} title={x.detail ?? x.title}>
+            <span class="work-icon" style={{ color: kindColor[x.kind as ActivityEvent["kind"]] }}>
+              <ActivityIcon kind={x.kind as ActivityEvent["kind"]} />
+            </span>
+            <span class="work-title">{x.title}</span>
+            <Show when={x.status === "running"} fallback={
+              <Show when={d()} fallback={<small class="work-detail">{x.status === "error" ? tx("falhou") : x.kind === "run" || x.kind === "plan" ? "" : x.detail}</small>}>
+                {(v) => <small class="work-detail"><Delta add={v().add} del={v().del} pid={x.path ? props.pid : null} path={x.path} /></small>}
+              </Show>
+            }>
+              <span class="spinner" />
+            </Show>
+          </div>
+        );
+      }}
     </For>
   );
 }
@@ -139,6 +191,7 @@ export function WorkFold(props: { steps: WorkStep[]; pid?: string | null; max?: 
   const shown = () => (all() ? props.steps : props.steps.slice(-max()));
   const running = () => props.steps.some((x) => x.status === "running");
   const failed = () => props.steps.filter((x) => x.status === "error").length;
+  const delta = createMemo(() => deltaOf(props.steps));
   // imagens que ela abriu (as últimas três) aparecem na própria linha, como no Claude Code
   const images = createMemo(() => {
     if (!props.pid) return [];
@@ -150,7 +203,8 @@ export function WorkFold(props: { steps: WorkStep[]; pid?: string | null; max?: 
   return (
     <div class="work-fold pop-in" classList={{ open: open(), live: running() }}>
       <button class="work-sum" aria-expanded={open()} onClick={() => setOpen(!open())}>
-        <span class="work-sum-text">{stepsSummary(props.steps.map((x) => x.kind))}</span>
+        <span class="work-sum-text">{stepsSummary(props.steps.map((x) => x.kind), props.steps.map((x) => (x.status === "error" ? null : x.path)))}</span>
+        <Show when={delta()}>{(d) => <Delta add={d().add} del={d().del} pid={props.pid} path={d().path} />}</Show>
         <Show when={running()}><span class="spinner tiny" /></Show>
         <Show when={failed() > 0}><small class="work-sum-fail">{tx("{failed} falhou", { failed: failed() })}</small></Show>
         <ChevronDown size={13} class="work-chev" />
@@ -165,7 +219,7 @@ export function WorkFold(props: { steps: WorkStep[]; pid?: string | null; max?: 
           <Show when={props.steps.length > max() && !all()}>
             <button class="work-more" onClick={() => setAll(true)}>{tx("+{v} antes · mostrar tudo", { v: props.steps.length - max() })}</button>
           </Show>
-          <WorkRows steps={shown()} />
+          <WorkRows steps={shown()} pid={props.pid} />
         </div>
       </Show>
     </div>

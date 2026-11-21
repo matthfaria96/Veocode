@@ -2,11 +2,11 @@
 // Um componente só para Projetos e Chat livre: as duas caixas ficam sempre iguais. Nos projetos
 // ele tem também o Code mode do `claude` do Terminal (o Chat livre não tem terminal).
 
-import { Check, ChevronDown, SquareTerminal } from "lucide-solid";
-import { For, onMount, Show } from "solid-js";
+import { Check, ChevronDown, ShieldCheck, SlidersHorizontal, SquareTerminal } from "lucide-solid";
+import { For, onMount, Show, type JSX } from "solid-js";
 import { accountById, accountSub, accts } from "../accounts";
 import { claudeModels, CODE_MODE_MIN, cliVersion, efforts, niceModel, prefsLabel, prefsOf, readCliVersion, setPref, versionAtLeast } from "../chatPrefs";
-import { dismissable } from "../dismiss";
+import { AnchoredMenu } from "./Anchored";
 import { setProjMode, showTerm } from "../layoutMode";
 import { runInNewTerm } from "../terminal";
 import { LimitChip } from "./Limits";
@@ -14,10 +14,10 @@ import { ProviderMark, Toggle } from "./ui";
 import { tx } from "../i18n";
 
 /** Conta, logo e modelo escolhido. `prefKey` é onde ficam o modelo e o raciocínio (projeto ou Chat livre). */
-export function AgentChipButton(props: { prefKey: string; accountId: string; open: boolean; disabled?: boolean; title: string; onClick: () => void }) {
+export function AgentChipButton(props: { prefKey: string; accountId: string; open: boolean; disabled?: boolean; title: string; onClick: () => void; btnRef?: (el: HTMLButtonElement) => void }) {
   const a = () => accountById(props.accountId);
   return (
-    <button class="agent-chip-btn" classList={{ on: props.open }} disabled={props.disabled} title={props.title} onClick={props.onClick}>
+    <button class="agent-chip-btn" ref={props.btnRef} classList={{ on: props.open }} aria-haspopup="menu" aria-expanded={props.open} disabled={props.disabled} title={props.title} onClick={props.onClick}>
       <ProviderMark id={a().id} size={18} />
       <span class="agent-chip-name">{a().label}</span>
       <small>{niceModel(a().provider === "claude" ? prefsLabel(props.prefKey) ?? accountSub(a()) : accountSub(a()))}</small>
@@ -26,8 +26,8 @@ export function AgentChipButton(props: { prefKey: string; accountId: string; ope
   );
 }
 
-/** Abre para cima, saindo da caixa de mensagem. `terminal`: o projeto tem Terminal (mostra o Code mode). */
-export function AgentMenu(props: { prefKey: string; accountId: string; title: string; terminal?: boolean; onPick: (id: string) => void; onClose: () => void }) {
+/** Abre colado em cima do botão da IA. `terminal`: o projeto tem Terminal (mostra o Code mode). */
+export function AgentMenu(props: { anchor: HTMLElement | undefined; prefKey: string; accountId: string; title: string; terminal?: boolean; onPick: (id: string) => void; onClose: () => void }) {
   const account = () => accountById(props.accountId);
   const prefs = () => prefsOf(props.prefKey);
   onMount(() => props.terminal && readCliVersion());
@@ -42,7 +42,7 @@ export function AgentMenu(props: { prefKey: string; accountId: string; title: st
     showTerm();
   };
   return (
-    <div class="menu pop-in agent-menu" ref={(el) => dismissable(el, props.onClose)}>
+    <AnchoredMenu anchor={props.anchor} onClose={props.onClose} class="agent-menu" width={400} label={props.title}>
       <small class="menu-title">{props.title}</small>
       <For each={accts.list} fallback={<small class="inv-menu-empty">{tx("Nenhuma conta ainda: adicione em Contas e IAs")}</small>}>
         {(a) => (
@@ -111,6 +111,64 @@ export function AgentMenu(props: { prefKey: string; accountId: string; title: st
           </div>
         </Show>
       </Show>
-    </div>
+    </AnchoredMenu>
+  );
+}
+
+/** Um nível de acesso (ou de permissão do Chat livre) para o menu do selo. */
+export interface LevelOption {
+  name: string;
+  description: string;
+  color: string;
+}
+
+/** O selo do nível na caixa de mensagem (projetos e Chat livre: o mesmo desenho). */
+export function LevelChip(props: { level: LevelOption; label: string; open: boolean; unapplied?: boolean; disabled?: boolean; title: string; onClick: () => void; btnRef?: (el: HTMLButtonElement) => void }) {
+  return (
+    <button
+      class="composer-chip level-chip"
+      ref={props.btnRef}
+      classList={{ on: props.open, unapplied: props.unapplied }}
+      aria-haspopup="menu"
+      aria-expanded={props.open}
+      style={{ "--lc": props.level.color }}
+      disabled={props.disabled}
+      title={props.title}
+      onClick={props.onClick}
+    >
+      <ShieldIcon />
+      <span>{props.label}</span>
+    </button>
+  );
+}
+const ShieldIcon = () => <ShieldCheck size={13} />;
+
+/** Os níveis num menu colado em cima do selo. `extra`: o que vem embaixo da lista (ex.: as regras do projeto). */
+export function LevelMenu(props: { anchor: HTMLElement | undefined; title: string; levels: LevelOption[]; current: number; note?: string; onPick: (i: number) => void; onClose: () => void; onMore?: () => void; moreLabel?: string; extra?: JSX.Element }) {
+  return (
+    <AnchoredMenu anchor={props.anchor} onClose={props.onClose} class="agent-menu level-menu" width={360} label={props.title}>
+      <small class="menu-title">{props.title}</small>
+      <For each={props.levels}>
+        {(l, i) => (
+          <button class="menu-item level-item" classList={{ sel: props.current === i() }} style={{ "--lc": l.color }} onClick={() => (props.onClose(), props.current !== i() && props.onPick(i()))}>
+            <span class="level-dot" />
+            <span class="level-text">
+              <b>{l.name}</b>
+              <small>{l.description}</small>
+            </span>
+            <Show when={props.current === i()}><Check size={14} class="menu-check" /></Show>
+          </button>
+        )}
+      </For>
+      <Show when={props.note}><p class="agent-menu-note">{props.note}</p></Show>
+      <Show when={props.onMore}>
+        <div class="menu-sep" />
+        <button class="menu-item" onClick={() => (props.onClose(), props.onMore!())}>
+          <SlidersHorizontal size={15} />
+          <span>{props.moreLabel}</span>
+        </button>
+      </Show>
+      {props.extra}
+    </AnchoredMenu>
   );
 }
