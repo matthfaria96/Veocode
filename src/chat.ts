@@ -79,6 +79,7 @@ type ChatEvent =
   | { kind: "usage"; context: number }
   | { kind: "compact"; state: "running" | "done" | "failed"; before: number | null; after: number | null; detail: string | null }
   | { kind: "limits"; account: string; limits: Limits }
+  | { kind: "tool"; requestId: string; name: string; input: Record<string, unknown> }
   | { kind: "error"; message: string };
 
 const blank = (): ProjectChat => ({ busy: false, draft: "", perms: [], error: null, input: "", attach: false, conv: null, session: null, context: null, lastAt: null, fork: null });
@@ -152,6 +153,8 @@ export function startChatEvents() {
   listen<{ projectId: string } & ChatEvent>("chat-event", ({ payload: e }) => {
     // uso do plano que o Claude Code manda junto com a resposta: vale para a conta, não para a conversa
     if (e.kind === "limits") return applyLimits(e.account, e.limits);
+    // a IA usou o navegador do painel: quem faz é o navegador (carregado na hora, sem import circular)
+    if (e.kind === "tool") return void import("./browserTools").then((m) => m.runTool(e));
     return e.projectId === LIVRE ? handleLivre(e) : handle(e.projectId, e);
   });
 }
@@ -263,7 +266,8 @@ export const setInput = (pid: string, text: string) => (ensure(pid), setChats(pi
 export const setAttach = (pid: string, on: boolean) => (ensure(pid), setChats(pid, "attach", on));
 export const clearError = (pid: string) => chats[pid] && setChats(pid, "error", null);
 
-export async function sendChat(pid: string, rewind?: string) {
+/** `over`: troca o modelo só neste envio (ex.: o mapa do projeto feito com um modelo mais leve). */
+export async function sendChat(pid: string, rewind?: string, over?: { model?: string | null }) {
   ensure(pid);
   const c = chats[pid];
   const files = attsOf(pid);
@@ -291,7 +295,7 @@ export async function sendChat(pid: string, rewind?: string) {
     setWs("running", true);
   }
   try {
-    const anchor = await invoke<string | null>("chat_send", { projectId: pid, text, attach, files: files.map((f) => f.path), rewind: rewind ?? null, ...sendPrefs(baseOf(pid)) });
+    const anchor = await invoke<string | null>("chat_send", { projectId: pid, text, attach, files: files.map((f) => f.path), rewind: rewind ?? null, ...sendPrefs(baseOf(pid)), ...(over && "model" in over ? { model: over.model ?? null } : {}) });
     // guarda de onde este pedido saiu: dá para editá-lo depois e recomeçar dali
     if (evId && anchor != null) setWs("events", (x) => x.id === evId, "anchor", anchor);
   } catch (e) {

@@ -22,7 +22,7 @@ const useClock = () => {
   if (!clock) clock = window.setInterval(() => setNow(Date.now()), 60_000);
 };
 
-const ago = (ms: number) => {
+export const ago = (ms: number) => {
   const m = Math.round(ms / 60_000);
   return m < 60 ? `${m} min` : m < 1440 ? `${Math.round(m / 60)} h` : txn(Math.round(m / 1440), "{n} dia", "{n} dias");
 };

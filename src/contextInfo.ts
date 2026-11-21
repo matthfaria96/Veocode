@@ -8,6 +8,7 @@ import { isTauri } from "./api";
 import { modal, setModal } from "./modals";
 import { projects } from "./store";
 import { chatOf } from "./chat";
+import { LIVRE, livre } from "./livre";
 import { sendPrefs } from "./chatPrefs";
 import { tx } from "./i18n";
 import { tabsOf } from "./convTabs";
@@ -43,11 +44,18 @@ interface Entry {
   at: number;
   loading: boolean;
   error: string | null;
+  /** Chat livre: de qual conversa é a medição (a chave é sempre a mesma) */
+  conv?: number;
 }
 
 const [store, setStore] = createStore<Record<string, Entry>>({});
 const blank: Entry = { data: null, at: 0, loading: false, error: null };
-export const ctxOf = (key: string): Entry => store[key] ?? blank;
+const convOf = (key: string) => (key === LIVRE ? livre.convVer : undefined);
+/** A medição da conversa (no Chat livre, só se for da conversa aberta agora). */
+export const ctxOf = (key: string): Entry => {
+  const e = store[key];
+  return e && e.conv === convOf(key) ? e : blank;
+};
 
 /** Conversa com a janela do contexto aberta (a paleta de comandos abre por aqui também). */
 export const ctxPanel = (): string | null => {
@@ -58,7 +66,7 @@ export const ctxPanel = (): string | null => {
 /** Medição antiga: a conversa mexeu depois dela. */
 export const isStale = (key: string) => {
   const e = ctxOf(key);
-  return !e.data || (chatOf(key).lastAt ?? 0) > e.at;
+  return !e.data || ((key === LIVRE ? livre.lastAt : chatOf(key).lastAt) ?? 0) > e.at;
 };
 
 /** Total da janela do modelo, se já foi medido alguma vez nesta conversa. */
@@ -66,12 +74,13 @@ export const windowOf = (key: string) => ctxOf(key).data?.total ?? null;
 
 export async function measure(key: string) {
   if (ctxOf(key).loading) return;
-  setStore(key, { ...ctxOf(key), loading: true, error: null });
+  const conv = convOf(key);
+  setStore(key, { ...ctxOf(key), loading: true, error: null, conv });
   try {
     const base = key.split("~")[0];
     const sim = !isTauri || !!projects.find((p) => p.id === base)?.demo;
     const data = !sim ? await invoke<ContextData>("chat_context", { projectId: key, model: sendPrefs(base).model ?? null, session: chatOf(key).session ?? sessionOfTab(key) }) : demo();
-    setStore(key, { data, at: Date.now(), loading: false, error: null });
+    setStore(key, { data, at: Date.now(), loading: false, error: null, conv });
   } catch (e) {
     setStore(key, { ...ctxOf(key), loading: false, error: e instanceof Error ? e.message : String(e) });
   }

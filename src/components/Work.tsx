@@ -29,7 +29,9 @@ let timer = 0;
 /** Relógio de um segundo, ligado só enquanto alguém mostra um tempo correndo. */
 export function useClock() {
   if (users++ === 0) timer = window.setInterval(() => setNow(Date.now()), 1000);
-  setNow(Date.now());
+  // acerta o relógio (pode estar atrasado com a janela em segundo plano) logo depois de montar,
+  // não durante: mudar um sinal no meio da montagem fazia um <Show> sumir enquanto era criado
+  queueMicrotask(() => setNow(Date.now()));
   onCleanup(() => {
     if (--users === 0) clearInterval(timer);
   });
@@ -78,6 +80,7 @@ export function LiveLine(props: { color: string; step?: WorkStep | null; writing
       <span class="live-text" title={props.step?.title}>{props.stopping ? tx("Parando") : label()}</span>
       <span class="live-dots" aria-hidden="true"><i /><i /><i /></span>
       <small class="live-time">{elapsed(clock() - (props.since ?? mounted))}</small>
+
       <Show when={props.where}><small class="live-where">{props.where}</small></Show>
       <Show when={props.onStop}>
         <button class="live-stop" disabled={props.stopping} title={props.stopTitle ?? tx("Parar tudo o que ela está fazendo (Esc)")} onClick={() => props.onStop?.()}>
@@ -108,6 +111,25 @@ function Thumb(props: { pid: string; path: string; at?: number }) {
 }
 
 // ---------------------------------------------------------------- bloco de passos
+
+/** Uma linha por passo: ícone, o que fez e o detalhe (ou girando, se ainda está rodando). */
+function WorkRows(props: { steps: WorkStep[] }) {
+  return (
+    <For each={props.steps}>
+      {(x) => (
+        <div class="work-row" classList={{ running: x.status === "running", error: x.status === "error" }} title={x.detail ?? x.title}>
+          <span class="work-icon" style={{ color: kindColor[x.kind as ActivityEvent["kind"]] }}>
+            <ActivityIcon kind={x.kind as ActivityEvent["kind"]} />
+          </span>
+          <span class="work-title">{x.title}</span>
+          <Show when={x.status === "running"} fallback={<small class="work-detail">{x.status === "error" ? tx("falhou") : x.kind === "run" || x.kind === "plan" ? "" : x.detail}</small>}>
+            <span class="spinner" />
+          </Show>
+        </div>
+      )}
+    </For>
+  );
+}
 
 /** Passos fechados numa linha cinza; um clique abre a lista. */
 export function WorkFold(props: { steps: WorkStep[]; pid?: string | null; max?: number }) {
@@ -143,19 +165,7 @@ export function WorkFold(props: { steps: WorkStep[]; pid?: string | null; max?: 
           <Show when={props.steps.length > max() && !all()}>
             <button class="work-more" onClick={() => setAll(true)}>{tx("+{v} antes · mostrar tudo", { v: props.steps.length - max() })}</button>
           </Show>
-          <For each={shown()}>
-            {(x) => (
-              <div class="work-row" classList={{ running: x.status === "running", error: x.status === "error" }} title={x.detail ?? x.title}>
-                <span class="work-icon" style={{ color: kindColor[x.kind as ActivityEvent["kind"]] }}>
-                  <ActivityIcon kind={x.kind as ActivityEvent["kind"]} />
-                </span>
-                <span class="work-title">{x.title}</span>
-                <Show when={x.status === "running"} fallback={<small class="work-detail">{x.status === "error" ? tx("falhou") : x.kind === "run" || x.kind === "plan" ? "" : x.detail}</small>}>
-                  <span class="spinner" />
-                </Show>
-              </div>
-            )}
-          </For>
+          <WorkRows steps={shown()} />
         </div>
       </Show>
     </div>
@@ -165,14 +175,19 @@ export function WorkFold(props: { steps: WorkStep[]; pid?: string | null; max?: 
 // ---------------------------------------------------------------- lista de tarefas
 
 type Todo = { content: string; status: string; active?: string | null };
-type Op = { op: "create"; content: string; active?: string | null } | { op: "update"; id: string; status?: string | null; content?: string | null; active?: string | null };
+type Op =
+  | { op: "create"; content: string; active?: string | null }
+  | { op: "update"; id: string; status?: string | null; content?: string | null; active?: string | null }
+  // plano do app do Claude sem a lista: concluir/começar passos (números a partir de 1) e o fim do turno
+  | { op: "step"; advance?: boolean; done?: number[]; start?: number | null }
+  | { op: "finish" };
 
 function parseDetail(detail?: string | null): Todo[] | Op | null {
   if (!detail || (detail[0] !== "[" && detail[0] !== "{")) return null;
   try {
     const v = JSON.parse(detail);
     if (Array.isArray(v)) return v.length && v.every((t) => typeof t?.content === "string") ? (v as Todo[]) : null;
-    return v?.op === "create" || v?.op === "update" ? (v as Op) : null;
+    return ["create", "update", "step", "finish"].includes(v?.op) ? (v as Op) : null;
   } catch {
     return null;
   }
@@ -196,7 +211,22 @@ export function latestPlan(events: WorkStep[]): Todo[] | null {
     const d = parseDetail(e.detail);
     if (!d) continue;
     if (Array.isArray(d)) (full = d), (last = "full");
-    else if (d.op === "create") tasks.push({ id: String(++seq), content: d.content, active: d.active, status: "pending" }), (last = "tasks");
+    else if (d.op === "step" || d.op === "finish") {
+      if (!full) continue;
+      const l: Todo[] = (full as Todo[]).map((t) => ({ ...t }));
+      if (d.op === "finish") l.forEach((t) => t.status === "in_progress" && (t.status = "completed"));
+      else {
+        for (const n of d.done ?? []) if (l[n - 1]) l[n - 1].status = "completed";
+        if (d.advance) {
+          const i = l.findIndex((t) => t.status === "in_progress");
+          if (i >= 0) l[i].status = "completed";
+          const j = l.findIndex((t, k) => k > i && t.status === "pending");
+          if (j >= 0) l[j].status = "in_progress";
+        }
+        if (d.start && l[d.start - 1]) l[d.start - 1].status = "in_progress";
+      }
+      (full = l), (last = "full");
+    } else if (d.op === "create") tasks.push({ id: String(++seq), content: d.content, active: d.active, status: "pending" }), (last = "tasks");
     else {
       const i = tasks.findIndex((t) => t.id === String(d.id));
       if (i >= 0) {

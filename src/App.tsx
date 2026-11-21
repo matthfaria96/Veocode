@@ -1,4 +1,5 @@
 import { createEffect, ErrorBoundary, lazy, Match, on, onCleanup, onMount, Show, Suspense, Switch } from "solid-js";
+import { preloadPanels } from "./lazy";
 import { ViewCrash } from "./components/ViewCrash";
 import { newConversationHere } from "./components/ConvSidebar";
 import { projMode } from "./layoutMode";
@@ -15,7 +16,6 @@ import { watchDrops } from "./attachments";
 import ContextMenu from "./components/ContextMenu";
 import CommandPalette from "./components/CommandPalette";
 import Workspace from "./views/Workspace";
-import Livre from "./views/Livre";
 import Board from "./views/Board";
 import { loadSettings } from "./settings";
 import { watchLanguage } from "./i18n";
@@ -42,11 +42,13 @@ const loaders = {
   System: () => import("./views/System"),
   Settings: () => import("./views/Settings"),
   Help: () => import("./components/Help"),
+  Livre: () => import("./views/Livre"),
 };
 const Accounts = lazy(loaders.Accounts);
 const System = lazy(loaders.System);
 const Settings = lazy(loaders.Settings);
 const Help = lazy(loaders.Help);
+const Livre = lazy(loaders.Livre);
 
 export default function App() {
   const onKey = (e: KeyboardEvent) => {
@@ -86,6 +88,7 @@ export default function App() {
     watchLanguage();
     startChatEvents();
     startTermEvents();
+    preloadPanels();
     window.addEventListener("keydown", onKey);
     // erro que escapou: aparece na tela em vez de sumir no console (o app nativo não mostra console)
     const onErr = (e: ErrorEvent | PromiseRejectionEvent) => {

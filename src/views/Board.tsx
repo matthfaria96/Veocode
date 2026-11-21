@@ -80,13 +80,19 @@ export default function Board() {
           </div>
         }
       >
-        <header class="home-top">
-          <div class="home-title">
-            <h1>{tx("Visão geral")}</h1>
-            <p class="home-status" data-tone={status().tone}><i />{status().text}</p>
-          </div>
+        {/* com projetos na tela o espaço é deles: o título e o "como estão as IAs" só aparecem
+            com a tela vazia (o estado de cada um já está no próprio painel) */}
+        <Show when={shown().length} fallback={
+          <header class="home-top">
+            <div class="home-title">
+              <h1>{tx("Visão geral")}</h1>
+              <p class="home-status" data-tone={status().tone}><i />{status().text}</p>
+            </div>
+            <NeedsStrip />
+          </header>
+        }>
           <NeedsStrip />
-        </header>
+        </Show>
         <Show
           when={shown().length}
           fallback={

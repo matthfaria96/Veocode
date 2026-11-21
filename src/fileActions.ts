@@ -129,6 +129,11 @@ export interface MenuItem {
   key?: string;
   /** abre um submenu ao lado em vez de rodar */
   sub?: MenuEntry[];
+  /** liga/desliga: mostra o ✓ à direita quando ligado */
+  checked?: boolean;
+  /** valor atual à direita (ex.: "Responsivo" num submenu) */
+  value?: string;
+  disabled?: boolean;
   run?: () => void;
 }
 /** Título de um grupo dentro do menu. */

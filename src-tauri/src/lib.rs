@@ -1,5 +1,6 @@
 mod access;
 mod attach;
+mod browser;
 mod agent;
 mod apiagent;
 mod chat;
@@ -722,8 +723,8 @@ fn chat_args(state: &AppState, project_id: String, model: Option<String>, effort
         if account.provider == Provider::Claude && model.is_some() {
             account.model = model.clone();
         }
-        let pc = state.settings.lock().map_err(|e| e.to_string())?.free_pc;
-        let t = livre::target(&state.data_dir, &xray::util::home(), pc)?;
+        let level = state.settings.lock().map_err(|e| e.to_string())?.free_level;
+        let t = livre::target(&state.data_dir, &xray::util::home(), level)?;
         let claude = account.provider == Provider::Claude;
         return Ok(chat::SendArgs {
             project_id,
@@ -812,13 +813,62 @@ fn term_args(state: &AppState, project_id: String, cols: u16, rows: u16) -> Resu
     let account = state.accounts.lock().map_err(|e| e.to_string())?.get(&p.account_id).cloned();
     // só contas do Claude com pasta própria mudam o CLAUDE_CONFIG_DIR; as outras usam a padrão
     let claude_dir = account.filter(|a| a.provider == Provider::Claude && a.config_dir.is_some()).map(|a| accounts::claude::config_dir(&a));
-    Ok(term::OpenArgs { project_id, project_name: p.name.clone(), root, claude_dir, cols, rows, run: None })
+    Ok(term::OpenArgs { project_id, project_name: p.name.clone(), root, claude_dir, code_mode: false, cols, rows, run: None })
 }
 
 #[tauri::command(async)]
-fn term_open(app: AppHandle, state: State<'_, AppState>, project_id: String, cols: u16, rows: u16) -> Result<term::TermInfo, String> {
-    let args = term_args(&state, project_id, cols, rows)?;
+fn term_open(app: AppHandle, state: State<'_, AppState>, project_id: String, cols: u16, rows: u16, code_mode: Option<bool>) -> Result<term::TermInfo, String> {
+    let mut args = term_args(&state, project_id, cols, rows)?;
+    args.code_mode = code_mode.unwrap_or(false);
     state.terms.open(app, args)
+}
+
+/// Navegador do painel: PNG (base64) da área x, y, largura, altura da janela, como está na tela.
+#[tauri::command]
+async fn browser_snapshot(webview: tauri::Webview, x: f64, y: f64, w: f64, h: f64) -> Result<String, String> {
+    use base64::Engine;
+    let png = blocking(move || browser::snapshot(&webview, x, y, w, h)).await??;
+    Ok(base64::engine::general_purpose::STANDARD.encode(png))
+}
+
+/// Salva a captura do navegador onde a pessoa escolheu.
+#[tauri::command]
+async fn browser_save_png(path: String, data: String) -> Result<(), String> {
+    blocking(move || browser::save_png(&path, &data)).await?
+}
+
+/// Endereço local para abrir um .html (com o CSS e o JS dele) no navegador do painel.
+#[tauri::command]
+async fn browser_serve(file: String, root: Option<String>) -> Result<String, String> {
+    blocking(move || browser::serve(&file, root.as_deref())).await?
+}
+
+/// Um endereço local tem servidor ouvindo? (`null` para endereços de fora, que não testamos)
+#[tauri::command]
+async fn browser_probe(url: String) -> Result<Option<bool>, String> {
+    blocking(move || browser::probe(&url)).await
+}
+
+/// Apaga os cookies de um site aberto no painel (`host`), ou de todos, inclusive os HttpOnly.
+#[tauri::command]
+async fn browser_clear_cookies(webview: tauri::Webview, host: Option<String>) -> Result<usize, String> {
+    blocking(move || browser::clear_cookies(&webview, host)).await?
+}
+
+/// A tela fez uma ferramenta do navegador que o Claude pediu: o resultado volta para ele.
+#[tauri::command(async)]
+fn chat_tool_reply(state: State<'_, AppState>, project_id: String, request_id: String, result: serde_json::Value) -> Result<(), String> {
+    state.chats.tool_reply(&project_id, &request_id, result)
+}
+
+/// Versão do Claude Code instalado ("2.1.316"), para saber se ele já tem o Code mode.
+#[tauri::command]
+async fn claude_version() -> Result<Option<String>, String> {
+    blocking(|| {
+        let out = xray::util::run("claude", &["--version"], std::time::Duration::from_secs(8))?;
+        out.split_whitespace().next().filter(|v| v.starts_with(|c: char| c.is_ascii_digit())).map(str::to_string)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -1329,6 +1379,16 @@ async fn map_scan(state: State<'_, AppState>, project_id: String) -> Result<Stri
     tauri::async_runtime::spawn_blocking(move || projmap::scan(&root, &title)).await.map_err(|e| e.to_string())?
 }
 
+/// Grava `.veocode/MAP.md`, o resumo em texto do mapa que a IA do projeto lê (só se mudou).
+#[tauri::command]
+async fn map_write_notes(state: State<'_, AppState>, project_id: String, text: String) -> Result<(), String> {
+    let root = state.root_of(&project_id)?;
+    if text.len() > 200_000 {
+        return Err(crate::i18n::tr("resumo grande demais", "summary too large").into());
+    }
+    projmap::write_notes(&root, &text)
+}
+
 /// Para uma IA aberta por fora nesta pasta: interrompe e, se não fechar, encerra com o que ela abriu.
 #[tauri::command]
 async fn outside_stop(state: State<'_, AppState>, project_id: String, pid: u32) -> Result<(), String> {
@@ -1408,6 +1468,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(browser::plugin())
         .setup(|app| {
             let config_dir = app.path().app_config_dir()?;
             vault::init(&config_dir);
@@ -1485,6 +1546,9 @@ pub fn run() {
             chat_send,
             chat_permission,
             chat_stop,
+            chat_tool_reply,
+            browser_probe,
+            browser_clear_cookies,
             chat_reset,
             chat_context,
             chat_history,
@@ -1550,6 +1614,11 @@ pub fn run() {
             outside_stop,
             map_read,
             map_scan,
+            map_write_notes,
+            claude_version,
+            browser_snapshot,
+            browser_save_png,
+            browser_serve,
             project_procs,
             project_kill,
             xray_ports,

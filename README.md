@@ -68,6 +68,8 @@ A real folder per project, in two modes you switch with one click (⌘E).
 
 ![Projects in AI mode](docs/screenshots/projects.jpg)
 
+The **browser** in that panel is made for checking the work: tabs, desktop or phone size, and the project's servers (start, stop, logs) one click away. Pick an element and its selector, component, styles and image go to the conversation; draw on the page and the capture goes with your marks; the page console (errors, warnings, failed requests) shows its error count in the bar. The AI uses the same browser (Claude through Veocode's own `browser_*` tools, API accounts through the same tools minus the capture), so you watch it open pages, click and type, with a notice while it's at the wheel.
+
 **Code** works like an editor: file tree, files in tabs and a panel on the right with **Git** (click a changed file to see before and after side by side, commits in a graph, push and pull), the folder's **Terminal**, **Environment** (switch `.env` profiles and start the project's services) and the **Map**. Every step the agent takes (reading, searching, editing, running a command) lights up on the tree, so you *see* the work instead of scrolling logs.
 
 ![Projects in Code mode](docs/screenshots/code.jpg)
@@ -89,7 +91,7 @@ Several Claude accounts side by side (each one is its own `CLAUDE_CONFIG_DIR`), 
 ![Accounts](docs/screenshots/accounts.jpg)
 
 ### Free chat
-A conversation outside any project, with any of your accounts. In **Just chat** the AI sees no files; with **Let it look at the computer** it can list, read and search your home folder to answer — never edit, delete or run commands — and credential folders (`.ssh`, `.aws`, Keychain, `.env` files…) stay blocked.
+Quick questions outside any project, with any of your accounts. It just talks, and when the question is about your Mac it reads your home folder on its own. The permission badge decides what else it may do — **Read** (default: reads files and runs read-only commands like `ls`, edits and deletes nothing), Suggest, Edit or Full — and credential folders (`.ssh`, `.aws`, Keychain, `.env` files…) stay blocked at every level. A collapsible right panel holds a new conversation, search, your projects and the history grouped by day; the context gauge shows how full the conversation is and can compact it.
 
 ![Free chat](docs/screenshots/chat.jpg)
 

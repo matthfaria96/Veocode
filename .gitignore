@@ -11,6 +11,9 @@ src-tauri/gen/schemas
 # ajustes locais do Claude Code (o launch.json do preview fica no git)
 .claude/settings.local.json
 
+# mapa deste repositório gerado pelo próprio Veocode (refeito quando o código muda)
+.veocode/
+
 # segredos, se algum dia aparecerem aqui
 .env
 .env.*

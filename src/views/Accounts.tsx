@@ -10,7 +10,7 @@ import {
   accts, addAccount, browserLogin, cancelLogin, checkAccount, fmtAgo, fmtTokens, loginAccount, logins, palette, prettyModel, providers, refreshStatuses,
   removeAccount, sendLoginCode, setAccountKey, stateText, updateAccount, type Account, type ProviderId,
 } from "../accounts";
-import { CountUp, PageHeader, ProviderMark, Stagger } from "../components/ui";
+import { CountUp, PageHeader, ProviderGlyph, ProviderMark, Stagger } from "../components/ui";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { lang, locale, tx, txn } from "../i18n";
 import { openPanel } from "../panel";
@@ -409,7 +409,7 @@ function AddAccount(props: { onClose: () => void }) {
       props.onClose();
       // conta nova do Claude: já abre o login no navegador
       if (kind() === "claude" && !folder()) startBrowserLogin(a);
-      else showToast(`${a.label} adicionada`);
+      else showToast(tx("Conta {label} adicionada", { label: a.label }));
     } catch (er) {
       setError(errMsg(er));
     }
@@ -424,7 +424,7 @@ function AddAccount(props: { onClose: () => void }) {
           <For each={kinds}>
             {(k) => (
               <button type="button" class="kind" classList={{ sel: kind() === k.id }} onClick={() => (setKind(k.id), setError(""))}>
-                <strong>{k.title}</strong>
+                <strong><ProviderGlyph provider={k.id} color={kind() === k.id ? color() : "#8e8e93"} size={18} />{k.title}</strong>
                 <small>{k.text}</small>
                 <Show when={kind() === k.id}><span class="kind-check"><Check size={12} /></span></Show>
               </button>

@@ -537,14 +537,18 @@ export default function ConvSidebar() {
             </button>
           </div>
         </Show>
-        <div class="view-switch cv-where" role="radiogroup" aria-label={tx("Onde as conversas rodam")}>
-          <button role="radio" aria-checked={where() === "local"} classList={{ on: where() === "local" }} onClick={() => setWhere("local")} title={tx("Conversas que rodam neste computador")}>
-            <Laptop size={13} /><span>{tx("Local")}</span>
+        {/* onde as conversas rodam: dois cartões (não abas, que já tem em cima) */}
+        <div class="where-tiles" role="radiogroup" aria-label={tx("Onde as conversas rodam")}>
+          <button class="where-tile" role="radio" aria-checked={where() === "local"} classList={{ on: where() === "local" }} onClick={() => setWhere("local")} title={tx("Conversas que rodam neste computador")}>
+            <i class="where-radio" />
+            <span class="where-ico"><Laptop size={17} /></span>
+            <span class="where-name">{tx("Local")}</span>
           </button>
-          <button role="radio" aria-checked={where() === "cloud"} classList={{ on: where() === "cloud" }} onClick={() => setWhere("cloud")} title={tx("Sessões do Claude Code na nuvem (claude.ai/code)")}>
-            <Cloud size={13} /><span>{tx("Nuvem")}</span>
+          <button class="where-tile" role="radio" aria-checked={where() === "cloud"} classList={{ on: where() === "cloud" }} onClick={() => setWhere("cloud")} title={tx("Sessões do Claude Code na nuvem (claude.ai/code)")}>
+            <i class="where-radio" />
+            <span class="where-ico"><Cloud size={17} /></span>
+            <span class="where-name">{tx("Nuvem")}</span>
           </button>
-          <span class="view-thumb" style={{ transform: `translateX(${where() === "cloud" ? 100 : 0}%)` }} />
         </div>
       </div>
     </div>

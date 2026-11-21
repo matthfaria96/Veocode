@@ -3,6 +3,7 @@
 import { ChevronDown, Gauge, RefreshCw, Shrink, Sparkles } from "lucide-solid";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { chatOf, compactChat } from "../chat";
+import { compactLivre, LIVRE, livre } from "../livre";
 import { continueFresh, fmtTokens, weightOf } from "../convTabs";
 import { ctxColor, ctxName, ctxOf, ctxPanel, isBuffer, isDeferred, isFree, isStale, measure, toggleCtx, windowOf, type CtxGroup } from "../contextInfo";
 import { niceModel } from "../chatPrefs";
@@ -15,7 +16,7 @@ export const kTok = (n: number) => (n >= 1_000_000 ? `${dec(n / 1_000_000)}M` : 
 /** Selo na caixa de mensagem: quanto a conversa carrega. Abre a janela do contexto. */
 export function ContextChip(props: { k: string }) {
   // tamanho ao vivo (cada resposta) ou, antes da primeira, o da última medição
-  const ctx = () => chatOf(props.k).context ?? ctxOf(props.k).data?.used ?? null;
+  const ctx = () => (props.k === LIVRE ? livre.context : chatOf(props.k).context) ?? ctxOf(props.k).data?.used ?? null;
   return (
     <button
       class={`composer-chip ctx-chip ${weightOf(ctx())}`}
@@ -36,6 +37,9 @@ export function ContextPanel(props: { pid: string; k: string }) {
   const e = () => ctxOf(props.k);
   const d = () => e().data;
   const chat = () => chatOf(props.k);
+  // o Chat livre guarda a conversa dele à parte (livre.ts)
+  const isLivre = props.k === LIVRE;
+  const started = () => (isLivre ? !!(livre.conv || livre.items.length) : !!chat().session);
   // a medição é da última vez; o tamanho da conversa (mensagens) atualiza a cada resposta
   const used = () => d()?.used ?? 0;
   const pct = () => (d() && d()!.total ? Math.min(100, (used() / d()!.total) * 100) : 0);
@@ -45,7 +49,7 @@ export function ContextPanel(props: { pid: string; k: string }) {
   const buffer = () => d()?.categories.find((c) => isBuffer(c.name));
   const level = () => (pct() >= 80 ? "high" : pct() >= 55 ? "mid" : "low");
   const tone = () => (level() === "high" ? "var(--err)" : level() === "mid" ? "var(--warn)" : "var(--ok)");
-  const busy = () => chat().busy;
+  const busy = () => (isLivre ? livre.busy : chat().busy);
 
   return (
     <Modal
@@ -65,10 +69,12 @@ export function ContextPanel(props: { pid: string; k: string }) {
       note={tx("Compactar resume a conversa até aqui e libera espaço. O Claude continua de onde parou, mas esquece os detalhes.")}
       actions={
         <>
-          <button class="ghost-btn small" disabled={!chat().session} title={tx("Abre outra aba com um resumo desta já na caixa")} onClick={() => (closeModal(), continueFresh(props.pid, props.k))}>
-            <Sparkles size={12} /> {tx("Nova com resumo")}
-          </button>
-          <button class="primary-btn small" disabled={busy() || !chat().session} title={!chat().session ? tx("A conversa ainda não começou") : busy() ? tx("Espere o Claude terminar") : ""} onClick={() => (closeModal(), void compactChat(props.k))}>
+          <Show when={!isLivre}>
+            <button class="ghost-btn small" disabled={!started()} title={tx("Abre outra aba com um resumo desta já na caixa")} onClick={() => (closeModal(), continueFresh(props.pid, props.k))}>
+              <Sparkles size={12} /> {tx("Nova com resumo")}
+            </button>
+          </Show>
+          <button class="primary-btn small" disabled={busy() || !started()} title={!started() ? tx("A conversa ainda não começou") : busy() ? tx("Espere o Claude terminar") : ""} onClick={() => (closeModal(), void (isLivre ? compactLivre() : compactChat(props.k)))}>
             <Shrink size={12} /> {tx("Compactar conversa")}
           </button>
         </>

@@ -2,15 +2,16 @@
 // da conversa não diz qual programa a está rodando, então aparecem as IAs abertas na pasta (onde,
 // há quanto tempo, se está gastando processador agora) e você escolhe. Parar interrompe e, se ela
 // não fechar em 3 s, encerra junto tudo o que ela abriu. A conversa fica guardada.
-import { Bot, Code2, Cpu, SquareTerminal, X } from "lucide-solid";
+import { Code2, Cpu, SquareTerminal, X } from "lucide-solid";
 import { createResource, createSignal, For, Show, type JSX } from "solid-js";
 import { outsideAgents, outsideStop } from "../outside";
 import { showToast } from "../store";
 import { tx } from "../i18n";
+import { ClaudeLogo } from "./ui";
 import type { AgentGroup } from "../api";
 
 const hostIcon = (h?: string): JSX.Element =>
-  h === "Terminal" ? <SquareTerminal size={15} /> : h === "VS Code" || h === "Cursor" ? <Code2 size={15} /> : h === "app do Claude" ? <Bot size={15} /> : <Cpu size={15} />;
+  h === "Terminal" ? <SquareTerminal size={15} /> : h === "VS Code" || h === "Cursor" ? <Code2 size={15} /> : h === "app do Claude" ? <ClaudeLogo size={15} /> : <Cpu size={15} />;
 
 const since = (s: number) => (s < 60 ? tx("agora há pouco") : s < 3600 ? tx("há {n} min", { n: Math.round(s / 60) }) : tx("há {n} h", { n: Math.round(s / 3600) }));
 

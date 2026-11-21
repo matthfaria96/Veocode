@@ -6,6 +6,9 @@ import { Check, Copy } from "lucide-solid";
 import { createSignal, For, Match, Switch, type JSX } from "solid-js";
 import { api, copyText } from "../api";
 import { tx } from "../i18n";
+import { brPrefs, isLocalUrl, openUrlHere } from "../browser";
+import { projMode } from "../layoutMode";
+import { currentProject } from "../store";
 
 type Block =
   | { t: "p"; text: string }
@@ -79,7 +82,11 @@ function parseBlocks(src: string): Block[] {
 
 const openLink = (e: MouseEvent, url: string) => {
   e.preventDefault();
-  if (/^https?:\/\//i.test(url)) api.openUrl(url).catch(() => {});
+  if (!/^https?:\/\//i.test(url)) return;
+  // "Abrir links do chat aqui" (menu ⋯ do navegador): endereços locais abrem no painel da direita
+  const p = currentProject();
+  if (brPrefs.linksHere && isLocalUrl(url) && !p.demo && projMode() === "ai" && !e.metaKey) return openUrlHere(p.id, url);
+  api.openUrl(url).catch(() => {});
 };
 
 /** Trechos de uma linha: código, negrito, itálico e links. */

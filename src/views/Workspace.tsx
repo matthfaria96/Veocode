@@ -22,9 +22,10 @@ import Editor from "../components/Editor";
 import ChatPanel from "../components/ChatPanel";
 import AgentCursors from "../components/AgentCursors";
 import { ProviderMark } from "../components/ui";
-import { closeSheets, codeSideOpen, codeSideW, debugOpen, debugW, focusMode, leftSheet, narrowLeft, narrowRight, projMode, reviewWide, setCodeSideOpen, setCodeSideW, setDebugOpen, setDebugW, setLeftSheet, setProjMode, setReviewWide, sheetOpen, showTerm, toggleTerm } from "../layoutMode";
+import { closeSheets, codeSideOpen, codeSideW, debugOpen, debugTab, debugW, focusMode, leftSheet, narrowLeft, narrowRight, projMode, reviewWide, setCodeSideOpen, setCodeSideW, setDebugOpen, setDebugW, setLeftSheet, setProjMode, setReviewWide, sheetOpen, showTerm, toggleTerm } from "../layoutMode";
 
 import { tx, txn } from "../i18n";
+import { brFull } from "../browser";
 
 const [dragging, setDragging] = createSignal(false);
 /** Arrastar uma borda: `apply` recebe o quanto o ponteiro andou desde o começo; `done` grava. */
@@ -144,7 +145,7 @@ export default function Workspace() {
   return (
     <div
       class="workspace"
-      classList={{ "ws-code": code(), "ws-ai": !code(), "debug-off": !debugOpen(), "cside-on": code() && codeSideOpen() && !wide(), "review-wide": wide(), focus: !code() && focusMode() && isTauri && !p().demo, resizing: dragging(), "left-sheet": narrowLeft() && leftSheet() }}
+      classList={{ "ws-code": code(), "ws-ai": !code(), "debug-off": !debugOpen(), "cside-on": code() && codeSideOpen() && !wide(), "review-wide": wide(), focus: !code() && focusMode() && isTauri && !p().demo, resizing: dragging(), "left-sheet": narrowLeft() && leftSheet(), "br-full": !code() && debugOpen() && debugTab() === "browser" && brFull() }}
       style={{ "--debug-w": `${debugW()}px`, "--cside-w": `${codeSideW()}px` }}
       ref={root}
     >

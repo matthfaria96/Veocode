@@ -97,6 +97,15 @@ export const topics: Topic[] = [
         ],
       },
       {
+        title: "Navegador",
+        items: [
+          "Abre o app do projeto rodando (localhost) em abas, no tamanho de computador ou de celular. Os servidores do projeto rodam, param e mostram os logs por ali mesmo.",
+          "A seta escolhe um elemento da página e manda para a conversa o seletor, o componente, os estilos e a imagem dele. O lápis risca a página e manda a captura com o que você marcou.",
+          "O console da página (erros, avisos e rede que falhou) fica a um clique, com o número de erros na barra, e pode ir junto para a conversa.",
+          "A IA usa este mesmo navegador: abre páginas, olha, clica e digita, e um aviso mostra quando ela está mexendo. No menu ⋯ dá para guardar os dados dos sites só até fechar o app ou apagar os de um site.",
+        ],
+      },
+      {
         title: "Modo Código",
         items: [
           "Árvore de arquivos, editor em abas e, à direita, um painel com Git, Terminal, Ambiente e Mapa. O ícone do painel (⌥⌘B) mostra e esconde.",
@@ -185,11 +194,11 @@ export const topics: Topic[] = [
     lead: "Uma conversa fora de qualquer projeto, para tirar dúvidas, escrever e pensar junto. Funciona como o chat dos projetos.",
     sections: [
       {
-        title: "Dois modos",
+        title: "O computador e a permissão",
         items: [
-          "Só conversa: a IA não vê nenhum arquivo seu, só o que você escreve.",
-          "Olhar o computador: ela pode listar, ler e buscar na sua pasta pessoal, mas nunca edita, apaga nem roda comandos.",
-          "Pastas de senhas e chaves (.ssh, .aws, chaveiro, .env…) ficam sempre de fora.",
+          "Ela conversa normalmente e só abre seus arquivos quando a pergunta é sobre o computador.",
+          "O selo de permissão na caixa de mensagem diz o que ela pode fazer: Leitura (padrão: lê arquivos e roda comandos de leitura como ls, sem editar nem apagar nada), Sugerir, Editar ou Total.",
+          "Pastas de senhas e chaves (.ssh, .aws, chaveiro, .env…) ficam sempre de fora, em qualquer nível.",
         ],
       },
       {
@@ -197,8 +206,9 @@ export const topics: Topic[] = [
         items: [
           "A conta, o modelo e a força do raciocínio ficam na caixa de mensagem.",
           "Enquanto ela trabalha, a linha de baixo diz o que está fazendo e há quanto tempo. Parar interrompe tudo.",
-          "O relógio lista as conversas anteriores; o balão com + começa uma nova.",
-          "Trocar de conta começa uma conversa nova; trocar o modo continua a mesma.",
+          "O painel da direita tem a conversa nova (⌘N), a busca, os projetos e o histórico. O botão no canto de cima esconde ou mostra o painel.",
+          "O medidor de contexto, ao lado da permissão, mostra quanto a conversa ocupa e deixa compactar.",
+          "Trocar de conta começa uma conversa nova; trocar a permissão continua a mesma.",
         ],
       },
     ],

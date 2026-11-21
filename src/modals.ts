@@ -3,7 +3,7 @@
 // components/Modal.tsx e quem abre cada uma, em components/ChatModals.tsx.
 import { createSignal } from "solid-js";
 
-export type ModalKind = "access" | "memory" | "context";
+export type ModalKind = "access" | "memory" | "context" | "map";
 export interface ModalReq {
   kind: ModalKind;
   pid: string;
@@ -16,3 +16,5 @@ export const closeModal = () => setModal(null);
 export const isOpen = (kind: ModalKind, pid?: string) => modal()?.kind === kind && (!pid || modal()?.pid === pid);
 export const openAccess = (pid: string) => setModal({ kind: "access", pid });
 export const openMemory = (pid: string) => setModal({ kind: "memory", pid });
+/** Fazer ou refazer o mapa do projeto (do código ou com a IA). */
+export const openMapMaker = (pid: string) => setModal({ kind: "map", pid });

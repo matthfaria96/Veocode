@@ -4800,14 +4800,20 @@ dependencies = [
 
 [[package]]
 name = "veocode"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "base64 0.22.1",
+ "block2",
  "chrono",
  "dirs",
  "ignore",
  "keyring",
  "notify-debouncer-mini",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-core-foundation",
+ "objc2-foundation",
+ "objc2-web-kit",
  "portable-pty",
  "serde",
  "serde_json",

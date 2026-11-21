@@ -7,7 +7,9 @@
 //!   No zsh do macOS o `/etc/zshrc` força o HISTFILE, então o Veocode abre o zsh com um
 //!   ZDOTDIR próprio que carrega a configuração normal da pessoa e só no fim troca o histórico;
 //! - com a conta do projeto para o Claude Code (`CLAUDE_CONFIG_DIR`), então `claude` digitado
-//!   ali usa a mesma conta que o chat do projeto.
+//!   ali usa a mesma conta que o chat do projeto;
+//! - com o Code mode do Claude Code, se a pessoa ligou no menu da IA do projeto. Ele só existe
+//!   no `claude` interativo (não no `-p` que o chat usa), por isso vale só aqui.
 //!
 //! É um terminal normal da pessoa: nada impede um `cd` para outra pasta. A separação está no
 //! ponto de partida, no histórico e na conta.
@@ -31,6 +33,8 @@ use tauri::{AppHandle, Emitter};
 const KEEP: usize = 256 * 1024;
 pub const MAX_PER_PROJECT: usize = 6;
 pub const MAX_SERVICES: usize = 8;
+/// Variável que liga o Code mode do Claude Code (2.1.323 ou mais novo).
+pub const CODE_MODE_ENV: &str = "CLAUDE_CODE_EXPERIMENTAL_CODE_MODE";
 
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -44,6 +48,8 @@ pub struct TermInfo {
     /// serviço que roda nele (a chave da aba Ambiente); None = shell normal
     pub service: Option<String>,
     pub cmd: Option<String>,
+    /// aberto com o Code mode do Claude Code ligado
+    pub code_mode: bool,
 }
 
 struct Term {
@@ -80,6 +86,8 @@ pub struct OpenArgs {
     pub root: PathBuf,
     /// pasta do Claude Code da conta do projeto (None = a padrão, ~/.claude)
     pub claude_dir: Option<PathBuf>,
+    /// liga o Code mode do `claude` digitado aqui (CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1)
+    pub code_mode: bool,
     pub cols: u16,
     pub rows: u16,
     pub run: Option<Run>,
@@ -259,6 +267,10 @@ impl Terms {
             Some(d) => cmd.env("CLAUDE_CONFIG_DIR", d),
             None => cmd.env_remove("CLAUDE_CONFIG_DIR"),
         }
+        // desligado não mexe: vale o que a pessoa tiver no shell ou no settings.json dela
+        if a.code_mode && a.run.is_none() {
+            cmd.env(CODE_MODE_ENV, "1");
+        }
         // histórico só deste projeto
         let hist_dir = self.data.join("terms").join(&a.project_id);
         if std::fs::create_dir_all(&hist_dir).is_ok() {
@@ -314,7 +326,7 @@ impl Terms {
 
         let id = format!("t{}", NEXT.fetch_add(1, Ordering::SeqCst));
         let cwd = a.run.as_ref().map(|r| &r.dir).unwrap_or(&a.root).to_string_lossy().into();
-        let info = TermInfo { id: id.clone(), project_id: a.project_id.clone(), name, shell: sh.clone(), cwd, alive: true, service: a.run.as_ref().map(|r| r.key.clone()), cmd: a.run.as_ref().map(|r| r.cmd.clone()) };
+        let info = TermInfo { id: id.clone(), project_id: a.project_id.clone(), name, shell: sh.clone(), cwd, alive: true, service: a.run.as_ref().map(|r| r.key.clone()), cmd: a.run.as_ref().map(|r| r.cmd.clone()), code_mode: a.code_mode && a.run.is_none() };
         let out = Arc::new(Mutex::new(VecDeque::with_capacity(KEEP)));
         let alive = Arc::new(AtomicBool::new(true));
 
@@ -497,14 +509,14 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn project_shell_starts_in_the_folder_with_its_history_and_account() {
+    fn project_shell_starts_in_the_folder_with_its_history_account_and_code_mode() {
         // shell de login de verdade num pseudo-terminal, como o app abre
         let base = std::env::temp_dir().join(format!("veocode-pty-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&base);
         let root = base.join("meu projeto");
         std::fs::create_dir_all(&root).unwrap();
         let terms = Terms::new(base.join("dados"));
-        let a = OpenArgs { project_id: "p42".into(), project_name: "meu projeto".into(), root: root.clone(), claude_dir: Some(base.join("conta-b")), cols: 120, rows: 20, run: None };
+        let a = OpenArgs { project_id: "p42".into(), project_name: "meu projeto".into(), root: root.clone(), claude_dir: Some(base.join("conta-b")), code_mode: true, cols: 120, rows: 20, run: None };
         let (sh, args) = shell();
         let cmd = terms.command(&sh, &args, &short_name(&sh), &a);
         let pty = native_pty_system().openpty(PtySize { rows: 20, cols: 200, pixel_width: 0, pixel_height: 0 }).unwrap();
@@ -527,14 +539,14 @@ mod tests {
             }
             let _ = tx.send(String::from_utf8_lossy(&all).to_string());
         });
-        w.write_all(b"echo \"R=$PWD|$HISTFILE|$CLAUDE_CONFIG_DIR|$VEOCODE_PROJECT|$TERM\"; echo FIM-$((40+2))\r").unwrap();
+        w.write_all(b"echo \"R=$PWD|$HISTFILE|$CLAUDE_CONFIG_DIR|$VEOCODE_PROJECT|$TERM|$CLAUDE_CODE_EXPERIMENTAL_CODE_MODE\"; echo FIM-$((40+2))\r").unwrap();
         w.flush().unwrap();
         let out = rx.recv_timeout(std::time::Duration::from_secs(30)).expect("o shell não respondeu em 30 s");
         let _ = child.kill();
         let line = out.lines().rev().find(|l| l.starts_with("R=")).unwrap_or_else(|| panic!("sem resposta: {out}")).trim().to_string();
         let real_root = root.canonicalize().unwrap();
         let hist = base.join("dados/terms/p42/history");
-        let expect = format!("R={}|{}|{}|meu projeto|xterm-256color", real_root.display(), hist.display(), base.join("conta-b").display());
+        let expect = format!("R={}|{}|{}|meu projeto|xterm-256color|1", real_root.display(), hist.display(), base.join("conta-b").display());
         // macOS: /var → /private/var no PWD
         assert!(line == expect || line == expect.replace(&real_root.display().to_string(), &root.display().to_string()), "{line}\n!=\n{expect}");
         let _ = std::fs::remove_dir_all(&base);

@@ -151,10 +151,11 @@ export async function openIn(pid: string, box: HTMLElement) {
   if (!t) {
     l.xt.dispose();
     l.host.remove();
-    return;
+    return null;
   }
   bind(l, t.id);
   l.xt.focus();
+  return t;
 }
 
 /** Terminais que já estão abertos no Rust (ao voltar para o projeto ou recarregar a tela). */

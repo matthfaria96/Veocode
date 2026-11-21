@@ -21,13 +21,13 @@ export interface Settings {
   motion: Motion;
   /** conta do Chat livre ("" = a padrão) */
   freeAccount: string;
-  /** Chat livre pode olhar o computador (só leitura) */
-  freePc: boolean;
+  /** nível de acesso do Chat livre (0 Leitura … 3 Total); ele sempre pode ler o computador, fora os segredos */
+  freeLevel: number;
   /** tela Projetos, modo Código: o painel da direita já abre no terminal */
   bottomPanel: boolean;
 }
 
-const defaults: Settings = { theme: "escuro", language: "sistema", icons: "detalhado", motion: "completa", freeAccount: "", freePc: false, bottomPanel: false };
+const defaults: Settings = { theme: "escuro", language: "sistema", icons: "detalhado", motion: "completa", freeAccount: "", freeLevel: 0, bottomPanel: false };
 const KEY = "veocode.settings";
 
 export const [settings, setSettings] = createStore<Settings>({ ...defaults });

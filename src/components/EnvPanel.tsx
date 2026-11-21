@@ -139,7 +139,7 @@ function Profiles(props: { pid: string }) {
   );
 }
 
-function ServiceForm(props: { pid: string; init?: Service; onDone: () => void }) {
+export function ServiceForm(props: { pid: string; init?: Service; onDone: () => void }) {
   const [name, setName] = createSignal(props.init?.name ?? "");
   const [cmd, setCmd] = createSignal(props.init?.cmd ?? "");
   const [dir, setDir] = createSignal(props.init?.dir ?? "");

@@ -2,14 +2,19 @@
 //! O Veocode já traz o desenho (um grafo como o do Obsidian); este arquivo é só a "leitura".
 //! Aqui o Veocode escreve a versão tirada do código: lê os imports (JS/TS, Rust, Python, Java,
 //! Kotlin, C/C++, CSS, HTML, Dart, Ruby), junta os arquivos por pasta e liga quem importa quem.
-//! A IA do projeto pode escrever o mesmo arquivo com ideias (telas, serviços, dados) no lugar.
+//! A IA do projeto pode escrever o mesmo arquivo com um resumo explicado (áreas, o que cada
+//! peça faz, os fluxos passo a passo). Sem IA, a explicação de cada arquivo sai do comentário do
+//! topo dele e a do projeto, do README.
+//! Do mapa o app gera `.veocode/MAP.md`, um resumo em texto que a IA do projeto lê para achar
+//! onde mexer (`prompt_for`).
 //!
 //! Formato (compacto, um item por linha):
 //! {"v":1,"title":"…","by":"veocode","at":1763600000,"files":true,
 //!  "groups":[["src/components","components"],…],     // [id, nome, cor?, nota?]
+//!  "about":"…",                                      // o que o projeto é (do README)
 //!  "nodes":[["src/App.tsx","App.tsx",0,120],…],      // [id, nome, grupo, tamanho?, caminho?, nota?]
 //!  "links":[[0,3],[0,5],…],                          // [de, para, rótulo?] por índice ou id
-//!  "flow":[…]}                                       // opcional: o caminho principal, em ordem
+//!  "flows":[["nome",[["id","o que acontece"],…]],…]} // opcional: fluxos passo a passo (a IA)
 //! Com "files":true, o id de cada ponto é o caminho do arquivo.
 
 use crate::i18n::tr;
@@ -17,6 +22,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 pub const FILE: &str = ".veocode/map.json";
+pub const NOTES: &str = ".veocode/MAP.md";
 const MAX_SCAN: usize = 6000;
 const MAX_NODES: usize = 700;
 const MAX_BYTES: u64 = 300_000;
@@ -56,7 +62,7 @@ pub fn scan(root: &Path, title: &str) -> Result<String, String> {
     if files.is_empty() {
         return Err(tr("não achei código nesta pasta para desenhar", "found no code in this folder to draw").into());
     }
-    let text = build(&files, title);
+    let text = build(&files, title, readme_about(root).as_deref());
     let dir = root.join(".veocode");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let tmp = dir.join("map.json.tmp");
@@ -100,7 +106,172 @@ fn collect(root: &Path) -> Vec<Src> {
     out
 }
 
-fn build(files: &[Src], title: &str) -> String {
+/// Grava o resumo em texto ao lado do mapa, só se mudou (para não acordar quem observa a pasta).
+pub fn write_notes(root: &Path, text: &str) -> Result<(), String> {
+    let path = root.join(NOTES);
+    if std::fs::read_to_string(&path).is_ok_and(|t| t == text) {
+        return Ok(());
+    }
+    std::fs::create_dir_all(root.join(".veocode")).map_err(|e| e.to_string())?;
+    let tmp = root.join(".veocode/MAP.md.tmp");
+    std::fs::write(&tmp, text).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, &path).map_err(|e| e.to_string())
+}
+
+/// Uma linha para as instruções da IA: o projeto tem um resumo em `.veocode/MAP.md`.
+pub fn prompt_for(root: &Path) -> Option<String> {
+    root.join(NOTES).is_file().then(|| {
+        tr(
+            "Este projeto tem um mapa em .veocode/MAP.md: o que o projeto é, as áreas com os arquivos principais, como elas se ligam e os fluxos passo a passo. Leia quando precisar achar onde algo fica, antes de varrer o projeto. Não edite esse arquivo (o Veocode o gera).",
+            "This project has a map in .veocode/MAP.md: what the project is, the areas with their main files, how they connect and the flows step by step. Read it when you need to find where something lives, before searching the whole project. Don't edit that file (Veocode writes it).",
+        )
+        .to_string()
+    })
+}
+
+/// O primeiro parágrafo de verdade do README (sem título, selos, imagens nem HTML).
+fn readme_about(root: &Path) -> Option<String> {
+    let text = ["README.md", "readme.md", "Readme.md", "README"].iter().find_map(|n| std::fs::read_to_string(root.join(n)).ok())?;
+    let mut para = String::new();
+    let mut fence = false;
+    for line in text.lines() {
+        let t = line.trim();
+        if t.starts_with("```") {
+            fence = !fence;
+            continue;
+        }
+        if fence {
+            continue;
+        }
+        let junk = ["#", "!", "<", "|", ">", "---", "[!", "[!["].iter().any(|p| t.starts_with(p));
+        if t.is_empty() || junk {
+            if !para.is_empty() {
+                break;
+            }
+            continue;
+        }
+        if !para.is_empty() {
+            para.push(' ');
+        }
+        para.push_str(t);
+    }
+    let clean = strip_md(&para);
+    (clean.chars().count() >= 20).then(|| cut(&clean, 420))
+}
+
+/// Tira links, negrito e crases do markdown: "[texto](url)" vira "texto".
+fn strip_md(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '[' => {
+                let mut label = String::new();
+                for d in chars.by_ref() {
+                    if d == ']' {
+                        break;
+                    }
+                    label.push(d);
+                }
+                if chars.peek() == Some(&'(') {
+                    for d in chars.by_ref() {
+                        if d == ')' {
+                            break;
+                        }
+                    }
+                }
+                out.push_str(&label);
+            }
+            '*' | '`' => {}
+            c => out.push(c),
+        }
+    }
+    out.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Corta num limite de caracteres, de preferência no fim de uma frase, senão numa palavra.
+fn cut(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        return s.to_string();
+    }
+    let head: String = s.chars().take(max).collect();
+    if let Some(i) = head.rfind(". ").filter(|i| *i > head.len() / 3) {
+        return head[..=i].to_string();
+    }
+    let i = head.rfind(' ').unwrap_or(head.len());
+    format!("{}…", head[..i].trim_end_matches([',', ';', ':']))
+}
+
+/// O que o arquivo diz de si mesmo: a primeira frase do comentário do topo (licenças, diretivas
+/// e cabeçalhos gerados não contam).
+fn lead_note(text: &str, ext: &str) -> Option<String> {
+    let hash = matches!(ext, "py" | "rb" | "sh" | "ex" | "exs");
+    let dash = matches!(ext, "lua" | "sql");
+    const SKIP_LINE: &[&str] = &["#!", "\"use ", "'use ", "// @ts-", "// eslint", "/* eslint", "# -*-", "// prettier", "/* prettier"];
+    let mut lines = text.lines().map(str::trim).skip_while(|l| l.is_empty() || SKIP_LINE.iter().any(|p| l.starts_with(p)));
+    let first = lines.next()?;
+    let mut buf = String::new();
+    let block = [("/*", "*/"), ("<!--", "-->"), ("\"\"\"", "\"\"\""), ("'''", "'''")].into_iter().find(|(o, _)| first.starts_with(o) && (o.len() < 3 || ext == "py"));
+    if let Some((open, close)) = block {
+        let mut cur = first[open.len()..].trim_start_matches(['*', '!']).to_string();
+        loop {
+            if let Some(i) = cur.find(close) {
+                buf.push_str(&cur[..i]);
+                break;
+            }
+            buf.push_str(cur.trim().trim_start_matches('*').trim());
+            buf.push(' ');
+            match lines.next() {
+                Some(l) => cur = l.to_string(),
+                None => break,
+            }
+        }
+    } else {
+        let strip = |l: &str| -> Option<String> {
+            if hash {
+                l.strip_prefix('#').map(str::to_string)
+            } else if dash {
+                l.strip_prefix("--").map(str::to_string)
+            } else {
+                l.strip_prefix("//").map(|x| x.trim_start_matches(['/', '!']).to_string())
+            }
+        };
+        let mut l = Some(first);
+        while let Some(line) = l {
+            match strip(line) {
+                Some(x) if !x.trim().is_empty() => {
+                    buf.push_str(x.trim());
+                    buf.push(' ');
+                }
+                Some(_) if buf.is_empty() => {}
+                _ => break,
+            }
+            l = lines.next();
+        }
+    }
+    let t = buf.split_whitespace().collect::<Vec<_>>().join(" ");
+    let low = t.to_lowercase();
+    const JUNK: &[&str] = &["copyright", "spdx", "license", "licence", "@license", "generated", "auto-generated", "do not edit", "eslint", "prettier", "@flow", "@jsx", "@ts-", "#region", "todo", "fixme"];
+    if t.chars().count() < 12 || t.starts_with('@') || JUNK.iter().any(|j| low.starts_with(j)) || low.contains("all rights reserved") || low.contains("copyright (c)") {
+        return None;
+    }
+    // a primeira frase basta: termina em ". " seguido de maiúscula, ou no fim
+    let end = t
+        .char_indices()
+        .find(|&(i, c)| c == '.' && t[i + 1..].starts_with(' ') && t[i + 2..].chars().next().is_some_and(char::is_uppercase))
+        .map(|(i, _)| i + 1)
+        .unwrap_or(t.len());
+    Some(cut(t[..end].trim_end_matches(':'), 150))
+}
+
+/// Arquivos que costumam explicar a pasta inteira.
+fn is_index(rel: &str) -> bool {
+    let name = rel.rsplit('/').next().unwrap_or(rel);
+    let stem = name.split_once('.').map(|(s, _)| s).unwrap_or(name);
+    matches!(stem, "index" | "mod" | "lib" | "main" | "__init__" | "init")
+}
+
+fn build(files: &[Src], title: &str, about: Option<&str>) -> String {
     let index: HashMap<&str, usize> = files.iter().enumerate().map(|(i, f)| (f.rel.as_str(), i)).collect();
     let mut stems: HashMap<String, Vec<usize>> = HashMap::new();
     for (i, f) in files.iter().enumerate() {
@@ -190,12 +361,22 @@ fn build(files: &[Src], title: &str) -> String {
     let js = |v: &str| serde_json::to_string(v).unwrap_or_else(|_| "\"\"".into());
     let mut out = String::with_capacity(64 * n + 16 * edges.len());
     let at = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
-    out.push_str(&format!("{{\"v\":1,\"title\":{},\"by\":\"veocode\",\"at\":{at},\"files\":true,\n\"groups\":[\n", js(title)));
+    out.push_str(&format!("{{\"v\":2,\"title\":{},\"by\":\"veocode\",\"at\":{at},\"files\":true,\n", js(title)));
+    if let Some(a) = about {
+        out.push_str(&format!("\"about\":{},\n", js(a)));
+    }
+    out.push_str("\"groups\":[\n");
+    // a explicação de cada arquivo (o comentário do topo) e a de cada área (o index/mod/lib dela)
+    let notes: Vec<Option<String>> = keep.iter().map(|&i| lead_note(&files[i].text, &files[i].ext)).collect();
     for (g, (k, _)) in order.iter().enumerate() {
-        let note = match k.as_str() {
-            "" | OTHER => String::new(),
-            k if k == labels[g] => String::new(),
-            k => format!(",null,{}", js(k)),
+        let desc = keep
+            .iter()
+            .enumerate()
+            .find(|&(kk, &i)| keys[kk] == *k && is_index(&files[i].rel) && dir_of(&files[i].rel) == k.as_str() && notes[kk].is_some())
+            .and_then(|(kk, _)| notes[kk].clone());
+        let note = match (k.as_str(), desc) {
+            ("" | OTHER, _) | (_, None) => String::new(),
+            (_, Some(d)) => format!(",null,{}", js(&d)),
         };
         out.push_str(&format!("[{},{}{note}]{}\n", js(if k == OTHER { "*" } else { k }), js(&labels[g]), if g + 1 < order.len() { "," } else { "" }));
     }
@@ -203,7 +384,8 @@ fn build(files: &[Src], title: &str) -> String {
     for (k, &i) in keep.iter().enumerate() {
         let f = &files[i];
         let name = f.rel.rsplit('/').next().unwrap_or(&f.rel);
-        out.push_str(&format!("[{},{},{},{}]{}\n", js(&f.rel), js(name), gid[keys[k].as_str()], f.lines, if k + 1 < n { "," } else { "" }));
+        let note = notes[k].as_deref().map(|t| format!(",\"\",{}", js(t))).unwrap_or_default();
+        out.push_str(&format!("[{},{},{},{}{note}]{}\n", js(&f.rel), js(name), gid[keys[k].as_str()], f.lines, if k + 1 < n { "," } else { "" }));
     }
     out.push_str("],\n\"links\":[");
     let kept: Vec<(usize, usize)> = edges.iter().filter_map(|(a, b)| Some((*pos.get(a)?, *pos.get(b)?))).collect();
@@ -564,6 +746,23 @@ mod tests {
         let groups: Vec<&str> = v["groups"].as_array().unwrap().iter().map(|g| g[1].as_str().unwrap()).collect();
         assert!(groups.contains(&"views") && groups.contains(&"lib"));
         assert!(read(r).is_some());
+    }
+
+    #[test]
+    fn notes_come_from_comments_and_readme() {
+        assert_eq!(lead_note("// Painel do chat: mostra a conversa. Outra frase.\nimport x;\n", "ts").as_deref(), Some("Painel do chat: mostra a conversa."));
+        assert_eq!(lead_note("//! Mapa do projeto: um arquivo só.\n//! Mais.\nuse x;", "rs").as_deref(), Some("Mapa do projeto: um arquivo só."));
+        assert_eq!(lead_note("/**\n * Lê e grava os arquivos\n * sem sair da raiz.\n */\nexport {}", "ts").as_deref(), Some("Lê e grava os arquivos sem sair da raiz."));
+        assert_eq!(lead_note("\"\"\"Busca os preços na API.\"\"\"\nimport os", "py").as_deref(), Some("Busca os preços na API."));
+        assert_eq!(lead_note("// Copyright 2024 Foo Inc. All rights reserved.\nx", "ts"), None);
+        assert_eq!(lead_note("import x from 'y';\n// não é do topo\n", "ts"), None);
+        assert_eq!(lead_note("/* @refresh reload */\nimport x;", "tsx"), None);
+        assert_eq!(strip_md("Um app para **Mac** com [Claude](https://x.y) e `cli`."), "Um app para Mac com Claude e cli.");
+        let dir = std::env::temp_dir().join(format!("veocode-readme-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("README.md"), "# Título\n\n[![badge](x)](y)\n\nUm app de **teste** que mostra\no mapa do projeto.\n\n## Mais\n").unwrap();
+        assert_eq!(readme_about(&dir).as_deref(), Some("Um app de teste que mostra o mapa do projeto."));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

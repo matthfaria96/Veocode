@@ -1,6 +1,6 @@
 [package]
 name = "veocode"
-version = "0.6.0"
+version = "0.7.0"
 description = "Veocode - workspace visual para agentes de IA"
 authors = []
 edition = "2024"
@@ -33,6 +33,15 @@ keyring = { version = "3", features = ["apple-native", "windows-native"] }
 ureq = { version = "2", features = ["json"] }
 chrono = "0.4"
 portable-pty = "0.9"
+
+# captura do navegador do painel (WKWebView → PNG)
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+block2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSData", "NSDictionary", "NSError", "NSHTTPCookie", "NSString", "NSObject", "NSValue", "NSGeometry"] }
+objc2-core-foundation = { version = "0.3", default-features = false, features = ["std", "CFCGTypes"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSImage", "NSImageRep", "NSBitmapImageRep"] }
+objc2-web-kit = { version = "0.3", default-features = false, features = ["std", "WKWebView", "WKSnapshotConfiguration", "WKWebViewConfiguration", "WKWebsiteDataStore", "WKHTTPCookieStore", "block2", "objc2-app-kit", "objc2-core-foundation"] }
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

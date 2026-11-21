@@ -11,6 +11,7 @@ import { isTauri } from "./api";
 import { loadDir, openRealFile } from "./realProject";
 import { projectId, pushEvent, setWs, ws, type ActivityEvent, type Cursor, type FileMark } from "./store";
 import { tx } from "./i18n";
+import { agentWroteHtml } from "./browser";
 import { markStopped } from "./outside";
 
 export interface AgentEvent {
@@ -206,6 +207,7 @@ export function startAgentFeed(root: HTMLElement): () => void {
         // o arquivo só existe depois do resultado (pode ter esperado a permissão): abre agora
         const cid = cursorOf.get(e.id);
         if (!e.history && e.status !== "error" && cid) showEdit(cid, ev.path, aid);
+        if (!e.history && e.status !== "error" && /\.html?$/i.test(ev.path)) agentWroteHtml(pid, ev.path);
       }
       if (ev?.kind === "run") {
         e.output.forEach((l) => term(l, "dim"));

@@ -15,8 +15,8 @@ export const groupColor = (data: MapData, g: number) => data.groups[g]?.color ??
 
 function theme() {
   return isLight()
-    ? { hull: 0.085, link: "rgba(60,60,67,0.16)", linkOn: 0.9, label: "#1d1d1f", label2: "#6e6e73", halo: "rgba(255,255,255,0.92)", box: "rgba(29,29,31,0.88)", boxText: "#fff", ring: "#fff", gold: "#c48a12", git: "#e58600", ai: "#d6249f" }
-    : { hull: 0.075, link: "rgba(235,235,245,0.13)", linkOn: 0.9, label: "#f5f5f7", label2: "#a1a1a6", halo: "rgba(22,22,24,0.9)", box: "rgba(245,245,247,0.94)", boxText: "#1d1d1f", ring: "#1c1c1e", gold: "#e3b341", git: "#ff9f0a", ai: "#ff4fd8" };
+    ? { hull: 0.07, link: "rgba(60,60,67,0.14)", linkOn: 0.9, label: "#1d1d1f", label2: "#6e6e73", halo: "rgba(255,255,255,0.92)", box: "rgba(29,29,31,0.88)", boxText: "#fff", ring: "#fff", gold: "#c48a12", git: "#e58600", ai: "#d6249f" }
+    : { hull: 0.06, link: "rgba(235,235,245,0.11)", linkOn: 0.9, label: "#f5f5f7", label2: "#a1a1a6", halo: "rgba(22,22,24,0.9)", box: "rgba(245,245,247,0.94)", boxText: "#1d1d1f", ring: "#1c1c1e", gold: "#e3b341", git: "#ff9f0a", ai: "#ff4fd8" };
 }
 
 interface P { n: MapNode; x: number; y: number; vx: number; vy: number; r: number; deg: number; born: number }
@@ -29,6 +29,8 @@ export interface MapCtl {
   /** Destaca quem combina com a busca (vazio: ninguém). Devolve quantos achou. */
   highlight(ids: number[] | null): void;
   focusGroup(g: number): void;
+  /** Mostra um fluxo: o caminho dourado, os passos numerados e o enquadramento neles. */
+  setFlow(steps: number[] | null): void;
   fit(): void;
   zoomBy(k: number): void;
 }
@@ -65,8 +67,8 @@ export function mountMap(host: HTMLElement, data: MapData, opts: { mini?: boolea
     const rad = 10 + Math.sqrt(i % Math.max(1, counts[n.g] ?? 1)) * 12;
     return { n, x: ax + Math.cos(k) * rad, y: ay + Math.sin(k) * rad, vx: 0, vy: 0, r: mini ? r * 0.9 : r, deg, born: n.g * 110 + (i % 40) * 9 };
   });
-  const flowSet = new Set<string>();
-  for (let i = 1; i < data.flow.length; i++) flowSet.add(`${data.flow[i - 1]}>${data.flow[i]}`);
+  // o fluxo mostrado agora (passos em ordem)
+  let flowPath: number[] = [];
 
   let hidden = new Set<number>();
   let live = new Map<number, Live>();
@@ -103,7 +105,7 @@ export function mountMap(host: HTMLElement, data: MapData, opts: { mini?: boolea
       if (!vis(a) || !vis(b)) continue;
       const dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy) || 1;
       const same = a.n.g === b.n.g;
-      const rest = (same ? 44 : 150) + a.r + b.r, k = flowSet.has(`${l.a}>${l.b}`) ? 0.04 : same ? 0.016 : 0.0012;
+      const rest = (same ? 44 : 150) + a.r + b.r, k = same ? 0.016 : 0.0012;
       const f = (d - rest) * k, fx = (dx / d) * f, fy = (dy / d) * f;
       a.vx += fx; a.vy += fy; b.vx -= fx; b.vy -= fy;
     }
@@ -238,16 +240,15 @@ export function mountMap(host: HTMLElement, data: MapData, opts: { mini?: boolea
       if (!vis(a) || !vis(b)) continue;
       const gr = Math.min(grow(a), grow(b));
       if (gr <= 0) continue;
-      const isFlow = flowSet.has(`${l.a}>${l.b}`);
       const on = !!fs && fs.has(a.n.i) && fs.has(b.n.i) && (!fp || a === fp || b === fp || !!hl);
       const touch = fp && (a === fp || b === fp);
-      ctx.globalAlpha = gr * (fs ? (on ? T.linkOn : 0.035) : isFlow ? 0.85 : 1);
-      ctx.strokeStyle = isFlow ? T.gold : on ? C[(a === fp ? b : a).n.g] : T.link;
-      ctx.lineWidth = (isFlow ? 2.4 : on ? 1.5 : 0.8) / zoom;
+      ctx.globalAlpha = gr * (fs ? (on ? T.linkOn : 0.035) : 1);
+      ctx.strokeStyle = on ? C[(a === fp ? b : a).n.g] : T.link;
+      ctx.lineWidth = (on ? 1.5 : 0.8) / zoom;
       // quem usa o ponto escolhido chega tracejado, andando até ele
       ctx.setLineDash(touch && b === fp ? [8 / zoom, 6 / zoom] : []);
       ctx.lineDashOffset = touch && b === fp ? -flowOff / zoom : 0;
-      const dx = b.x - a.x, dy = b.y - a.y, bend = isFlow ? 0 : 0.1;
+      const dx = b.x - a.x, dy = b.y - a.y, bend = 0.1;
       ctx.beginPath();
       ctx.moveTo(a.x, a.y);
       if (gr >= 1 && bend) ctx.quadraticCurveTo((a.x + b.x) / 2 - dy * bend, (a.y + b.y) / 2 + dx * bend, b.x, b.y);
@@ -255,6 +256,24 @@ export function mountMap(host: HTMLElement, data: MapData, opts: { mini?: boolea
       ctx.stroke();
     }
     ctx.setLineDash([]);
+
+    // o fluxo escolhido: um caminho dourado de passo em passo, com a direção andando
+    if (flowPath.length > 1) {
+      ctx.strokeStyle = T.gold;
+      ctx.lineWidth = 2.6 / zoom;
+      ctx.globalAlpha = 0.9;
+      ctx.setLineDash([10 / zoom, 7 / zoom]);
+      ctx.lineDashOffset = -flowOff / zoom;
+      ctx.beginPath();
+      for (let i = 1; i < flowPath.length; i++) {
+        const a = ps[flowPath[i - 1]], b = ps[flowPath[i]];
+        if (!vis(a) || !vis(b)) continue;
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
 
     // pontos
     const pulse = (Math.sin(now / 260) + 1) / 2;
@@ -286,27 +305,33 @@ export function mountMap(host: HTMLElement, data: MapData, opts: { mini?: boolea
       ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
       ctx.fillStyle = C[p.n.g];
       ctx.fill();
-      if (!mini && r * zoom > 5) { ctx.strokeStyle = T.ring; ctx.lineWidth = 1.4 / zoom; ctx.stroke(); }
+      if (!mini && r * zoom > 5) { ctx.strokeStyle = T.ring; ctx.lineWidth = 1.1 / zoom; ctx.stroke(); }
     }
 
     if (mini) { ctx.globalAlpha = 1; return; }
 
-    // nomes das áreas, acima de cada nuvem (os nomes dos pontos desviam deles)
+    // nomes das áreas, acima de cada nuvem: texto neutro com a bolinha da cor (os nomes dos
+    // pontos desviam deles)
     const boxes: number[][] = [];
-    ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+    ctx.textAlign = "left"; ctx.textBaseline = "bottom";
     for (const c of centers) {
-      const fz = 11.5 / zoom;
-      ctx.font = `700 ${fz}px ${FONT}`;
-      const text = data.groups[c.g].label.toUpperCase();
-      ctx.globalAlpha = fs ? 0.35 : 0.9;
+      const fz = 12 / zoom, dot = 3.5 / zoom, gap = 6 / zoom;
+      ctx.font = `600 ${fz}px ${FONT}`;
+      const text = data.groups[c.g].label;
+      const tw = ctx.measureText(text).width, w = dot * 2 + gap + tw;
+      const x = c.x - w / 2, y = c.top - 22 / Math.max(0.55, zoom);
+      ctx.globalAlpha = fs ? 0.35 : 1;
       ctx.lineWidth = 3 / zoom; ctx.strokeStyle = T.halo; ctx.lineJoin = "round";
-      const y = c.top - 24 / Math.max(0.55, zoom);
-      ctx.strokeText(text, c.x, y);
+      ctx.strokeText(text, x + dot * 2 + gap, y);
+      ctx.fillStyle = T.label2;
+      ctx.fillText(text, x + dot * 2 + gap, y);
+      ctx.beginPath();
+      ctx.arc(x + dot, y - fz * 0.36, dot, 0, Math.PI * 2);
       ctx.fillStyle = C[c.g];
-      ctx.fillText(text, c.x, y);
-      const tw = ctx.measureText(text).width;
-      boxes.push([c.x - tw / 2 - 4, y - fz - 2, c.x + tw / 2 + 4, y + 2]);
+      ctx.fill();
+      boxes.push([x - 4, y - fz - 2, x + w + 4, y + 2]);
     }
+    ctx.textAlign = "center";
 
     // nomes dos pontos: os maiores e os em foco primeiro, sem encavalar
     const prio = (p: P) => (p === fp ? 0 : fs?.has(p.n.i) ? 1 : live.has(p.n.i) ? 1.5 : 3 - p.r / 10);
@@ -317,7 +342,7 @@ export function mountMap(host: HTMLElement, data: MapData, opts: { mini?: boolea
       if (gr < 0.6) continue;
       const pr = prio(p);
       if (fs && !fs.has(p.n.i) && pr > 1.5) continue;
-      if (!fs && pr > 2 && p.r * zoom < 6) continue;
+      if (!fs && pr > 2 && p.r * zoom < 7) continue;
       // tamanho fixo na tela (12 px, 11 nos de fundo), qualquer que seja o zoom
       const fz = (pr <= 1.5 ? 12 : 11) / zoom;
       ctx.font = `${pr <= 1.5 ? 600 : 500} ${fz}px ${FONT}`;
@@ -338,6 +363,24 @@ export function mountMap(host: HTMLElement, data: MapData, opts: { mini?: boolea
         ctx.fillStyle = pr <= 2 ? T.label : T.label2;
       }
       ctx.fillText(label, p.x, y0 + 2.5 / zoom);
+    }
+
+    // número de cada passo do fluxo, no canto do ponto
+    if (flowPath.length) {
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      const firstAt = new Map<number, number>();
+      flowPath.forEach((n, i) => !firstAt.has(n) && firstAt.set(n, i + 1));
+      for (const [n, k] of firstAt) {
+        const p = ps[n];
+        if (!vis(p)) continue;
+        const rr = 8 / zoom, x = p.x + p.r * 0.75 + rr * 0.6, y = p.y - p.r * 0.75 - rr * 0.6;
+        ctx.globalAlpha = 1;
+        ctx.beginPath(); ctx.arc(x, y, rr, 0, Math.PI * 2);
+        ctx.fillStyle = T.gold; ctx.fill();
+        ctx.font = `700 ${10 / zoom}px ${FONT}`;
+        ctx.fillStyle = "#1a1408";
+        ctx.fillText(String(k), x, y + 0.5 / zoom);
+      }
     }
     ctx.globalAlpha = 1;
   }
@@ -375,7 +418,7 @@ export function mountMap(host: HTMLElement, data: MapData, opts: { mini?: boolea
       if (k >= 1) cam = null;
       dirty = true;
     }
-    if (!mini && (now - t0 < 2400 || sel || hover)) dirty = true;
+    if (!mini && (now - t0 < 2400 || sel || hover || flowPath.length)) dirty = true;
     if ([...live.values()].includes("now")) dirty = true;
     if (dirty && W > 0 && !document.hidden) { draw(now); dirty = false; }
     raf = requestAnimationFrame(loop);
@@ -483,6 +526,19 @@ export function mountMap(host: HTMLElement, data: MapData, opts: { mini?: boolea
       userCam = true;
       cam = { z, x: (-(x0 + x1) / 2) * z, y: (-(y0 + y1) / 2) * z, t0: performance.now(), from: [zoom, ox, oy] };
       dirty = true;
+    },
+    setFlow(steps) {
+      flowPath = steps ?? [];
+      hl = flowPath.length ? new Set(flowPath) : null;
+      dirty = true;
+      if (!flowPath.length) return;
+      const list = flowPath.map((i) => ps[i]).filter(vis);
+      if (!list.length) return;
+      let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+      for (const p of list) (x0 = Math.min(x0, p.x)), (x1 = Math.max(x1, p.x)), (y0 = Math.min(y0, p.y)), (y1 = Math.max(y1, p.y));
+      const z = Math.max(0.3, Math.min(1.6, W / (x1 - x0 + 300), H / (y1 - y0 + 220)));
+      userCam = true;
+      cam = { z, x: (-(x0 + x1) / 2) * z, y: (-(y0 + y1) / 2) * z, t0: performance.now(), from: [zoom, ox, oy] };
     },
     fit: () => { hl = null; fitAll(); },
     zoomBy(k) {

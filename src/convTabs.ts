@@ -296,7 +296,7 @@ function summaryOf(key: string): { title: string; text: string; files: string[] 
   const pid = key.split("~")[0];
   const title = tabsOf(pid).find((t) => t.key === key)?.title ?? "Conversa";
   const lines = [
-    asks.length ? `Pedidos: ${asks.slice(-5).join(" | ")}` : "",
+    asks.length ? tx("Pedidos: {list}", { list: asks.slice(-5).join(" | ") }) : "",
     files.length ? tx("Arquivos mexidos: {list}", { list: files.slice(0, 15).join(", ") + (files.length > 15 ? tx(" e mais {v}", { v: files.length - 15 }) : "") }) : "",
     last ? tx("Fim da conversa: {v}", { v: cut(last.title, 500) }) : "",
   ].filter(Boolean);

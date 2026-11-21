@@ -1,10 +1,11 @@
 // Aba Mapa do painel da direita (modo Código): uma miniatura do mapa do projeto que abre o mapa
-// inteiro numa aba, as áreas com quantos arquivos cada uma tem, o que está vivo agora (a IA
-// mexendo, mudado no git) e os dois jeitos de fazer o mapa: do código ou pela IA.
-import { ArrowUpRight, RefreshCw, Sparkles, Waypoints } from "lucide-solid";
+// inteiro numa aba, o resumo do projeto, os fluxos, o que está vivo agora (a IA mexendo, mudado
+// no git) e as áreas. Refazer o mapa abre a janela que explica os dois jeitos (código ou IA).
+import { ArrowUpRight, FileText, RefreshCw, Route, Waypoints } from "lucide-solid";
 import { createEffect, createMemo, For, on, onCleanup, Show } from "solid-js";
 import { groupColor, mountMap, type MapCtl } from "../mapEngine";
-import { askAiForMap, liveFiles, liveOf, loadMap, MAP_FILE, mapOf, openMap, scanMap, type Live, type MapData } from "../projmap";
+import { liveFiles, liveOf, loadMap, MAP_FILE, MAP_NOTES, mapOf, openMap, type Live, type MapData } from "../projmap";
+import { openMapMaker } from "../modals";
 import { MapInvite } from "./ProjectMap";
 import { currentProject } from "../store";
 import { since } from "../git";
@@ -60,25 +61,38 @@ function PanelBody(props: { data: MapData }) {
         <span class="mpanel-open"><ArrowUpRight size={13} /> {tx("Abrir o mapa")}</span>
       </button>
 
-      <div class="mpanel-meta">
+      <div class="mpanel-meta" title={`${d().by === "veocode" ? tx("tirado do código") : tx("feito pela IA")} · ${MAP_FILE} · ${formatSize(d().bytes)}`}>
         <strong>{d().files ? txn(d().nodes.length, "{n} arquivo", "{n} arquivos") : txn(d().nodes.length, "{n} peça", "{n} peças")}</strong>
-        <span>{txn(d().groups.length, "{n} área", "{n} áreas")}</span>
-        <span>{txn(d().links.length, "{n} ligação", "{n} ligações")}</span>
+        <span>{txn(d().groups.filter((g) => g.count).length, "{n} área", "{n} áreas")} · {d().by === "veocode" ? tx("do código") : tx("pela IA")} · {since(Math.floor(d().at / 1000))}</span>
       </div>
-      <small class="mpanel-sub" title={MAP_FILE}>
-        {d().by === "veocode" ? tx("tirado do código") : tx("desenhado pela IA")} · {since(Math.floor(d().at / 1000))} · {formatSize(d().bytes)}
-      </small>
+      <Show when={d().about}><p class="mpanel-about">{d().about}</p></Show>
 
       <div class="mpanel-actions">
-        <button class="primary-btn" onClick={() => openMap()}><Waypoints size={14} /> {tx("Abrir o mapa")}</button>
-        <button class="ghost-btn" disabled={!!mapOf(pid()).busy} onClick={() => void scanMap(pid())} title={tx("Ler o código de novo e redesenhar")}>
-          <Show when={mapOf(pid()).busy} fallback={<RefreshCw size={13} />}><span class="spinner tiny" /></Show>
-          {tx("Atualizar")}
-        </button>
-        <button class="ghost-btn" onClick={() => askAiForMap(pid())} title={tx("A IA do projeto reescreve o mapa com ideias (telas, serviços, dados) em vez de arquivos")}>
-          <Sparkles size={13} /> {tx("Pedir à IA")}
+        <button class="primary-btn" onClick={() => openMap({ view: "overview" })}><Waypoints size={14} /> {tx("Abrir o mapa")}</button>
+        <button class="pmap-tool" disabled={!!mapOf(pid()).busy} onClick={() => openMapMaker(pid())} title={tx("Refazer o mapa…")}>
+          <Show when={mapOf(pid()).busy} fallback={<RefreshCw size={14} />}><span class="spinner tiny" /></Show>
         </button>
       </div>
+      <p class="mpanel-ai" title={tx("O Veocode avisa a IA do projeto que este resumo existe; ela lê quando precisa achar onde algo fica, em vez de varrer o projeto inteiro.")}>
+        <FileText size={12} /> {tx("A IA do projeto consulta este mapa ({file})", { file: MAP_NOTES })}
+      </p>
+
+      <Show when={d().flows.length}>
+        <section class="mpanel-sec">
+          <h4>{tx("Como funciona")} <small>{d().flows.length}</small></h4>
+          <div class="mpanel-flows">
+            <For each={d().flows}>
+              {(f, i) => (
+                <button onClick={() => openMap({ view: "flows", flow: i() })} title={f.note ?? f.name}>
+                  <Route size={13} />
+                  <span>{f.name}</span>
+                  <small>{txn(f.steps.length, "{n} passo", "{n} passos")}</small>
+                </button>
+              )}
+            </For>
+          </div>
+        </section>
+      </Show>
 
       <section class="mpanel-sec">
         <h4>{tx("Agora")} <Show when={now().length}><small>{now().length}</small></Show></h4>
@@ -101,12 +115,12 @@ function PanelBody(props: { data: MapData }) {
       <section class="mpanel-sec">
         <h4>{tx("Áreas")}</h4>
         <div class="mpanel-groups">
-          <For each={d().groups}>
-            {(g, i) => (
-              <button onClick={() => openMap({ group: i() })} title={g.note ?? g.label}>
-                <i style={{ background: groupColor(d(), i()) }} />
+          <For each={d().groups.map((g, i) => ({ g, i })).filter((x) => x.g.count)}>
+            {({ g, i }) => (
+              <button onClick={() => openMap({ view: "overview", group: i })} title={g.note ?? g.label}>
+                <i style={{ background: groupColor(d(), i) }} />
                 <span>{g.label}</span>
-                <span class="mpanel-bar"><b style={{ width: `${(g.count / biggest()) * 100}%`, background: groupColor(d(), i()) }} /></span>
+                <span class="mpanel-bar"><b style={{ width: `${(g.count / biggest()) * 100}%`, background: groupColor(d(), i) }} /></span>
                 <small>{g.count}</small>
               </button>
             )}
@@ -114,10 +128,6 @@ function PanelBody(props: { data: MapData }) {
         </div>
       </section>
 
-      <p class="mpanel-foot">
-        <Waypoints size={12} />
-        <span>{tx("O mapa é um arquivo só ({file}): o Veocode desenha, a IA pode reescrever com ideias em vez de arquivos.", { file: MAP_FILE })}</span>
-      </p>
     </>
   );
 }

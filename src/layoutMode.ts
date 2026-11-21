@@ -82,7 +82,7 @@ const size = (k: string, d: number, lo: number, hi: number) => {
 };
 
 /** Painel de depuração do modo IA (à direita): aberto, largura e a aba da frente. */
-export type DebugTab = "browser" | "procs" | "subs" | "activity" | "trail" | "file";
+export type DebugTab = "browser" | "procs" | "subs" | "activity" | "trail";
 const [debugPref, setDebugPref] = createSignal(recall("veocode.ai.debug") !== "0");
 export const debugOpen = () => (narrowRight() ? debugSheet() : debugPref());
 export const setDebugOpen = (v: boolean) => (narrowRight() ? setDebugSheet(v) : (setDebugPref(v), remember("veocode.ai.debug", v ? "1" : "0")));
@@ -92,7 +92,7 @@ export const setDebugW = (v: number, save = false) => (setDebugWRaw(v), save && 
 const savedTab = recall("veocode.ai.debugTab");
 const [debugTab, setDebugTabRaw] = createSignal<DebugTab>(savedTab === "procs" || savedTab === "subs" || savedTab === "activity" || savedTab === "trail" ? savedTab : "browser");
 export { debugTab };
-export const setDebugTab = (v: DebugTab) => (setDebugTabRaw(v), v !== "file" && remember("veocode.ai.debugTab", v));
+export const setDebugTab = (v: DebugTab) => (setDebugTabRaw(v), remember("veocode.ai.debugTab", v));
 
 /** Painel da direita do modo Código (⌥⌘B): o Git, o terminal da pasta e o Ambiente. Aberto,
  *  largura e aba lembrados. O resto (comandos, atividade, rastro) é do modo IA; a conversa com a

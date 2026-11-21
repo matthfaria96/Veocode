@@ -9,13 +9,15 @@ import { runningCount } from "../envs";
 import { codeSideTab, setCodeSideOpen, setCodeSideTab, type CodeSideTab } from "../layoutMode";
 import { currentProject } from "../store";
 import { terms } from "../terminal";
-import EnvPanel from "./EnvPanel";
-import GitPanel from "./GitPanel";
-import MapPanel from "./MapPanel";
 import { tx, txn } from "../i18n";
 
 // o xterm só carrega quando o terminal aparece
+import { LazyWait } from "./ui";
+
 const ProjectTerminal = lazy(() => import("./ProjectTerminal"));
+const GitPanel = lazy(() => import("./GitPanel"));
+const EnvPanel = lazy(() => import("./EnvPanel"));
+const MapPanel = lazy(() => import("./MapPanel"));
 
 /** Bolinha com número, como no VS Code: arquivos mudados sem commit; sem mudanças, o que falta
  *  enviar (↑) ou baixar (↓). Vermelha quando há conflito. Nada a resolver: não aparece. */
@@ -58,17 +60,26 @@ export default function CodeSide() {
   ];
 
   // Sem espaço para todos os nomes (painel estreito, inglês, bolinhas de número), as abas de fora
-  // ficam só com o ícone; o nome volta quando cabe. Medido, não por largura fixa: o nome escondido
-  // continua no layout com largura 0, então dá para saber quanto ele ocuparia.
+  // ficam só com o ícone; o nome volta quando cabe. Medido, não por largura fixa: soma a largura
+  // natural de cada aba com o nome (o nome escondido continua no layout com largura 0, e o
+  // scrollWidth dele ainda diz quanto ocuparia), já que as abas esticam para preencher a barra.
   let seg!: HTMLDivElement;
   const [compact, setCompact] = createSignal(false);
   onMount(() => {
     let raf = 0;
+    const px = (v: string) => parseFloat(v) || 0;
     const check = () => {
       cancelAnimationFrame(raf);
       raf = requestAnimationFrame(() => {
-        let need = seg.scrollWidth;
-        if (compact()) for (const el of seg.querySelectorAll<HTMLElement>('[role="tab"]:not(.on) > span')) need += el.scrollWidth + 6;
+        const tabs = [...seg.children] as HTMLElement[];
+        const sc = getComputedStyle(seg);
+        let need = px(sc.paddingLeft) + px(sc.paddingRight) + px(sc.columnGap) * Math.max(0, tabs.length - 1);
+        for (const t of tabs) {
+          const cs = getComputedStyle(t);
+          const kids = [...t.children] as HTMLElement[];
+          need += px(cs.paddingLeft) + px(cs.paddingRight) + px(cs.columnGap) * Math.max(0, kids.length - 1);
+          for (const k of kids) need += k.tagName === "SPAN" ? k.scrollWidth : k.getBoundingClientRect().width;
+        }
         setCompact(need > seg.clientWidth + 1);
       });
     };
@@ -98,9 +109,9 @@ export default function CodeSide() {
       </div>
       <div class="dbg-body">
         <Switch>
-          <Match when={codeSideTab() === "git"}><div class="side-scroll"><GitPanel /></div></Match>
-          <Match when={codeSideTab() === "env"}><EnvPanel /></Match>
-          <Match when={codeSideTab() === "map"}><MapPanel /></Match>
+          <Match when={codeSideTab() === "git"}><div class="side-scroll"><Suspense fallback={<LazyWait />}><GitPanel /></Suspense></div></Match>
+          <Match when={codeSideTab() === "env"}><Suspense fallback={<LazyWait />}><EnvPanel /></Suspense></Match>
+          <Match when={codeSideTab() === "map"}><Suspense fallback={<LazyWait />}><MapPanel /></Suspense></Match>
           <Match when={codeSideTab() === "term"}>
             <section class="code-term docked">
               <Suspense fallback={<div class="pterm-empty"><span class="spinner" /> {tx("Carregando o terminal…")}</div>}>

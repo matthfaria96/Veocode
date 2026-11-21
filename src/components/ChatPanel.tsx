@@ -368,15 +368,13 @@ function ChatTail(props: { k?: string; events?: () => ActivityEvent[] }) {
         </Show>
         <LiveLine color={a().color} step={chat().draft ? null : runningStep()} writing={!!chat().draft} since={turn().since} onStop={stop} stopping={stopping()} />
       </Show>
+      {/* lê outside() direto, não o acessor do <Show>: o relógio do LiveLine e o outside mudam no
+          mesmo tique, e ler o acessor depois que o pedido acabou derruba a tela ("Stale read") */}
       <Show when={outside()}>
-        {(o) => (
-          <>
-            <LiveLine color={a().color} step={o().step} since={o().since} where={tx("fora do Veocode")} onStop={() => setStopOut(!stopOut())} stopTitle={tx("Parar a IA que roda fora do Veocode")} />
-            <Show when={stopOut()}>
-              <StopOutside pid={p().id} onClose={() => setStopOut(false)} onStopped={() => (markStopped(o().session, Date.now()), setStopOut(false))} />
-            </Show>
-          </>
-        )}
+        <LiveLine color={a().color} step={outside()?.step ?? null} since={outside()?.since} where={tx("fora do Veocode")} onStop={() => setStopOut(!stopOut())} stopTitle={tx("Parar a IA que roda fora do Veocode")} />
+        <Show when={stopOut()}>
+          <StopOutside pid={p().id} onClose={() => setStopOut(false)} onStopped={() => (markStopped(outside()?.session, Date.now()), setStopOut(false))} />
+        </Show>
       </Show>
       <For each={chat().perms}>
         {(q) => (
@@ -512,7 +510,7 @@ function Composer(props: { onLevel: () => void; k?: string; compact?: boolean })
         </Show>
       </div>
       <Show when={menu()}>
-        <AgentMenu prefKey={p().id} accountId={a().id} title={tx("Conta neste projeto")} onPick={(id) => requestSwitch(p().id, id)} onClose={() => setMenu(false)} />
+        <AgentMenu prefKey={p().id} accountId={a().id} title={tx("Conta neste projeto")} terminal onPick={(id) => requestSwitch(p().id, id)} onClose={() => setMenu(false)} />
       </Show>
     </div>
     </>

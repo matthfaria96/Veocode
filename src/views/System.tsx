@@ -1,7 +1,7 @@
 // Painel: tudo o que as IAs ocupam, rodam e instalaram neste computador, numa tela só.
 // À esquerda, a lista no jeito dos Ajustes do macOS (Visão geral, No disco, Rodando agora e
 // Extras do Claude); à direita, a parte escolhida. A Visão geral resume tudo em cartões.
-import { Activity, AlertTriangle, Box, Brain, ChevronRight, Copy, Cpu, Download, FolderOpen, HardDrive, LayoutGrid, Monitor, Package, Play, Plug, Power, Puzzle, RefreshCw, Server, Sparkles, Square, Trash2, type LucideProps } from "lucide-solid";
+import { Activity, AlertTriangle, Box, Brain, ChevronRight, Copy, Cpu, Download, FolderOpen, HardDrive, LayoutGrid, Monitor, Package, Play, Plug, Power, Puzzle, RefreshCw, Server, Square, Trash2, type LucideProps } from "lucide-solid";
 import { createMemo, createSignal, For, Match, onCleanup, onMount, Show, Switch, type JSX } from "solid-js";
 import { api, copyText, isTauri, type AgentGroup, type Leftover, type Proc } from "../api";
 import { formatBytes } from "../data/mock";
@@ -9,7 +9,7 @@ import { showToast } from "../store";
 import { agentColor, diskPoints, killLeftover, killProc, loadCaches, loadInstalls, loadMachines, loadModels, refreshPorts, refreshProcs, setXray, toggleMachine, trashCaches, xray, type CacheRow } from "../xray";
 import { inv, loadInventory, refreshRunning } from "../inventory";
 import { panelSec, setPanelSec, type PanelSec } from "../panel";
-import { CountUp, Sparkline, Stagger } from "../components/ui";
+import { ClaudeLogo, CountUp, Sparkline, Stagger } from "../components/ui";
 import ConfirmDialog from "../components/ConfirmDialog";
 import Explainer from "../components/Explainer";
 import ClaudeSpace, { claudeSpaceTotal, loadClaudeSpace } from "../components/ClaudeSpace";
@@ -38,7 +38,7 @@ interface Meta {
 
 const META: Meta[] = [
   { id: "overview", get label() { return tx("Visão geral"); }, get hint() { return tx("O que as IAs ocupam no disco, o que está aberto agora e os extras do Claude, num olhar."); }, icon: LayoutGrid, k: "#0a84ff" },
-  { id: "claude", get label() { return tx("Claude no computador"); }, get hint() { return tx("Quanto o app do Claude, o Claude Code e o Veocode ocupam, com um conserto em cada item."); }, icon: Sparkles, k: "#d97757" },
+  { id: "claude", get label() { return tx("Claude no computador"); }, get hint() { return tx("Quanto o app do Claude, o Claude Code e o Veocode ocupam, com um conserto em cada item."); }, icon: (p: LucideProps) => <ClaudeLogo size={Number(p.size) || 14} />, k: "#d97757" },
   { id: "caches", get label() { return tx("Caches e restos"); }, get hint() { return tx("Históricos, pacotes baixados e restos de build. Marque o que não quer e mande para a Lixeira."); }, icon: HardDrive, k: "#8e8e93" },
   { id: "models", get label() { return tx("IAs locais"); }, get hint() { return tx("Modelos baixados para rodar no próprio computador (Ollama, LM Studio, Hugging Face). Valem para qualquer projeto."); }, icon: Brain, k: "#ff375f" },
   { id: "installed", get label() { return tx("Instalado pelas IAs"); }, get hint() { return tx("Programas que o Claude instalou enquanto trabalhava. Valem para o computador todo, não só para o projeto que pediu."); }, icon: Download, k: "#ff9f0a" },
@@ -670,7 +670,7 @@ function Overview(props: {
               <For each={xray.procs.slice(0, 3)} fallback={<small class="dash-none">{tx("Nenhuma IA aberta agora.")}</small>}>
                 {(g) => (
                   <div class="dash-row">
-                    <i class="dash-row-dot" style={{ "--c": agentColor(g.agent) }} />
+                    <Show when={g.agent.startsWith("Claude")} fallback={<i class="dash-row-dot" style={{ "--c": agentColor(g.agent) }} />}><ClaudeLogo size={12} /></Show>
                     <span class="dash-row-name">{g.agent}</span>
                     <small>{g.cwd ? base(g.cwd) : ""}</small>
                     <b>{formatBytes(g.mem)}</b>
@@ -817,7 +817,7 @@ function AgentCard(props: { g: AgentGroup; onKill: (p: Proc) => void }) {
   return (
     <div class="agent-card stagger" classList={{ idle: props.g.children.length === 0 }} style={{ "--c": color() }}>
       <div class="agent-head">
-        <span class="account-dot" />
+        <Show when={props.g.agent.startsWith("Claude")} fallback={<span class="account-dot" />}><ClaudeLogo size={15} /></Show>
         <strong>{props.g.agent}</strong>
         <Show when={props.g.host}><span class="host-chip" title={tx("Onde esta IA está aberta")}>{tx(props.g.host!)}</span></Show>
         <span class="proj-chip" title={props.g.cwd ?? ""}>{props.g.cwd ? base(props.g.cwd) : "—"}</span>

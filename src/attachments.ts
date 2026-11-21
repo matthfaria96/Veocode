@@ -23,6 +23,9 @@ export const [dropPid, setDropPid] = createSignal<string | null>(null);
 
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
+/** Um anexo pronto (captura do navegador, por exemplo). */
+export const addAtt = (pid: string, a: Att) => addAtts(pid, [a]);
+
 function addAtts(pid: string, list: Att[]) {
   const cur = attsOf(pid);
   const fresh = list.filter((a) => !cur.some((c) => c.path === a.path));

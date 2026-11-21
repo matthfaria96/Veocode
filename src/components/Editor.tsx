@@ -1,13 +1,17 @@
 import { AlertTriangle, Check, ExternalLink, FileText, GitCommitHorizontal, GitCompareArrows, MessageSquare, Search, SquareTerminal, Waypoints, X } from "lucide-solid";
-import DiffView, { AllChanges } from "./DiffView";
-import CommitView from "./CommitView";
-import ProjectMap from "./ProjectMap";
 import { commitByHash } from "../git";
 import { projMode } from "../layoutMode";
 import { FileIcon } from "./icons";
 import { ImageView } from "./Media";
 import { isImagePath } from "../media";
-import { createMemo, For, Index, Match, Show, Switch, type JSX } from "solid-js";
+import { createMemo, For, Index, lazy, Match, Show, Suspense, Switch, type JSX } from "solid-js";
+import { LazyWait } from "./ui";
+
+// diferenças, commits e o mapa abrem sob demanda: ficam em arquivos à parte
+const DiffView = lazy(() => import("./DiffView"));
+const AllChanges = lazy(() => import("./DiffView").then((m) => ({ default: m.AllChanges })));
+const CommitView = lazy(() => import("./CommitView"));
+const ProjectMap = lazy(() => import("./ProjectMap"));
 import { api, formatSize } from "../api";
 import { ask } from "../dialogs";
 import { draftOf, dropDraft, edit, isUnsaved, saveNow, textOf } from "../editing";
@@ -222,11 +226,13 @@ export default function Editor(props: { tools?: JSX.Element }) {
       <Show
         when={!isDiffTab(ws.activeFile)}
         fallback={
-          <Switch fallback={<DiffView path={diffPathOf(ws.activeFile)} />}>
-            <Match when={ws.activeFile === ALL_CHANGES}><AllChanges /></Match>
-            <Match when={isCommitTab(ws.activeFile)}><CommitView hash={commitOfTab(ws.activeFile)} /></Match>
-            <Match when={ws.activeFile === MAP_TAB}><ProjectMap /></Match>
-          </Switch>
+          <Suspense fallback={<LazyWait />}>
+            <Switch fallback={<DiffView path={diffPathOf(ws.activeFile)} />}>
+              <Match when={ws.activeFile === ALL_CHANGES}><AllChanges /></Match>
+              <Match when={isCommitTab(ws.activeFile)}><CommitView hash={commitOfTab(ws.activeFile)} /></Match>
+              <Match when={ws.activeFile === MAP_TAB}><ProjectMap /></Match>
+            </Switch>
+          </Suspense>
         }
       >
       <Show when={ws.activeFile} fallback={<EditorHome />}>

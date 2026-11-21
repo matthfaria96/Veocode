@@ -1,25 +1,32 @@
 // Mapa do projeto: um arquivo só, `.veocode/map.json`, lido e desenhado pelo Veocode (o desenho
-// mora em mapEngine.ts). O Veocode escreve a versão tirada do código (src-tauri/src/projmap.rs);
-// a IA do projeto pode reescrever o mesmo arquivo com ideias (telas, serviços, dados) no lugar
-// de arquivos. Por cima do desenho vai o que está acontecendo agora: o que mudou no git e o que a
-// IA está mexendo.
+// mora em mapEngine.ts). O Veocode escreve a versão tirada do código (src-tauri/src/projmap.rs),
+// grátis e em segundos; a IA do projeto pode reescrever o mesmo arquivo com um resumo explicado
+// (áreas, o que cada peça faz e os fluxos passo a passo). Por cima do desenho vai o que está
+// acontecendo agora: o que mudou no git e o que a IA está mexendo. Do mapa sai também
+// `.veocode/MAP.md`, um resumo em texto que a IA do projeto lê para achar onde mexer.
 import { createMemo, createRoot, createSignal } from "solid-js";
 import { createStore } from "solid-js/store";
 import { invoke } from "@tauri-apps/api/core";
 import { isTauri } from "./api";
 import { changedFiles } from "./git";
-import { setInput, sendChat, chatOf } from "./chat";
+import { setInput, sendChat } from "./chat";
+import { renameTab, startConversation } from "./convTabs";
 import { setCodeSideOpen, setCodeSideTab, setProjMode } from "./layoutMode";
 import { currentProject, MAP_TAB, openFile, showToast, ws } from "./store";
 import { lang, tx } from "./i18n";
 
 export const MAP_FILE = ".veocode/map.json";
+export const MAP_NOTES = ".veocode/MAP.md";
 export { MAP_TAB };
 export const isMapTab = (t: string) => t === MAP_TAB;
 
 export interface MapGroup { id: string; label: string; color?: string; note?: string; count: number }
 export interface MapNode { i: number; id: string; label: string; g: number; size: number; path?: string; note?: string; out: number[]; inn: number[] }
 export interface MapLink { a: number; b: number; label?: string }
+/** Um passo de um fluxo: a peça e o que acontece nela. */
+export interface MapStep { n: number; note?: string }
+/** Uma coisa que alguém faz no app, passo a passo (ex.: "Mandar uma mensagem"). */
+export interface MapFlow { name: string; note?: string; steps: MapStep[] }
 export interface MapData {
   title: string;
   /** "veocode" (tirado do código) ou "ia" */
@@ -28,10 +35,12 @@ export interface MapData {
   at: number;
   /** pontos são arquivos (o tamanho é em linhas) */
   files: boolean;
+  /** o que o projeto é e como se organiza, em poucas frases */
+  about?: string;
   groups: MapGroup[];
   nodes: MapNode[];
   links: MapLink[];
-  flow: number[];
+  flows: MapFlow[];
   bytes: number;
 }
 
@@ -95,9 +104,106 @@ export function parseMap(raw: string): MapData | null {
     nodes[x].out.push(y);
     nodes[y].inn.push(x);
   }
-  const flow = (Array.isArray(j.flow) ? j.flow : []).map(ref).filter((i) => i >= 0);
+  // fluxos: [nome, [[peça, o que acontece], …], nota?] ou {name, steps, note}; o "flow" antigo
+  // (uma lista de peças) vira o "Caminho principal"
+  const stepOf = (v: unknown): MapStep | null => {
+    const a = Array.isArray(v) ? v : v && typeof v === "object" ? [(v as any).node ?? (v as any).id ?? (v as any).step, (v as any).note ?? (v as any).text] : [v];
+    const n = ref(a[0]);
+    return n < 0 ? null : { n, note: str(a[1]) || undefined };
+  };
+  const stepsOf = (v: unknown) => (Array.isArray(v) ? v : []).map(stepOf).filter((x): x is MapStep => !!x);
+  const flows: MapFlow[] = [];
+  for (const f of Array.isArray(j.flows) ? j.flows : []) {
+    const a = Array.isArray(f) ? f : [f?.name ?? f?.title, f?.steps, f?.note];
+    const steps = stepsOf(a[1]);
+    if (steps.length >= 2) flows.push({ name: str(a[0]) || tx("Fluxo {n}", { n: flows.length + 1 }), note: str(a[2]) || undefined, steps });
+  }
+  if (!flows.length) {
+    const steps = stepsOf(j.flow);
+    if (steps.length >= 2) flows.push({ name: tx("Caminho principal"), steps });
+  }
   const at = num(j.at, 0);
-  return { title: str(j.title), by: str(j.by) || "ia", at: at > 1e12 ? at : at * 1000, files, groups, nodes, links, flow, bytes: raw.length };
+  const about = str(j.about ?? j.summary).trim();
+  return { title: str(j.title), by: str(j.by) || "ia", at: at > 1e12 ? at : at * 1000, files, about: about || undefined, groups, nodes, links, flows, bytes: raw.length };
+}
+
+// ---------------------------------------------------------------- leituras do mapa
+
+/** Como uma área se liga a outra: quantas ligações e o que passa por elas. */
+export interface AreaLink { a: number; b: number; n: number; labels: string[] }
+
+/** As ligações entre áreas (a soma das ligações entre as peças), da mais forte à mais fraca. */
+export function areaLinks(d: MapData): AreaLink[] {
+  const m = new Map<string, { a: number; b: number; n: number; lab: Map<string, number> }>();
+  for (const l of d.links) {
+    const ga = d.nodes[l.a].g, gb = d.nodes[l.b].g;
+    if (ga === gb) continue;
+    const k = `${ga}>${gb}`;
+    let e = m.get(k);
+    if (!e) m.set(k, (e = { a: ga, b: gb, n: 0, lab: new Map() }));
+    e.n++;
+    if (l.label) e.lab.set(l.label, (e.lab.get(l.label) ?? 0) + 1);
+  }
+  return [...m.values()]
+    .map((e) => ({ a: e.a, b: e.b, n: e.n, labels: [...e.lab.entries()].sort((x, y) => y[1] - x[1]).slice(0, 3).map((x) => x[0]) }))
+    .sort((x, y) => y.n - x.n);
+}
+
+/** As peças mais importantes de uma área: as mais ligadas, depois as maiores. */
+export function keyNodes(d: MapData, g: number): MapNode[] {
+  const score = (n: MapNode) => (n.out.length + n.inn.length) * 2 + (d.files ? Math.sqrt(n.size) / 4 : n.size * 3);
+  return d.nodes.filter((n) => n.g === g).sort((a, b) => score(b) - score(a));
+}
+
+/** O texto do ligação entre duas peças, se houver (de a para b). */
+export const linkLabel = (d: MapData, a: number, b: number) => d.links.find((l) => l.a === a && l.b === b)?.label;
+
+/**
+ * O resumo em texto (`.veocode/MAP.md`) que a IA do projeto lê para achar onde mexer: o que o
+ * projeto é, as áreas com as peças principais, como as áreas se ligam e os fluxos.
+ */
+export function mapNotes(d: MapData): string {
+  const out: string[] = [];
+  const date = new Date(d.at || Date.now()).toISOString().slice(0, 10);
+  const nodeRef = (n: MapNode) => `${n.label}${n.path && n.path !== n.label ? ` (\`${n.path}\`)` : ""}`;
+  out.push(`# ${tx("Mapa do projeto")}${d.title ? `: ${d.title}` : ""}`, "");
+  out.push(`_${tx("Feito {by} em {date}, a partir de {file}. O Veocode atualiza este arquivo sozinho; não edite à mão.", { by: d.by === "veocode" ? tx("pelo Veocode (imports do código)") : tx("pela IA"), date, file: MAP_FILE })}_`, "");
+  if (d.about) out.push(d.about, "");
+  out.push(`## ${tx("Áreas")}`, "");
+  d.groups.forEach((g, gi) => {
+    if (!g.count) return;
+    out.push(`### ${g.label}`);
+    if (g.note) out.push(g.note);
+    const ns = keyNodes(d, gi);
+    for (const n of ns.slice(0, 15)) out.push(`- ${nodeRef(n)}${n.note ? `: ${n.note}` : ""}`);
+    if (ns.length > 15) out.push(`- ${tx("… e mais {n}", { n: ns.length - 15 })}`);
+    out.push("");
+  });
+  const al = areaLinks(d);
+  if (al.length) {
+    out.push(`## ${tx("Como as áreas se ligam")}`, "");
+    for (const l of al.slice(0, 30)) out.push(`- ${d.groups[l.a].label} → ${d.groups[l.b].label}${l.labels.length ? `: ${l.labels.join(", ")}` : ""} (${l.n})`);
+    out.push("");
+  }
+  if (d.flows.length) {
+    out.push(`## ${tx("Fluxos")}`, "");
+    for (const f of d.flows) {
+      out.push(`### ${f.name}`);
+      if (f.note) out.push(f.note);
+      f.steps.forEach((s, i) => {
+        const n = d.nodes[s.n];
+        out.push(`${i + 1}. ${nodeRef(n)}${s.note || n.note ? `: ${s.note || n.note}` : ""}`);
+      });
+      out.push("");
+    }
+  }
+  return out.join("\n");
+}
+
+/** Grava o resumo em texto ao lado do mapa (o Rust só regrava se mudou). */
+function writeNotes(pid: string, d: MapData | null) {
+  if (!d || !isTauri || currentProjectIsDemo(pid)) return;
+  void invoke("map_write_notes", { projectId: pid, text: mapNotes(d) }).catch(() => {});
 }
 
 // ---------------------------------------------------------------- estado por projeto
@@ -108,8 +214,17 @@ const blank = (): Entry => ({ data: null, loading: false, busy: null, error: nul
 export const mapOf = (pid: string): Entry => maps[pid] ?? blank();
 const ensure = (pid: string) => maps[pid] || setMaps(pid, blank());
 
-/** Lê o mapa do disco (no navegador, um mapa de exemplo). */
-export async function loadMap(pid: string, quiet = false) {
+/** Lê o mapa do disco (no navegador, um mapa de exemplo). Duas telas pedindo juntas: uma leitura só. */
+const reading = new Map<string, Promise<void>>();
+export function loadMap(pid: string, quiet = false): Promise<void> {
+  const cur = reading.get(pid);
+  if (cur) return cur;
+  const p = readMap(pid, quiet).finally(() => reading.delete(pid));
+  reading.set(pid, p);
+  return p;
+}
+
+async function readMap(pid: string, quiet: boolean) {
   ensure(pid);
   if (!quiet) setMaps(pid, "loading", true);
   try {
@@ -119,12 +234,13 @@ export async function loadMap(pid: string, quiet = false) {
       const r = await invoke<[string, number] | null>("map_read", { projectId: pid });
       if (r) [raw, at] = [r[0], r[1] * 1000];
     } else {
-      raw = (await import("./data/demoMap.json?raw")).default;
+      raw = lang() === "en" ? (await import("./data/demoMap.en.json?raw")).default : (await import("./data/demoMap.json?raw")).default;
       at = Date.now() - 3 * 60_000;
     }
     const data = raw ? parseMap(raw) : null;
     if (data && !data.at) data.at = at;
     if (data && !isTauri) data.at = at;
+    writeNotes(pid, data);
     setMaps(pid, { data, loading: false, error: raw && !data ? tx("O arquivo .veocode/map.json não é um mapa válido.") : null, at: Date.now() });
   } catch (e) {
     setMaps(pid, { loading: false, error: String(e) });
@@ -138,13 +254,15 @@ export async function scanMap(pid: string) {
   ensure(pid);
   if (mapOf(pid).busy) return;
   if (!isTauri || currentProjectIsDemo(pid)) {
-    showToast(tx("No projeto de exemplo o mapa é fixo: adicione uma pasta sua para desenhar o dela."));
+    showToast(tx("No projeto de exemplo o mapa é fixo: adicione uma pasta sua para fazer o dela."));
     return loadMap(pid, true);
   }
   setMaps(pid, { busy: "scan", error: null });
   try {
     const raw = await invoke<string>("map_scan", { projectId: pid });
-    setMaps(pid, { data: parseMap(raw), busy: null, at: Date.now() });
+    const data = parseMap(raw);
+    setMaps(pid, { data, busy: null, at: Date.now() });
+    writeNotes(pid, data);
   } catch (e) {
     setMaps(pid, { busy: null, error: String(e) });
   }
@@ -155,36 +273,60 @@ export function mapFileChanged(pid: string) {
   if (maps[pid]) void loadMap(pid, true);
 }
 
-/** Pede à IA do projeto um mapa de ideias, no mesmo arquivo. A conversa aparece no modo IA. */
-export function askAiForMap(pid: string) {
-  if (chatOf(pid).busy) return showToast(tx("A IA deste projeto está ocupada: espere ela terminar ou pare antes."));
-  setInput(pid, aiPrompt());
+/**
+ * Pede à IA do projeto o mapa explicado, numa conversa nova (a que estava aberta continua como
+ * estava). A conversa aparece no modo IA e dá para parar a qualquer momento.
+ */
+export function askAiForMap(pid: string, over?: { model?: string | null }) {
+  if (!isTauri || currentProjectIsDemo(pid)) return showToast(tx("No projeto de exemplo o mapa é fixo: adicione uma pasta sua para fazer o dela."));
+  const key = startConversation(pid);
+  if (!key) return;
+  renameTab(pid, key, tx("Mapa do projeto"));
+  setInput(key, aiPrompt());
   setProjMode("ai");
-  void sendChat(pid);
+  void sendChat(key, undefined, over);
 }
 
 function aiPrompt() {
   const en = lang() === "en";
-  const example = `{"v":1,"title":"…","by":"ia","at":${Math.floor(Date.now() / 1000)},
-"groups":[["screens","${en ? "Screens" : "Telas"}"],["services","${en ? "Services" : "Serviços"}"],["data","${en ? "Data" : "Dados"}"]],
+  const example = en
+    ? `{"v":2,"title":"…","by":"ia","at":${Math.floor(Date.now() / 1000)},
+"about":"What the project is and how it's organized, in 2 or 3 sentences.",
+"groups":[["screens","Screens","","what people see and use"],["services","Services","","rules and outside calls"],["data","Data","","where things are stored"]],
 "nodes":[
-["login","${en ? "Login screen" : "Tela de login"}","screens",3,"src/Login.tsx","${en ? "what it does, in a few words" : "o que faz, em poucas palavras"}"],
-["auth","${en ? "Auth service" : "Serviço de login"}","services",4,"src/auth.ts",""]
+["login","Login screen","screens",3,"src/Login.tsx","signs in with email and password"],
+["auth","Auth service","services",4,"src/auth.ts","checks the password and opens the session"],
+["db","Database","data",4,"","users and sessions"]
 ],
-"links":[["login","auth","${en ? "calls" : "chama"}"]],
-"flow":["login","auth"]}`;
+"links":[["login","auth","calls"],["auth","db","reads and saves to"]],
+"flows":[["Sign in",[["login","the person types email and password"],["auth","checks the password"],["db","keeps the session"]]]]}`
+    : `{"v":2,"title":"…","by":"ia","at":${Math.floor(Date.now() / 1000)},
+"about":"O que o projeto é e como ele se organiza, em 2 ou 3 frases.",
+"groups":[["telas","Telas","","o que a pessoa vê e usa"],["servicos","Serviços","","regras e chamadas para fora"],["dados","Dados","","onde as coisas ficam guardadas"]],
+"nodes":[
+["login","Tela de login","telas",3,"src/Login.tsx","entra com e-mail e senha"],
+["auth","Serviço de login","servicos",4,"src/auth.ts","confere a senha e abre a sessão"],
+["db","Banco","dados",4,"","usuários e sessões"]
+],
+"links":[["login","auth","chama"],["auth","db","lê e salva em"]],
+"flows":[["Entrar no app",[["login","a pessoa digita e-mail e senha"],["auth","confere a senha"],["db","guarda a sessão"]]]]}`;
   return en
-    ? `Draw this project's map for Veocode. Read the code and write ONE file, ${MAP_FILE}, in this compact format (one item per line):\n\n${example}\n\nRules: groups = the project's 4 to 9 areas (screens, services, data, integrations…); nodes = the pieces that matter (20 to 120), each [id, name, group, weight 1-5, main file or "", short note]; links = who uses/calls/reads whom, [from, to, short label]; flow = the main path a user goes through, in order (optional). Use short ids. Veocode draws the map from this file by itself: don't write anything else, and don't change any other file.`
-    : `Desenhe o mapa deste projeto para o Veocode. Leia o código e escreva UM arquivo, ${MAP_FILE}, neste formato compacto (um item por linha):\n\n${example}\n\nRegras: groups = as 4 a 9 áreas do projeto (telas, serviços, dados, integrações…); nodes = as peças que importam (20 a 120), cada uma [id, nome, grupo, peso 1-5, arquivo principal ou "", nota curta]; links = quem usa/chama/lê quem, [de, para, rótulo curto]; flow = o caminho principal de quem usa, em ordem (opcional). Use ids curtos. O Veocode desenha o mapa sozinho a partir desse arquivo: não escreva mais nada e não mude nenhum outro arquivo.`;
+    ? `Make this project's map for Veocode. Read the code and write ONE file, ${MAP_FILE}, in this compact format:\n\n${example}\n\nThe map is for a person to understand the project in 2 minutes and for an AI to find where to make changes. Keep it short and concrete:\n- about: 2 or 3 sentences: what the project is and how it's organized.\n- groups: 4 to 8 areas, each [id, name, "", what the area does in one sentence].\n- nodes: only the pieces that matter (15 to 45), each [id, name, area, weight 1-5, main file or "", what it does in a few words]. Outside things (APIs, database, services) count too, with file "".\n- links: the real connections, [from, to, what goes through: a short verb like "calls", "saves to", "reads", "shows"].\n- flows: 2 to 5 main things someone does in the app, each [name, [[piece, what happens at this step], …]], 3 to 8 steps in the order they happen.\nWrite the texts in English, with short ids. Veocode draws the map and writes the summary ${MAP_NOTES} by itself from this file: don't write anything else and don't change any other file.`
+    : `Faça o mapa deste projeto para o Veocode. Leia o código e escreva UM arquivo, ${MAP_FILE}, neste formato compacto:\n\n${example}\n\nO mapa é para uma pessoa entender o projeto em 2 minutos e para uma IA achar onde mexer. Seja curto e concreto:\n- about: 2 ou 3 frases: o que o projeto é e como ele se organiza.\n- groups: 4 a 8 áreas, cada uma [id, nome, "", o que a área faz numa frase].\n- nodes: só as peças que importam (15 a 45), cada uma [id, nome, área, peso 1-5, arquivo principal ou "", o que faz em poucas palavras]. Coisas de fora (APIs, banco, serviços) também valem, com arquivo "".\n- links: as ligações reais, [de, para, o que passa: um verbo curto como "chama", "salva em", "lê", "mostra"].\n- flows: 2 a 5 coisas principais que alguém faz no app, cada uma [nome, [[peça, o que acontece nesse passo], …]], de 3 a 8 passos, na ordem em que acontecem.\nEscreva os textos em português, com ids curtos. O Veocode desenha o mapa e escreve o resumo ${MAP_NOTES} sozinho a partir desse arquivo: não escreva mais nada e não mude nenhum outro arquivo.`;
 }
 
 // ---------------------------------------------------------------- abrir
 
-/** Pedido para o mapa aberto: focar um ponto ou uma área ao abrir. */
-export const [mapIntent, setMapIntent] = createSignal<{ node?: string; group?: number; at: number } | null>(null);
+export type MapViewKind = "overview" | "flows" | "graph";
+/** O jeito de ver o mapa (vale para todos os projetos nesta sessão). */
+export const [mapView, setMapView] = createSignal<MapViewKind>("overview");
+
+/** Pedido para o mapa aberto: mostrar um jeito de ver, uma área, um fluxo ou um ponto. */
+export interface MapIntent { view?: MapViewKind; node?: string; group?: number; flow?: number }
+export const [mapIntent, setMapIntent] = createSignal<(MapIntent & { at: number }) | null>(null);
 
 /** Abre o mapa numa aba do editor (modo Código). */
-export function openMap(intent?: { node?: string; group?: number }) {
+export function openMap(intent?: MapIntent) {
   setProjMode("code");
   if (intent) setMapIntent({ ...intent, at: Date.now() });
   openFile(MAP_TAB);

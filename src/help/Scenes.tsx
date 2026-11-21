@@ -2,7 +2,7 @@
 // tema (classes .il-* em styles.css). Mais leves que capturas de tela, nunca mostram dados
 // pessoais e acompanham o tema.
 
-import { Eye, FolderOpen, KeyRound, Lock, MessageSquare, User } from "lucide-solid";
+import { FolderOpen, KeyRound, Lock, MessageSquare, User } from "lucide-solid";
 import { For, type JSX } from "solid-js";
 import { FileIcon, FolderIcon, ProjectIcon } from "../components/icons";
 import type { TopicId } from "./topics";
@@ -209,12 +209,6 @@ function Livre() {
   return (
     <Svg>
       <rect x={110} y={6} width={300} height={208} rx={12} class="il-win" />
-      {/* os dois modos: o marcador vai de "Só conversa" para "Olhar o PC" */}
-      <rect x={206} y={16} width={190} height={22} rx={8} class="il-input" />
-      <rect x={209} y={19} width={92} height={16} rx={6} class="il-thumb" />
-      <text x={255} y={30.5} class="il-t il-mid il-tiny">{tx("Só conversa")}</text>
-      <Eye x={312} y={21} size={11} class="il-ico" style={{ color: C.info }} />
-      <text x={355} y={30.5} class="il-t il-mid il-tiny" style={{ fill: C.info }}>{tx("Olhar o PC")}</text>
       <g class="il-seq" style={seq(1)}>
         <rect x={268} y={48} width={130} height={22} rx={10} class="il-bubble-me" />
         <text x={333} y={62.5} class="il-t il-mid il-tiny">{tx("Ache o contrato em PDF")}</text>
@@ -234,8 +228,11 @@ function Livre() {
         <Bar x={134} y={139} w={210} h={5} />
         <Bar x={134} y={151} w={160} h={5} />
       </g>
+      {/* a caixa de mensagem com o selo de permissão (Leitura) */}
       <rect x={122} y={180} width={276} height={26} rx={9} class="il-input" />
-      <Bar x={134} y={190} w={120} h={5} />
+      <rect x={130} y={186} width={50} height={14} rx={7} class="il-pill" style={{ "--c": C.info }} />
+      <text x={155} y={196} class="il-t il-mid il-tiny" style={{ fill: C.info }}>{tx("Leitura")}</text>
+      <Bar x={188} y={190} w={110} h={5} />
       <circle cx={384} cy={193} r={8} class="il-send" />
     </Svg>
   );

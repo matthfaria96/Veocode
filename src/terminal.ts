@@ -4,8 +4,10 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { createSignal } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import { isTauri } from "./api";
+import { prefsOf } from "./chatPrefs";
 import { showToast } from "./store";
 
 export interface TermInfo {
@@ -18,6 +20,8 @@ export interface TermInfo {
   /** serviço da aba Ambiente que roda nele (null = shell normal) */
   service?: string | null;
   cmd?: string | null;
+  /** aberto com o Code mode do Claude Code ligado */
+  codeMode?: boolean;
 }
 
 interface State {
@@ -77,7 +81,7 @@ export async function openTermSized(pid: string, cols: number, rows: number): Pr
   if (!isTauri || terms.opening) return null;
   setTerms("opening", true);
   try {
-    const t = await invoke<TermInfo>("term_open", { projectId: pid, cols, rows });
+    const t = await invoke<TermInfo>("term_open", { projectId: pid, cols, rows, codeMode: !!prefsOf(pid).codeMode });
     setTerms(produce((s) => {
       s.byProject[pid] = [...(s.byProject[pid] ?? []), t];
       s.active[pid] = t.id;
@@ -106,6 +110,20 @@ export async function closeTerm(pid: string, id: string) {
 }
 
 export const setActiveTerm = (pid: string, id: string) => setTerms("active", pid, id);
+
+export const writeTerm = (id: string, data: string) => invoke("term_write", { id, data }).catch(() => {});
+
+/** Comando para digitar num terminal novo do projeto quando a aba Terminal aparecer
+ *  (ProjectTerminal abre o terminal e digita; quem chama mostra a aba). */
+const [pendingRun, setPendingRun] = createSignal<{ pid: string; cmd: string } | null>(null);
+export { pendingRun };
+export const runInNewTerm = (pid: string, cmd: string) => setPendingRun({ pid, cmd });
+export function takeRun(pid: string): string | null {
+  const r = pendingRun();
+  if (!r || r.pid !== pid) return null;
+  setPendingRun(null);
+  return r.cmd;
+}
 
 /** Terminal aberto fora do painel (um serviço da aba Ambiente): entra na lista do projeto. */
 export function addTerm(pid: string, t: TermInfo) {

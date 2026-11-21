@@ -7,6 +7,7 @@ import { openFile, projectId, pushEvent, resetWorkspace, setWs, showToast, ws } 
 import { touchedByAgent } from "./agentFeed";
 import { dropDraft, isUnsaved, savedByMe, saveNow } from "./editing";
 import { tx } from "./i18n";
+import { noteFsChange } from "./browser";
 
 const parentOf = (path: string) => (path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "");
 const nameOf = (path: string) => path.split("/").pop() ?? path;
@@ -74,6 +75,7 @@ export function openRealFile(path: string) {
 /** Algo mudou no disco: atualiza a árvore, marca os arquivos e registra na atividade. */
 export function handleFsChange(e: FsChange) {
   if (e.projectId !== projectId()) return;
+  noteFsChange(e.projectId, e.changes.map((c) => c.path));
   const dirsToReload = new Set<string>();
 
   for (const c of e.changes) {

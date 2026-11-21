@@ -110,9 +110,11 @@ fn sub_label(file: &Path) -> Option<String> {
 }
 
 fn session_of(file: &Path, sub: &Option<String>) -> String {
-    // principal: <sessão>.jsonl; subagente: <sessão>/subagents/agent-x.jsonl
+    // principal: <sessão>.jsonl; subagente: <sessão>/subagents/agent-x.jsonl. O id inteiro: é
+    // com ele que a aba da conversa, a lista de conversas e as bifurcações reconhecem a sessão
+    // (cortado, os passos ao vivo nunca chegavam à aba e iam todos para "Fora do Veocode")
     let p = if sub.is_some() { file.parent().and_then(Path::parent) } else { Some(file) };
-    p.and_then(|p| p.file_stem()).map(|s| s.to_string_lossy().chars().take(8).collect()).unwrap_or_default()
+    p.and_then(|p| p.file_stem()).map(|s| s.to_string_lossy().into_owned()).unwrap_or_default()
 }
 
 /// Lê de `offset` até a última quebra de linha completa (linha pela metade fica para depois).
@@ -644,7 +646,22 @@ fn parse_line(v: &Value, c: &Ctx, tools: &mut HashMap<String, String>) -> Vec<Ag
                             if !todos.is_empty() {
                                 e.detail = serde_json::to_string(&todos).ok();
                             }
+                        } else if name == "mcp__ccd_turn__update_plan" {
+                            // passos do plano do app sem a lista: {"advance": true} conclui o da vez e
+                            // começa o próximo; {"done": [2, 3], "start": 4} (números a partir de 1)
+                            let nums = |k: &str| input.get(k).and_then(|v| v.as_array()).map(|a| a.iter().filter_map(serde_json::Value::as_u64).collect::<Vec<_>>()).unwrap_or_default();
+                            let advance = input.get("advance").and_then(serde_json::Value::as_bool) == Some(true);
+                            let start = input.get("start").and_then(serde_json::Value::as_u64);
+                            let done = nums("done");
+                            if advance || start.is_some() || !done.is_empty() {
+                                e.detail = Some(serde_json::json!({ "op": "step", "advance": advance, "done": done, "start": start }).to_string());
+                            }
                         }
+                    }
+                    // fim do turno no app do Claude: o passo da vez fica concluído
+                    "mcp__ccd_turn__wrap_up" => {
+                        (e.kind, e.title) = ("plan".into(), crate::i18n::tr("Resumiu o que foi feito", "Summed up the work").into());
+                        e.detail = Some(serde_json::json!({ "op": "finish" }).to_string());
                     }
                     // tarefas uma a uma (Claude Code mais novo): o chat refaz a lista somando as mudanças
                     "TaskCreate" => {
@@ -661,6 +678,11 @@ fn parse_line(v: &Value, c: &Ctx, tools: &mut HashMap<String, String>) -> Vec<Ag
                         }
                     }
                     "Skill" => (e.kind, e.title) = ("tool".into(), format!("Skill {}", s(&input, "skill").unwrap_or("?"))),
+                    // o navegador do painel (ferramentas que o Veocode dá ao Claude)
+                    n if n.starts_with("mcp__veocode__browser_") => {
+                        e.kind = "web".into();
+                        e.title = browser_title(n.trim_start_matches("mcp__veocode__"), &input);
+                    }
                     n if n.starts_with("mcp__") => {
                         let mut parts = n.trim_start_matches("mcp__").splitn(2, "__");
                         let server = parts.next().unwrap_or("");
@@ -687,6 +709,34 @@ fn parse_line(v: &Value, c: &Ctx, tools: &mut HashMap<String, String>) -> Vec<Ag
 }
 
 // ---------------------------------------------------------------- testes
+
+/// Título do passo de uma ferramenta do navegador do painel (`browser_open`, `browser_click`...),
+/// igual para o Claude e para as contas por API.
+pub fn browser_title(tool: &str, input: &serde_json::Value) -> String {
+    let tr = crate::i18n::tr;
+    let s = |k: &str| input.get(k).and_then(serde_json::Value::as_str);
+    let what = s("ref").or_else(|| s("text")).or_else(|| s("selector")).map(|x| cut(x, 60));
+    match tool.trim_start_matches("browser_") {
+        "open" => match s("url").unwrap_or("") {
+            "back" => tr("Voltou a página no navegador", "Went back in the browser").into(),
+            "forward" => tr("Avançou a página no navegador", "Went forward in the browser").into(),
+            "reload" => tr("Recarregou a página no navegador", "Reloaded the page in the browser").into(),
+            u => crate::trf!("Abriu {} no navegador", "Opened {} in the browser", cut(u.trim_start_matches("http://").trim_start_matches("https://"), 70)),
+        },
+        "screenshot" => tr("Olhou a página no navegador", "Looked at the page in the browser").into(),
+        "read" => tr("Leu a página no navegador", "Read the page in the browser").into(),
+        "click" => match what {
+            Some(w) => crate::trf!("Clicou em {w} no navegador", "Clicked {w} in the browser"),
+            None => tr("Clicou na página do navegador", "Clicked on the browser page").into(),
+        },
+        "type" => crate::trf!("Digitou “{}” no navegador", "Typed “{}” in the browser", cut(s("value").unwrap_or(""), 40)),
+        "scroll" => tr("Rolou a página no navegador", "Scrolled the browser page").into(),
+        "console" => tr("Viu o console da página", "Checked the page console").into(),
+        "server_logs" => tr("Viu os logs do servidor", "Checked the server logs").into(),
+        "viewport" => crate::trf!("Mudou o tamanho da tela para {}", "Changed the screen size to {}", s("size").unwrap_or("?")),
+        other => format!("{} · {other}", tr("Navegador", "Browser")),
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -726,8 +776,18 @@ mod tests {
         let v = serde_json::json!({"type":"assistant","uuid":"a2","message":{"content":[{"type":"tool_use","id":"t2","name":"mcp__ccd_turn__update_plan","input":{"items":[{"content":"Um","status":"pending"}]}}]}});
         let out = stream_steps(&v, "acc", &root, &mut tools);
         assert!(out[0].detail.as_deref().unwrap().contains("\"Um\""));
-        // sem lista (só "advance"), fica sem detalhe
+        // sem lista: o passo vai como operação ("advance", "done", "start")
         let v = serde_json::json!({"type":"assistant","uuid":"a3","message":{"content":[{"type":"tool_use","id":"t3","name":"mcp__ccd_turn__update_plan","input":{"advance":true}}]}});
+        let d: serde_json::Value = serde_json::from_str(stream_steps(&v, "acc", &root, &mut tools)[0].detail.as_deref().unwrap()).unwrap();
+        assert_eq!((d["op"].as_str(), d["advance"].as_bool()), (Some("step"), Some(true)));
+        let v = serde_json::json!({"type":"assistant","uuid":"a3b","message":{"content":[{"type":"tool_use","id":"t3b","name":"mcp__ccd_turn__update_plan","input":{"done":[2,3],"start":4}}]}});
+        let d: serde_json::Value = serde_json::from_str(stream_steps(&v, "acc", &root, &mut tools)[0].detail.as_deref().unwrap()).unwrap();
+        assert_eq!((d["done"].clone(), d["start"].as_u64()), (serde_json::json!([2, 3]), Some(4)));
+        let v = serde_json::json!({"type":"assistant","uuid":"a3c","message":{"content":[{"type":"tool_use","id":"t3c","name":"mcp__ccd_turn__wrap_up","input":{"recap":"x"}}]}});
+        let out = stream_steps(&v, "acc", &root, &mut tools);
+        assert_eq!((out[0].kind.as_str(), out[0].detail.as_deref()), ("plan", Some("{\"op\":\"finish\"}")));
+        // só "scope" ou nada: sem detalhe
+        let v = serde_json::json!({"type":"assistant","uuid":"a3d","message":{"content":[{"type":"tool_use","id":"t3d","name":"mcp__ccd_turn__update_plan","input":{}}]}});
         assert!(stream_steps(&v, "acc", &root, &mut tools)[0].detail.is_none());
         // tarefas uma a uma
         let v = serde_json::json!({"type":"assistant","uuid":"a4","message":{"content":[
@@ -779,7 +839,7 @@ mod tests {
         assert_eq!(e.len(), 10);
         assert_eq!(e[0].title, "pedido 25");
         assert_eq!(e.last().unwrap().kind, "read");
-        assert!(e.iter().all(|x| x.history && x.status == "ok" && x.kind != "think" && x.session == "abcdef12"));
+        assert!(e.iter().all(|x| x.history && x.status == "ok" && x.kind != "think" && x.session == "abcdef12-1111"));
 
         // resposta com pensamento: duas linhas da mesma mensagem com end_turn → um "Terminou" só
         for (u, block) in [("z1", serde_json::json!({"type":"thinking","thinking":"..."})), ("z2", serde_json::json!({"type":"text","text":"pronto"}))] {
@@ -858,7 +918,7 @@ mod tests {
         assert_eq!(e.len(), 1);
         assert_eq!(e[0].sub.as_deref(), Some("agent-x1"));
         assert_eq!(e[0].sub_label.as_deref(), Some("Procurar usos"));
-        assert_eq!(e[0].session, "abcdef12");
+        assert_eq!(e[0].session, "abcdef12-0000");
         assert_eq!(e[0].path.as_deref(), Some("src"));
         let _ = fs::remove_dir_all(&base);
     }
@@ -899,3 +959,4 @@ mod real {
         println!("2ª leitura: {} eventos em {:?}", n.len(), t.elapsed());
     }
 }
+

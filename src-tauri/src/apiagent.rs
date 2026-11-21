@@ -82,20 +82,21 @@ fn fail(e: ureq::Error, with_tools: bool) -> Fail {
     }
 }
 
-fn round(ag: &ureq::Agent, w: &Wire, msgs: &[Value], tools: bool, cancel: &AtomicBool, on_delta: &mut dyn FnMut(&str)) -> Result<Round, Fail> {
+fn round(ag: &ureq::Agent, w: &Wire, msgs: &[Value], specs: Option<&Value>, cancel: &AtomicBool, on_delta: &mut dyn FnMut(&str)) -> Result<Round, Fail> {
+    let tools = specs.is_some();
     match w {
         Wire::OpenAi { base, key, model } => {
             let mut body = json!({"model": model, "messages": msgs, "stream": true});
-            if tools {
-                body["tools"] = tools::specs();
+            if let Some(list) = specs {
+                body["tools"] = list.clone();
             }
             let r = ag.post(&format!("{base}/chat/completions")).set("Authorization", &format!("Bearer {key}")).send_json(body).map_err(|e| fail(e, tools))?;
             Ok(read_openai(BufReader::new(r.into_reader()), cancel, on_delta))
         }
         Wire::Ollama { base, model } => {
             let mut body = json!({"model": model, "messages": msgs, "stream": true});
-            if tools {
-                body["tools"] = tools::specs();
+            if let Some(list) = specs {
+                body["tools"] = list.clone();
             }
             let r = ag.post(&format!("{base}/api/chat")).send_json(body).map_err(|e| fail(e, tools))?;
             Ok(read_ollama(BufReader::new(r.into_reader()), cancel, on_delta))
@@ -213,6 +214,8 @@ pub struct Turn<'a> {
     pub intro: Option<String>,
     /// oferecer as ferramentas ao modelo
     pub tools: bool,
+    /// oferecer também o navegador do painel (conversa de projeto)
+    pub browser: bool,
 }
 
 pub trait Hooks {
@@ -221,6 +224,21 @@ pub trait Hooks {
     fn step(&mut self, e: AgentEvent);
     /// Pergunta à pessoa. `None` = a resposta foi parada.
     fn ask(&mut self, c: &Call, look: &tools::Look) -> Option<bool>;
+    /// Uma ferramenta do navegador do painel: a tela roda e devolve o resultado (formato MCP).
+    fn browser(&mut self, _name: &str, _args: &Value) -> Result<Value, String> {
+        Err(crate::i18n::tr("o navegador do painel não está disponível aqui", "the panel browser isn't available here").into())
+    }
+}
+
+/// Ferramentas oferecidas ao modelo neste pedido.
+fn specs_for(t: &Turn) -> Value {
+    let mut list = tools::specs();
+    if t.browser {
+        if let (Some(a), Some(b)) = (list.as_array_mut(), crate::browser::api_tools().as_array()) {
+            a.extend(b.iter().cloned());
+        }
+    }
+    list
 }
 
 #[derive(Debug, Default, PartialEq)]
@@ -255,6 +273,16 @@ pub fn system_prompt(t: &Turn, tools: bool) -> String {
          Use caminhos relativos à raiz do projeto; nada fora da pasta. Leia antes de editar e prefira edit_file a reescrever o arquivo inteiro. \
          Ao terminar, diga em poucas linhas o que fez.\n", "You have tools to list, read, search, write and edit the project's files and run commands in its folder. Use paths relative to the project root; nothing outside the folder. Read before editing and prefer edit_file over rewriting the whole file. When you finish, say in a few lines what you did.\n"),
     );
+    if t.browser {
+        s.push_str(crate::i18n::tr(
+            "O Veocode mostra um navegador no painel ao lado desta conversa, e a pessoa vê o que acontece nele. Com as ferramentas browser_* você abre o servidor de desenvolvimento do projeto \
+             (ou um .html dele), lê o texto e os elementos da página, clica, digita, rola e vê o console e os logs do servidor, como quem confere o próprio trabalho. \
+             Se nada estiver rodando, suba o servidor antes (em segundo plano) e depois abra o endereço. Essas ferramentas só mexem no painel, nunca em arquivos.\n",
+            "Veocode shows a browser in the panel next to this conversation, and the person sees what happens in it. With the browser_* tools you open the project's dev server \
+             (or one of its .html files), read the page's text and elements, click, type, scroll and check the console and the server logs, the way a developer checks their own work. \
+             If nothing is running, start the server first (in the background) and then open its address. These tools only act on the panel, never on files.\n",
+        ));
+    }
     s.push_str(&crate::trf!("Nível de acesso do projeto: {}. Regras:\n", "Project access level: {}. Rules:\n", { let n = LEVEL_NAMES[t.level.min(3) as usize]; crate::i18n::tr(n[0], n[1]) }));
     let text = |r: Rule| match r {
         Rule::Permitido => "permitido",
@@ -275,6 +303,7 @@ pub fn system_prompt(t: &Turn, tools: bool) -> String {
 pub fn run_turn(ag: &ureq::Agent, t: &Turn, msgs: &mut Vec<Value>, h: &mut dyn Hooks) -> Result<End, String> {
     let mut end = End::default();
     let mut tools_on = t.tools;
+    let specs = specs_for(t);
     let stamp = now_ms();
     for n in 0..MAX_ROUNDS {
         if t.cancel.load(Ordering::SeqCst) {
@@ -283,14 +312,14 @@ pub fn run_turn(ag: &ureq::Agent, t: &Turn, msgs: &mut Vec<Value>, h: &mut dyn H
         }
         let mut full = vec![json!({"role":"system","content": system_prompt(t, tools_on)})];
         full.extend(msgs.iter().cloned());
-        let r = match round(ag, t.wire, &full, tools_on, t.cancel, &mut |d| h.delta(d)) {
+        let r = match round(ag, t.wire, &full, tools_on.then_some(&specs), t.cancel, &mut |d| h.delta(d)) {
             Ok(r) => r,
             Err(Fail::NoTools) => {
                 // modelo sem ferramentas: tenta de novo só conversando
                 tools_on = false;
                 end.no_tools = true;
                 full[0] = json!({"role":"system","content": system_prompt(t, false)});
-                round(ag, t.wire, &full, false, t.cancel, &mut |d| h.delta(d)).map_err(|f| match f {
+                round(ag, t.wire, &full, None, t.cancel, &mut |d| h.delta(d)).map_err(|f| match f {
                     Fail::Msg(m) => m,
                     Fail::NoTools => crate::i18n::tr("o modelo recusou o pedido", "the model refused the request").into(),
                 })?
@@ -329,7 +358,12 @@ pub fn run_turn(ag: &ureq::Agent, t: &Turn, msgs: &mut Vec<Value>, h: &mut dyn H
 
 /// Uma chamada: passo na tela, decisão do nível, (pergunta), execução, resultado.
 fn run_call(t: &Turn, c: &Call, id: &str, h: &mut dyn Hooks) -> String {
-    let look = tools::look(c);
+    let browser = t.browser && c.name.starts_with("browser_");
+    let look = if browser {
+        tools::Look { kind: "web", title: crate::agent::browser_title(&c.name, &c.args), detail: None, path: None }
+    } else {
+        tools::look(c)
+    };
     let ev = |kind: &str, status: &str| AgentEvent {
         id: id.into(),
         session: "api".into(),
@@ -353,6 +387,26 @@ fn run_call(t: &Turn, c: &Call, id: &str, h: &mut dyn Hooks) -> String {
     if c.args.is_null() {
         finish(h, false, Some(crate::i18n::tr("argumentos inválidos", "invalid arguments").into()), false, vec![]);
         return crate::i18n::tr("Erro: os argumentos não são um JSON válido. Chame de novo com um objeto JSON.", "Error: the arguments aren't valid JSON. Call again with a JSON object.").into();
+    }
+    if browser {
+        // mesma regra do Claude: o navegador do painel é uma ferramenta MCP do Veocode, que só
+        // o nível Leitura bloqueia (não mexe em arquivos; a pessoa vê cada passo)
+        let blocked = crate::access::effective(t.level, &t.overrides).into_iter().any(|(cap, r)| cap.id == "mcp" && r == Rule::Bloqueado);
+        if blocked {
+            finish(h, false, Some(crate::i18n::tr("bloqueado pelo nível (ferramentas MCP)", "blocked by the level (MCP tools)").into()), false, vec![]);
+            return crate::i18n::tr("Bloqueado pelo nível de acesso do projeto (ferramentas MCP). Não tente de novo: diga à pessoa que o nível Leitura não deixa usar o navegador do painel.", "Blocked by the project's access level (MCP tools). Don't try again: tell the person the Read level doesn't allow the panel browser.").into();
+        }
+        return match h.browser(&c.name, &c.args) {
+            Ok(r) => {
+                let (text, ok) = crate::browser::api_result(&r);
+                finish(h, ok, (!ok).then(|| cut(&text, 200)), false, vec![]);
+                text
+            }
+            Err(e) => {
+                finish(h, false, Some(cut(&e, 200)), false, vec![]);
+                crate::trf!("Erro: {e}", "Error: {e}")
+            }
+        };
     }
     let (rule, why) = tools::decide(c, t.level, &t.overrides);
     match rule {
@@ -445,6 +499,7 @@ mod tests {
         steps: Vec<AgentEvent>,
         asks: Vec<String>,
         answer: Option<bool>,
+        browsed: Vec<(String, Value)>,
     }
     impl Hooks for Rec {
         fn delta(&mut self, _: &str) {}
@@ -458,6 +513,10 @@ mod tests {
             self.asks.push(look.title.clone());
             self.answer
         }
+        fn browser(&mut self, name: &str, args: &Value) -> Result<Value, String> {
+            self.browsed.push((name.into(), args.clone()));
+            Ok(json!({"content":[{"type":"text","text":"Page: Login (http://localhost:5173/login)"}]}))
+        }
     }
 
     fn sse(chunks: &[Value]) -> String {
@@ -465,7 +524,7 @@ mod tests {
     }
 
     fn turn<'a>(w: &'a Wire, root: &std::path::Path, level: u8, cancel: &'a AtomicBool) -> Turn<'a> {
-        Turn { wire: w, root: root.into(), project_name: "p".into(), account_id: "acc".into(), level, overrides: BTreeMap::new(), cancel, intro: None, tools: true }
+        Turn { wire: w, root: root.into(), project_name: "p".into(), account_id: "acc".into(), level, overrides: BTreeMap::new(), cancel, intro: None, tools: true, browser: false }
     }
 
     #[test]
@@ -529,6 +588,49 @@ mod tests {
         run_turn(&agent(), &turn(&w, d.path(), 1, &no), &mut msgs, &mut rec).unwrap();
         assert_eq!(rec.asks, ["npm test"]);
         assert_eq!(rec.steps[1].detail.as_deref(), Some("recusado"));
+    }
+
+    #[test]
+    fn browser_tools_reach_the_screen() {
+        let d = tempfile::tempdir().unwrap();
+        let call = || {
+            json!({"message":{"role":"assistant","content":"","tool_calls":[{"function":{"name":"browser_open","arguments":{"url":"5173"}}}]},"done":false}).to_string() + "\n" + &json!({"done":true}).to_string() + "\n"
+        };
+        let fin = json!({"message":{"content":"Abri."},"done":true}).to_string() + "\n";
+        let (base, seen) = fake_server(vec![(200, call()), (200, fin.clone())], "application/x-ndjson");
+        let w = Wire::Ollama { base, model: "m".into() };
+        let no = AtomicBool::new(false);
+        let mut msgs = vec![json!({"role":"user","content":"abra o app"})];
+        let mut rec = Rec::default();
+        let t = Turn { browser: true, ..turn(&w, d.path(), 2, &no) };
+        run_turn(&agent(), &t, &mut msgs, &mut rec).unwrap();
+        // a tela recebeu a chamada, sem pergunta; o passo tem o título do navegador
+        assert_eq!(rec.browsed, [("browser_open".to_string(), json!({"url":"5173"}))]);
+        assert!(rec.asks.is_empty());
+        assert_eq!((rec.steps[0].kind.as_str(), rec.steps[0].title.as_str()), ("web", "Abriu 5173 no navegador"));
+        assert_eq!(rec.steps[1].status, "ok");
+        let sent = seen.lock().unwrap();
+        let names: Vec<&str> = sent[0]["tools"].as_array().unwrap().iter().filter_map(|t| t["function"]["name"].as_str()).collect();
+        assert!(names.contains(&"browser_read") && !names.contains(&"browser_screenshot"));
+        assert!(sent[0]["messages"][0]["content"].as_str().unwrap().contains("browser_*"));
+        assert_eq!(sent[1]["messages"].as_array().unwrap()[3]["content"], "Page: Login (http://localhost:5173/login)");
+        drop(sent);
+
+        // nível Leitura: bloqueado sem chegar à tela (como no Claude)
+        let (base, _) = fake_server(vec![(200, call()), (200, fin)], "application/x-ndjson");
+        let w = Wire::Ollama { base, model: "m".into() };
+        let mut rec = Rec::default();
+        let mut msgs = vec![json!({"role":"user","content":"x"})];
+        run_turn(&agent(), &Turn { browser: true, ..turn(&w, d.path(), 0, &no) }, &mut msgs, &mut rec).unwrap();
+        assert!(rec.browsed.is_empty());
+        assert_eq!(rec.steps[1].status, "error");
+
+        // conversa sem o navegador (Chat livre): nem oferece
+        let (base, seen) = fake_server(vec![(200, json!({"message":{"content":"Oi"},"done":true}).to_string() + "\n")], "application/x-ndjson");
+        let w = Wire::Ollama { base, model: "m".into() };
+        let mut msgs = vec![json!({"role":"user","content":"x"})];
+        run_turn(&agent(), &turn(&w, d.path(), 2, &no), &mut msgs, &mut Rec::default()).unwrap();
+        assert!(seen.lock().unwrap()[0]["tools"].as_array().unwrap().iter().all(|t| !t["function"]["name"].as_str().unwrap().starts_with("browser_")));
     }
 
     #[test]

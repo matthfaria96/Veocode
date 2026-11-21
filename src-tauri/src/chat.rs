@@ -50,6 +50,9 @@ pub enum ChatEvent {
     Limits { account: String, limits: crate::limits::Limits },
     /// passo de ferramenta das contas por API (mesmo formato dos passos do Claude)
     Step { event: AgentEvent },
+    /// o Claude usou uma ferramenta do navegador do painel (mcp__veocode__browser_*): a tela
+    /// faz e responde com `chat_tool_reply`
+    Tool { request_id: String, name: String, input: Value },
     Error { message: String },
 }
 
@@ -92,9 +95,13 @@ struct ProjectChat {
     session: Option<(String, String)>,
     /// pedidos de permissão esperando resposta: id → input original
     pending: HashMap<String, Value>,
+    /// ferramentas do navegador esperando a tela: id do pedido → id da mensagem MCP
+    tool_pending: HashMap<String, Value>,
     busy: Arc<AtomicBool>,
     /// pedidos de permissão das APIs: id → canal da resposta
     api_pending: HashMap<String, mpsc::Sender<bool>>,
+    /// ferramentas do navegador pedidas pelas APIs: id → canal do resultado
+    api_tools: HashMap<String, mpsc::Sender<Value>>,
     /// conversa com APIs no formato delas (a do Claude fica no histórico dele)
     history: Vec<Value>,
     history_account: String,
@@ -184,7 +191,9 @@ impl Chats {
             let _ = p.child.kill();
         }
         chat.pending.clear();
+        chat.tool_pending.clear();
         chat.api_pending.clear();
+        chat.api_tools.clear();
         chat.session = None;
         chat.api_conv = None;
         chat.fork = None;
@@ -290,7 +299,11 @@ impl Chats {
             let busy = chat.busy.clone();
             std::thread::spawn(move || me.read_claude(app, project, account, proc_id, stdout, stderr, busy));
             let p = chat.claude.as_mut().unwrap();
-            write_line(&mut p.stdin, &json!({"type":"control_request","request_id":"veocode-init","request":{"subtype":"initialize","hooks":null}}))?;
+            let mut init = json!({"subtype":"initialize","hooks":null});
+            if !a.stream_steps {
+                init["sdkMcpServers"] = json!([crate::browser::AI_SERVER]);
+            }
+            write_line(&mut p.stdin, &json!({"type":"control_request","request_id":"veocode-init","request":init}))?;
         }
 
         let mut text = a.text.clone();
@@ -358,6 +371,14 @@ impl Chats {
                 if matches!(ev, ChatEvent::Done { .. }) {
                     busy.store(false, Ordering::SeqCst);
                 }
+                // a tela não respondeu (fechou, recarregou): o Claude não fica esperando para sempre
+                if let ChatEvent::Tool { request_id, .. } = &ev {
+                    let (me, project, id) = (Arc::clone(&self), project.clone(), request_id.clone());
+                    std::thread::spawn(move || {
+                        std::thread::sleep(Duration::from_secs(TOOL_TIMEOUT_S));
+                        let _ = me.tool_reply(&project, &id, tool_error("Veocode didn't answer in time (the window may have been reloaded or closed)."));
+                    });
+                }
                 emit(&app, &project, ev);
             }
         }
@@ -366,6 +387,7 @@ impl Chats {
             let Ok(mut m) = self.map.lock() else { return };
             let Some(c) = m.get_mut(&project).filter(|c| c.claude.as_ref().map(|p| p.proc_id) == Some(proc_id)) else { return };
             c.claude = None;
+            c.tool_pending.clear();
             for id in c.pending.drain().map(|(k, _)| k) {
                 emit(&app, &project, ChatEvent::PermissionGone { request_id: id });
             }
@@ -457,12 +479,19 @@ impl Chats {
             }
             ("control_request", _) => {
                 let r = v.get("request").cloned().unwrap_or(Value::Null);
-                if r.get("subtype").and_then(Value::as_str) != Some("can_use_tool") {
-                    return vec![];
-                }
                 let id = v.get("request_id").and_then(Value::as_str).unwrap_or("").to_string();
+                match r.get("subtype").and_then(Value::as_str) {
+                    Some("mcp_message") => return self.mcp_message(project, &id, &r),
+                    Some("can_use_tool") => {}
+                    _ => return vec![],
+                }
                 let tool = r.get("tool_name").and_then(Value::as_str).unwrap_or("?").to_string();
                 let input = r.get("input").cloned().unwrap_or(Value::Null);
+                // o navegador do painel é do próprio Veocode: só mexe nele, nunca em arquivos
+                if tool.starts_with(&format!("mcp__{}__", crate::browser::AI_SERVER)) {
+                    let _ = self.write_to(project, &json!({"type":"control_response","response":{"subtype":"success","request_id":id,"response":{"behavior":"allow","updatedInput":input}}}));
+                    return vec![];
+                }
                 if let Ok(mut m) = self.map.lock() {
                     if let Some(c) = m.get_mut(project) {
                         c.pending.insert(id.clone(), input.clone());
@@ -503,6 +532,81 @@ impl Chats {
         crate::agent::stream_steps(v, account, &root, &mut c.step_tools).into_iter().map(|event| ChatEvent::Step { event }).collect()
     }
 
+    /// Escreve uma linha para o Claude desta conversa.
+    fn write_to(&self, project: &str, v: &Value) -> Result<(), String> {
+        let mut map = self.map.lock().map_err(|e| e.to_string())?;
+        let p = map.get_mut(project).and_then(|c| c.claude.as_mut()).ok_or(crate::i18n::tr("o Claude não está mais rodando", "Claude is no longer running"))?;
+        write_line(&mut p.stdin, v)
+    }
+
+    /// Mensagem MCP para o servidor do navegador (o Claude fala com ele por aqui, sem processo
+    /// à parte). Aperto de mão e lista respondemos já; o uso de uma ferramenta vai para a tela.
+    fn mcp_message(&self, project: &str, request_id: &str, r: &Value) -> Vec<ChatEvent> {
+        let msg = r.get("message").cloned().unwrap_or(Value::Null);
+        let rpc = msg.get("id").cloned();
+        let method = msg.get("method").and_then(Value::as_str).unwrap_or("");
+        let reply = |res: Value| {
+            let _ = self.write_to(project, &json!({"type":"control_response","response":{"subtype":"success","request_id":request_id,"response":{"mcp_response":res}}}));
+        };
+        if r.get("server_name").and_then(Value::as_str) != Some(crate::browser::AI_SERVER) {
+            reply(json!({"jsonrpc":"2.0","id":rpc,"error":{"code":-32601,"message":"unknown server"}}));
+            return vec![];
+        }
+        match (method, rpc) {
+            ("tools/call", Some(rpc)) => {
+                let name = msg.pointer("/params/name").and_then(Value::as_str).unwrap_or("").to_string();
+                let input = msg.pointer("/params/arguments").cloned().unwrap_or_else(|| json!({}));
+                if let Ok(mut m) = self.map.lock() {
+                    if let Some(c) = m.get_mut(project) {
+                        c.tool_pending.insert(request_id.to_string(), rpc);
+                    }
+                }
+                vec![ChatEvent::Tool { request_id: request_id.to_string(), name, input }]
+            }
+            ("initialize", rpc) => {
+                let version = msg.pointer("/params/protocolVersion").cloned().unwrap_or_else(|| json!("2025-06-18"));
+                reply(json!({"jsonrpc":"2.0","id":rpc,"result":{
+                    "protocolVersion": version,
+                    "capabilities": {"tools": {}},
+                    "serverInfo": {"name": crate::browser::AI_SERVER, "version": env!("CARGO_PKG_VERSION")},
+                    "instructions": crate::browser::AI_INSTRUCTIONS,
+                }}));
+                vec![]
+            }
+            ("tools/list", rpc) => {
+                reply(json!({"jsonrpc":"2.0","id":rpc,"result":{"tools": crate::browser::ai_tools()}}));
+                vec![]
+            }
+            // avisos (sem id) não têm resposta de verdade, mas o pedido de controle precisa de uma
+            (_, None) => {
+                reply(json!({"jsonrpc":"2.0","result":{}}));
+                vec![]
+            }
+            ("ping", rpc) => {
+                reply(json!({"jsonrpc":"2.0","id":rpc,"result":{}}));
+                vec![]
+            }
+            (_, rpc) => {
+                reply(json!({"jsonrpc":"2.0","id":rpc,"error":{"code":-32601,"message":format!("method not found: {method}")}}));
+                vec![]
+            }
+        }
+    }
+
+    /// Resultado de uma ferramenta do navegador (a tela fez): volta para o Claude.
+    pub fn tool_reply(&self, project: &str, request_id: &str, result: Value) -> Result<(), String> {
+        let rpc = {
+            let mut map = self.map.lock().map_err(|e| e.to_string())?;
+            let c = map.get_mut(project).ok_or(crate::i18n::tr("conversa não encontrada", "conversation not found"))?;
+            // pedido de uma conta por API: quem espera é o laço dela
+            if let Some(tx) = c.api_tools.remove(request_id) {
+                return tx.send(result).map_err(|_| crate::i18n::tr("a resposta já tinha sido parada", "the answer had already been stopped").to_string());
+            }
+            c.tool_pending.remove(request_id).ok_or(crate::i18n::tr("esse pedido já foi respondido", "that request was already answered"))?
+        };
+        self.write_to(project, &json!({"type":"control_response","response":{"subtype":"success","request_id":request_id,"response":{"mcp_response":{"jsonrpc":"2.0","id":rpc,"result":result}}}}))
+    }
+
     /// Resposta da pessoa a um pedido de permissão.
     pub fn answer(&self, project: &str, request_id: &str, allow: bool) -> Result<(), String> {
         let mut map = self.map.lock().map_err(|e| e.to_string())?;
@@ -527,6 +631,7 @@ impl Chats {
         c.cancel.store(true, Ordering::SeqCst);
         // canais das APIs: soltar o remetente acorda quem espera
         let ids: Vec<String> = c.pending.drain().map(|(k, _)| k).chain(c.api_pending.drain().map(|(k, _)| k)).collect();
+        c.api_tools.clear();
         for id in ids {
             emit(app, project, ChatEvent::PermissionGone { request_id: id });
         }
@@ -650,6 +755,7 @@ impl Chats {
                 cancel: &cancel,
                 intro: a.prompt.clone(),
                 tools: a.tools,
+                browser: a.tools && !a.stream_steps,
             };
             let mut hooks = AppHooks { app: &app, project: &project, chats: &me, cancel: &cancel };
             let r = apiagent::run_turn(&ag, &turn, &mut msgs, &mut hooks);
@@ -666,6 +772,7 @@ impl Chats {
                 if let Some(c) = m.get_mut(&project).filter(|c| c.api_conv.as_deref() == Some(conv.as_str())) {
                     c.history = msgs;
                     c.api_pending.clear();
+                    c.api_tools.clear();
                 }
             }
             match r {
@@ -739,6 +846,15 @@ pub fn model_choice(model: Option<String>, effort: Option<String>) -> Result<(Op
 
 static NEXT_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
+/// Quanto o Claude espera a tela fazer uma ferramenta do navegador (abrir uma página lenta
+/// leva até ~25 s; passou disso, algo travou).
+const TOOL_TIMEOUT_S: u64 = 90;
+
+/// Resultado MCP de erro (texto para o Claude).
+fn tool_error(text: &str) -> Value {
+    json!({"content":[{"type":"text","text":text}],"isError":true})
+}
+
 fn spawn_claude(a: &SendArgs, resume: Option<&str>, resume_at: Option<&str>, fork: bool, level_key: String, proc_id: u64) -> Result<ClaudeProc, String> {
     let claude = crate::xray::util::which("claude").ok_or(crate::i18n::tr("Não achei o comando `claude`. Instale o Claude Code e tente de novo.", "Couldn't find the `claude` command. Install Claude Code and try again."))?;
     let mut cmd = Command::new(&claude);
@@ -750,13 +866,11 @@ fn spawn_claude(a: &SendArgs, resume: Option<&str>, resume_at: Option<&str>, for
         cmd.arg("--add-dir").arg(d);
     }
     // credenciais do cofre: os valores vão no ambiente; o Claude recebe só os nomes
+    // e o mapa do projeto: a IA sabe que existe um resumo para achar onde mexer
     let vault_note = crate::vault::prompt_for(&a.project_id);
-    let prompt = match (a.prompt.as_deref().filter(|p| !p.is_empty()), vault_note.as_deref()) {
-        (Some(p), Some(v)) => Some(format!("{p}\n\n{v}")),
-        (Some(p), None) => Some(p.to_string()),
-        (None, Some(v)) => Some(v.to_string()),
-        (None, None) => None,
-    };
+    let map_note = crate::projmap::prompt_for(&a.root);
+    let parts: Vec<&str> = [a.prompt.as_deref().filter(|p| !p.is_empty()), vault_note.as_deref(), map_note.as_deref()].into_iter().flatten().collect();
+    let prompt = (!parts.is_empty()).then(|| parts.join("\n\n"));
     if let Some(p) = prompt {
         cmd.arg("--append-system-prompt").arg(p);
     }
@@ -852,6 +966,16 @@ struct AppHooks<'a> {
 }
 
 impl apiagent::Hooks for AppHooks<'_> {
+    fn browser(&mut self, name: &str, args: &Value) -> Result<Value, String> {
+        let (tx, rx) = mpsc::channel();
+        let request_id = format!("api-tool-{}-{}", now_ms(), name);
+        {
+            let mut m = self.chats.map.lock().map_err(|e| e.to_string())?;
+            m.get_mut(self.project).ok_or(crate::i18n::tr("conversa não encontrada", "conversation not found"))?.api_tools.insert(request_id.clone(), tx);
+        }
+        emit(self.app, self.project, ChatEvent::Tool { request_id: request_id.clone(), name: name.into(), input: if args.is_object() { args.clone() } else { json!({}) } });
+        self.wait_tool(&request_id, rx)
+    }
     fn delta(&mut self, text: &str) {
         emit(self.app, self.project, ChatEvent::Delta { text: text.into() });
     }
@@ -884,6 +1008,34 @@ impl apiagent::Hooks for AppHooks<'_> {
                 Ok(b) => return Some(b),
                 Err(mpsc::RecvTimeoutError::Disconnected) => return None,
                 Err(mpsc::RecvTimeoutError::Timeout) if self.cancel.load(Ordering::SeqCst) => return None,
+                Err(mpsc::RecvTimeoutError::Timeout) => {}
+            }
+        }
+    }
+}
+
+impl AppHooks<'_> {
+    fn wait_tool(&self, request_id: &str, rx: mpsc::Receiver<Value>) -> Result<Value, String> {
+        let end = std::time::Instant::now() + Duration::from_secs(TOOL_TIMEOUT_S);
+        let gone = |me: &Self| {
+            if let Ok(mut m) = me.chats.map.lock() {
+                if let Some(c) = m.get_mut(me.project) {
+                    c.api_tools.remove(request_id);
+                }
+            }
+        };
+        loop {
+            match rx.recv_timeout(Duration::from_millis(200)) {
+                Ok(v) => return Ok(v),
+                Err(mpsc::RecvTimeoutError::Disconnected) => return Err(crate::i18n::tr("parado pela pessoa", "stopped by the person").into()),
+                Err(mpsc::RecvTimeoutError::Timeout) if self.cancel.load(Ordering::SeqCst) => {
+                    gone(self);
+                    return Err(crate::i18n::tr("parado pela pessoa", "stopped by the person").into());
+                }
+                Err(mpsc::RecvTimeoutError::Timeout) if std::time::Instant::now() > end => {
+                    gone(self);
+                    return Err(crate::trf!("o navegador do painel não respondeu em {} s", "the panel browser didn't answer in {} s", TOOL_TIMEOUT_S));
+                }
                 Err(mpsc::RecvTimeoutError::Timeout) => {}
             }
         }
@@ -939,6 +1091,33 @@ mod tests {
             }
             other => panic!("{other:?}"),
         }
+    }
+
+    #[test]
+    fn browser_tools_go_to_the_screen() {
+        let c = Chats::default();
+        c.map.lock().unwrap().insert("p".into(), ProjectChat::default());
+        // chamada de ferramenta: vira evento para a tela e fica esperando a resposta
+        let call = json!({"type":"control_request","request_id":"m1","request":{"subtype":"mcp_message","server_name":"veocode",
+            "message":{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"browser_open","arguments":{"url":"5173"}}}}});
+        match &c.handle_claude_line("p", "acc", &call)[..] {
+            [ChatEvent::Tool { request_id, name, input }] => assert_eq!((request_id.as_str(), name.as_str(), &input["url"]), ("m1", "browser_open", &json!("5173"))),
+            other => panic!("{other:?}"),
+        }
+        assert_eq!(c.map.lock().unwrap()["p"].tool_pending.get("m1"), Some(&json!(7)));
+        // sem processo do Claude a resposta não sai, mas o pedido não some à toa
+        assert!(c.tool_reply("p", "m1", json!({"content":[]})).is_err());
+        assert!(c.tool_reply("p", "m1", json!({"content":[]})).is_err());
+        // aperto de mão e lista: respondidos aqui, sem evento
+        let init = json!({"type":"control_request","request_id":"m2","request":{"subtype":"mcp_message","server_name":"veocode","message":{"jsonrpc":"2.0","id":0,"method":"initialize","params":{}}}});
+        assert!(c.handle_claude_line("p", "acc", &init).is_empty());
+        // permissão das ferramentas do navegador: liberada sem perguntar à pessoa
+        let perm = json!({"type":"control_request","request_id":"r9","request":{"subtype":"can_use_tool","tool_name":"mcp__veocode__browser_click","input":{"ref":"e1"}}});
+        assert!(c.handle_claude_line("p", "acc", &perm).is_empty());
+        assert!(!c.map.lock().unwrap()["p"].pending.contains_key("r9"));
+        let tool = serde_json::to_value(ChatEvent::Tool { request_id: "m1".into(), name: "browser_open".into(), input: json!({}) }).unwrap();
+        assert_eq!(tool["kind"], "tool");
+        assert_eq!(tool["requestId"], "m1");
     }
 
     #[test]

@@ -1,9 +1,14 @@
-// Modelo e força do Claude escolhidos no chat, guardados por projeto (vazio = padrão da conta).
+// Modelo e força do Claude escolhidos no chat, guardados por projeto (vazio = padrão da conta),
+// e o Code mode do `claude` aberto no Terminal do projeto.
+import { invoke } from "@tauri-apps/api/core";
+import { createSignal } from "solid-js";
 import { createStore } from "solid-js/store";
+import { isTauri } from "./api";
 import { tx } from "./i18n";
 
 export type Effort = "low" | "medium" | "high" | "xhigh" | "max";
-export type Prefs = { model?: string | null; effort?: Effort | null };
+/** `codeMode`: liga o Code mode do Claude Code nos terminais do projeto abertos depois. */
+export type Prefs = { model?: string | null; effort?: Effort | null; codeMode?: boolean };
 
 export const claudeModels: { id: string | null; label: string; hint: string }[] = [
   { id: null, get label() { return tx("Padrão"); }, get hint() { return tx("o que a conta usa"); } },
@@ -53,6 +58,30 @@ export function prefsLabel(pid: string): string | null {
   const e = efforts.find((x) => x.id === (p.effort ?? null));
   const parts = [p.model ? m?.label ?? p.model : null, p.effort ? tx("força {v}", { v: (e?.label ?? "").toLowerCase() }) : null].filter(Boolean);
   return parts.length ? parts.join(" · ") : null;
+}
+
+/** O Code mode do Claude Code só existe a partir desta versão (e só no `claude` interativo). */
+export const CODE_MODE_MIN = "2.1.323";
+
+/** Versão do Claude Code instalado: undefined = ainda não lida, null = não achou. */
+const [cliVersion, setCliVersion] = createSignal<string | null | undefined>(undefined);
+export { cliVersion, setCliVersion };
+let reading = false;
+/** Lê de novo a cada vez que o menu abre: a pessoa pode ter atualizado no Terminal. */
+export function readCliVersion() {
+  if (!isTauri || reading) return;
+  reading = true;
+  invoke<string | null>("claude_version")
+    .then((v) => setCliVersion(v ?? null), () => setCliVersion(null))
+    .finally(() => (reading = false));
+}
+
+/** "2.1.316" >= "2.1.323"? */
+export function versionAtLeast(v: string, min: string) {
+  const a = v.split(".").map((x) => parseInt(x, 10) || 0);
+  const b = min.split(".").map((x) => parseInt(x, 10) || 0);
+  for (let i = 0; i < Math.max(a.length, b.length); i++) if ((a[i] ?? 0) !== (b[i] ?? 0)) return (a[i] ?? 0) > (b[i] ?? 0);
+  return true;
 }
 
 /** "claude-opus-5-5" → "Opus 5.5" (para mostrar o modelo no botão da IA). */

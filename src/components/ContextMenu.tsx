@@ -1,4 +1,4 @@
-import { ChevronRight } from "lucide-solid";
+import { Check, ChevronRight } from "lucide-solid";
 import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import { contextMenu, setContextMenu, type MenuEntry, type MenuItem } from "../fileActions";
 
@@ -66,7 +66,8 @@ export default function ContextMenu() {
                 {it.label}
                 <Show when={it.hint}><small>{it.hint}</small></Show>
               </span>
-              <Show when={it.sub} fallback={<Show when={it.key}><kbd class="menu-key">{it.key}</kbd></Show>}>
+              <Show when={it.value}><small class="menu-value">{it.value}</small></Show>
+              <Show when={it.sub} fallback={<Show when={it.checked !== undefined} fallback={<Show when={it.key}><kbd class="menu-key">{it.key}</kbd></Show>}><Check size={14} class="menu-tick" classList={{ off: !it.checked }} /></Show>}>
                 <ChevronRight size={13} class="menu-chev" />
               </Show>
             </>
@@ -75,13 +76,13 @@ export default function ContextMenu() {
             <Show
               when={it.sub}
               fallback={
-                <button class="menu-item" classList={{ danger: !!it.danger }} role="menuitem" onPointerEnter={() => !props.nested && setSub(null)} onClick={() => run(it)}>
+                <button class="menu-item" classList={{ danger: !!it.danger }} role={it.checked !== undefined ? "menuitemcheckbox" : "menuitem"} aria-checked={it.checked} disabled={it.disabled} onPointerEnter={() => !props.nested && setSub(null)} onClick={() => run(it)}>
                   {body}
                 </button>
               }
             >
               <div class="menu-subwrap">
-                <button class="menu-item" classList={{ sel: open() }} role="menuitem" aria-haspopup="menu" aria-expanded={open()} onPointerEnter={() => setSub(i())} onClick={() => setSub(open() ? null : i())}>
+                <button class="menu-item" classList={{ sel: open() }} role="menuitem" aria-haspopup="menu" aria-expanded={open()} onPointerEnter={() => setSub(i())} onClick={() => setSub(i())}>
                   {body}
                 </button>
                 <Show when={open()}>
@@ -111,7 +112,22 @@ export default function ContextMenu() {
   return (
     <Show when={contextMenu()}>
       {(m) => (
-        <div ref={el} class="menu pop-in ctx-menu" style={pos()} role="menu">
+        <div
+          ref={(e) => {
+            el = e;
+            // mais largo que o previsto: encosta na borda da janela em vez de passar dela
+            requestAnimationFrame(() => {
+              // tamanho de layout (a animação de entrada ainda está encolhendo o menu)
+              const w = e.offsetWidth;
+              const h = e.offsetHeight;
+              if (e.offsetLeft + w > window.innerWidth - 8) e.style.left = `${Math.max(8, window.innerWidth - 8 - w)}px`;
+              if (e.offsetTop + h > window.innerHeight - 8) e.style.top = `${Math.max(8, window.innerHeight - 8 - h)}px`;
+            });
+          }}
+          class="menu pop-in ctx-menu"
+          style={pos()}
+          role="menu"
+        >
           <List items={m().items} />
         </div>
       )}
