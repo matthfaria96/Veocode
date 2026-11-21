@@ -1,6 +1,6 @@
 [package]
 name = "veocode"
-version = "0.7.0"
+version = "0.7.1"
 description = "Veocode - workspace visual para agentes de IA"
 authors = []
 edition = "2024"
