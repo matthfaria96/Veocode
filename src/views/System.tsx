@@ -1,7 +1,7 @@
 // Painel: tudo o que as IAs ocupam, rodam e instalaram neste computador, numa tela só.
 // À esquerda, a lista no jeito dos Ajustes do macOS (Visão geral, No disco, Rodando agora e
 // Extras do Claude); à direita, a parte escolhida. A Visão geral resume tudo em cartões.
-import { Activity, AlertTriangle, Box, Brain, ChevronRight, Copy, Cpu, Download, FolderOpen, HardDrive, LayoutGrid, Monitor, Package, Play, Plug, Power, Puzzle, RefreshCw, Server, Square, Trash2, type LucideProps } from "lucide-solid";
+import { Activity, AlertTriangle, Box, Brain, ChevronRight, Copy, Cpu, Download, FolderOpen, HardDrive, LayoutGrid, MemoryStick, Monitor, Package, Play, Plug, Power, Puzzle, RefreshCw, Server, Square, Trash2, type LucideProps } from "lucide-solid";
 import { createMemo, createSignal, For, Match, onCleanup, onMount, Show, Switch, type JSX } from "solid-js";
 import { api, copyText, isTauri, type AgentGroup, type Leftover, type Proc } from "../api";
 import { formatBytes } from "../data/mock";
@@ -18,6 +18,24 @@ import { every } from "../every";
 import { locale, tx, txn } from "../i18n";
 
 const base = (p: string) => p.split(/[\\/]/).filter(Boolean).pop() ?? p;
+
+/** Disco do Docker ("8.19kB (virtual 95.6MB)"): o que o container escreveu e, à parte, com a imagem. */
+function splitDisk(s?: string | null): { main: string; virt?: string } {
+  const m = /^(.*?)\s*\((?:virtual\s+)?([^)]+)\)\s*$/.exec(s ?? "");
+  return m ? { main: m[1], virt: m[2] } : { main: s || "—" };
+}
+/** Portas ("127.0.0.1:27019->27017/tcp, [::]:80->80/tcp"): ":27019 → 27017", sem repetir IPv4/IPv6. */
+function portList(s?: string | null): { label: string; full: string }[] {
+  const out = new Map<string, string>();
+  for (const raw of (s ?? "").split(/,\s*/)) {
+    const t = raw.trim();
+    if (!t) continue;
+    const m = /:(\d+(?:-\d+)?)->(\d+(?:-\d+)?)(?:\/(\w+))?$/.exec(t);
+    const label = m ? `:${m[1]} → ${m[2]}${m[3] && m[3] !== "tcp" ? `/${m[3]}` : ""}` : t;
+    if (!out.has(label)) out.set(label, t);
+  }
+  return [...out].map(([label, full]) => ({ label, full }));
+}
 const when = (iso: string) => {
   const d = new Date(iso);
   return isNaN(d.getTime()) ? "—" : d.toLocaleString(locale(), { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
@@ -399,13 +417,21 @@ export default function System() {
                                 <span class="status-pill" classList={{ live: m.running }}>{m.running ? tx("rodando") : tx("parada")}</span>
                               </div>
                               <div class="machine-stats">
-                                <div><Cpu size={12} /> CPU <strong>{m.cpu ?? "—"}</strong></div>
-                                <div><HardDrive size={12} /> RAM <strong>{m.ram ?? "—"}</strong></div>
-                                <div><HardDrive size={12} /> {tx("Disco")} <strong>{m.disk ?? "—"}</strong></div>
+                                <div title={m.cpu ?? undefined}><span><Cpu size={12} /> CPU</span><strong>{m.cpu ?? "—"}</strong></div>
+                                <div title={m.ram ?? undefined}><span><MemoryStick size={12} /> RAM</span><strong>{m.ram ?? "—"}</strong></div>
+                                <div title={m.disk ?? undefined}>
+                                  <span><HardDrive size={12} /> {tx("Disco")}</span>
+                                  <strong>{splitDisk(m.disk).main}</strong>
+                                  <Show when={splitDisk(m.disk).virt}>{(v) => <small>{tx("{v} no total", { v: v() })}</small>}</Show>
+                                </div>
                               </div>
                               <div class="machine-foot">
-                                <small>{m.statusText}</small>
-                                <Show when={m.ports}><code>{m.ports}</code></Show>
+                                <small class="machine-up">{m.statusText}</small>
+                                <Show when={portList(m.ports).length}>
+                                  <span class="machine-ports">
+                                    <For each={portList(m.ports)}>{(pt) => <code title={pt.full}>{pt.label}</code>}</For>
+                                  </span>
+                                </Show>
                                 <Show when={m.canToggle}>
                                   <button class="icon-btn" title={m.running ? tx("Parar") : tx("Iniciar")} disabled={xray.busy[`m:${m.engine}:${m.id}`]} onClick={() => toggleMachine(m.engine, m.id, !m.running)}>
                                     <Show when={!xray.busy[`m:${m.engine}:${m.id}`]} fallback={<span class="spinner inline" />}>

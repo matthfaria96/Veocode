@@ -4,7 +4,7 @@
 
 import { createStore } from "solid-js/store";
 import { api } from "./api";
-import { projectId, setWs, showToast, ws } from "./store";
+import { projectId, setWs, showToast, ws, type FileView } from "./store";
 import { tx } from "./i18n";
 
 const AUTOSAVE_MS = 700;
@@ -43,8 +43,7 @@ export const savedByMe = (pid: string, path: string) => {
 export const markOwn = (pid: string, ...paths: string[]) => paths.forEach((p) => ownWrites.set(key(pid, p), Date.now()));
 
 /** A pessoa digitou: guarda e agenda a gravação. */
-export function edit(path: string, text: string) {
-  const pid = projectId();
+export function edit(path: string, text: string, pid = projectId()) {
   const k = key(pid, path);
   setDrafts(k, { text, status: "editing" });
   clearTimeout(timers.get(k));
@@ -76,7 +75,7 @@ async function save(pid: string, path: string): Promise<boolean> {
   }
 }
 
-export const saveNow = (path: string) => save(projectId(), path);
+export const saveNow = (path: string, pid = projectId()) => save(pid, path);
 
 /** Grava tudo o que está pendente (de todos os projetos). */
 export async function saveAll(): Promise<boolean> {
@@ -102,14 +101,14 @@ export function moveDraft(from: string, to: string, pid = projectId()) {
   if (!d) return;
   dropDraft(from, pid);
   setDrafts(key(pid, to), d);
-  if (d.status !== "saved") edit(to, d.text);
+  if (d.status !== "saved") edit(to, d.text, pid);
 }
 
 /** O que o editor mostra: o rascunho, senão o texto do disco. */
-export function textOf(path: string): string | null {
-  const d = draftOf(path);
+export function textOf(path: string, pid = projectId(), view: FileView | undefined = pid === projectId() ? ws.contents[path] : undefined): string | null {
+  const d = draftOf(path, pid);
   if (d) return d.text;
-  const v = ws.contents[path];
+  const v = view;
   return v?.kind === "text" ? v.text : null;
 }
 

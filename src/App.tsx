@@ -23,6 +23,7 @@ import { helpOpen, loadProjects, paletteOpen, setHelpOpen, setPaletteOpen, setVi
 import { loadSummaries } from "./git";
 import { api } from "./api";
 import { handleFsChange } from "./realProject";
+import { paneFsChange } from "./paneFiles";
 import { refreshProcs } from "./xray";
 import { loadAccounts, refreshStatuses } from "./accounts";
 import { startChatEvents } from "./chat";
@@ -116,6 +117,7 @@ export default function App() {
     let gitTimer: number | undefined;
     const unlisten = api.onFsChange((e) => {
       handleFsChange(e);
+      paneFsChange(e);
       trackMedia(e);
       // arquivos mudaram: o número de mudanças do git também (uma leitura leve, juntando os avisos)
       clearTimeout(gitTimer);

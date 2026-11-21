@@ -1,34 +1,30 @@
 // Uma coluna da tela Início: um projeto, com a conversa inteira (o mesmo chat da tela do projeto:
 // passos, tarefas, linha viva, permissões, editar e bifurcar, a caixa com conta, nível e contexto),
 // a troca entre as conversas dele que rodam ao mesmo tempo (as abas do Veocode e as de fora) e o
-// modo Código (o que mudou, commit e o terminal da pasta).
+// modo Código (PaneCode.tsx: arquivos, editor com abas, mudanças com commit e terminal).
 import { dismissable } from "../dismiss";
-import { ArrowLeftRight, ChevronDown, Code2, Eye, FolderGit2, GitBranch, Maximize2, MessagesSquare, Minimize2, MoreHorizontal, PanelRightOpen, Pin, Plus, Sparkles, SquareTerminal, X } from "lucide-solid";
-import { createEffect, createMemo, createRoot, createSignal, For, lazy, Match, on, onCleanup, onMount, Show, Suspense, Switch } from "solid-js";
+import { ArrowLeftRight, ChevronDown, Code2, Eye, GitBranch, Maximize2, MessagesSquare, Minimize2, MoreHorizontal, PanelRightOpen, Pin, Plus, Sparkles, X } from "lucide-solid";
+import { createEffect, createMemo, createRoot, createSignal, For, lazy, on, Show, Suspense } from "solid-js";
 import { accountById } from "../accounts";
 import { closePane, isPinned, maximized, panes, paneChat, paneMode, projectState, replacePane, setMaximized, setPaneChat, setPaneMode, swapPanes, togglePin, type PaneMode } from "../board";
 import { activeKey, closeTab, openInTab, selectTab, startConversation, tabsOf, type ConvTab } from "../convTabs";
 import { drag, dropOver, startDrag } from "../drag";
 import { chatOf, openConversation, setInput } from "../chat";
 import { feedOf, loadedWhole } from "../feeds";
-import { changeLabel, commitDraft, commitGit, fileDiff, git, gitOf, gitWords, loadGit, pullGit, pushGit, setCommitDraft, type GitChange } from "../git";
+import { git, gitWords } from "../git";
 import { histFind, loadHist } from "../convHist";
 import { customName } from "../forks";
 import { outsideTurn } from "../outside";
 import { openAccess } from "../modals";
 import { isTauri } from "../api";
-import { every } from "../every";
-import { showChange } from "../showChange";
 import { setProjMode } from "../layoutMode";
-import { projects, setProjectId, setView, showToast, type ActivityEvent } from "../store";
+import { projects, setProjectId, setView, type ActivityEvent } from "../store";
 import { ProjectIcon } from "./icons";
 import { ChatTail, Composer, RealConversation, useFollow } from "./ChatPanel";
-import { Delta } from "./Work";
-import { DiffRows, parseDiff } from "./DiffView";
 import { focusComposer } from "./MsgTools";
-import { tx, txn } from "../i18n";
+import { tx } from "../i18n";
 
-const ProjectTerminal = lazy(() => import("./ProjectTerminal"));
+const PaneCode = lazy(() => import("./PaneCode"));
 
 // relógio de 5 s: uma conversa de fora "trabalhando" é deduzida do tempo sem novidade
 const now5 = createRoot(() => {
@@ -278,7 +274,7 @@ export default function ChatPane(props: { pid: string; index: number; span?: num
         </Show>
       </header>
 
-      <Show when={mode() === "ai"} fallback={<PaneCode pid={props.pid} />}>
+      <Show when={mode() === "ai"} fallback={<Suspense fallback={<div class="pane-empty"><span class="spinner" /></div>}><PaneCode pid={props.pid} onOpenFull={openFull} /></Suspense>}>
         <div class="pane-convs" role="tablist" aria-label={tx("Conversas de {name}", { name: p().name })}>
           <For each={convs()}>
             {(c) => (
@@ -342,7 +338,7 @@ function ModeSwitch(props: { pid: string; mode: PaneMode }) {
       <button role="radio" aria-checked={props.mode === "ai"} classList={{ on: props.mode === "ai" }} title={tx("IA: a conversa")} onClick={() => set("ai")}>
         <MessagesSquare size={13} />
       </button>
-      <button role="radio" aria-checked={props.mode === "code"} classList={{ on: props.mode === "code" }} title={tx("Código: o que mudou, commit e terminal")} onClick={() => set("code")}>
+      <button role="radio" aria-checked={props.mode === "code"} classList={{ on: props.mode === "code" }} title={tx("Código: arquivos, editor, mudanças e terminal")} onClick={() => set("code")}>
         <Code2 size={13} />
       </button>
       <span class="pane-mode-thumb" style={{ transform: `translateX(${props.mode === "code" ? 100 : 0}%)` }} />
@@ -379,150 +375,6 @@ function PaneIdle(props: { pid: string; k: string; onFocus: () => void }) {
           )}
         </For>
       </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------- modo Código
-
-/** O que mudou (com o diff ali mesmo), commit, enviar e baixar, e o terminal da pasta. */
-function PaneCode(props: { pid: string }) {
-  const [tab, setTab] = createSignal<"changes" | "term">("changes");
-  const [open, setOpen] = createSignal<string | null>(null);
-  const [acting, setActing] = createSignal(false);
-  const entry = () => gitOf(props.pid);
-  const st = () => entry().status;
-  onMount(() => void loadGit(props.pid, !!st()));
-  onCleanup(every(() => tab() === "changes" && void loadGit(props.pid, true), 4000));
-  const rel = (path: string) => {
-    const pre = st()?.prefix ?? "";
-    return pre ? (path.startsWith(pre) ? path.slice(pre.length) : null) : path;
-  };
-  const changes = () => (st()?.changes ?? []).filter((c) => !c.path.endsWith("/"));
-  const staged = () => changes().filter((c) => !c.untracked && !c.conflict && c.index !== ".").length;
-  const byPath = createMemo(() => new Map(changes().map((c) => [c.path, c])));
-  const paths = createMemo(() => changes().map((c) => c.path), [], { equals: (a, b) => a.length === b.length && a.every((x, i) => x === b[i]) });
-  const msg = () => commitDraft(props.pid);
-  const act = async (f: () => Promise<string | null>, ok: string) => {
-    setActing(true);
-    const err = await f();
-    setActing(false);
-    showToast(err ?? ok);
-  };
-  const commit = () => {
-    if (!msg().trim()) return showToast(tx("Escreva a mensagem do commit"));
-    void act(async () => {
-      const err = await commitGit(props.pid, msg(), staged() === 0);
-      if (!err) setCommitDraft(props.pid, "");
-      return err;
-    }, tx("Commit feito"));
-  };
-  return (
-    <div class="pane-code">
-      <div class="pane-code-bar">
-        <div class="pane-seg" role="tablist">
-          <button role="tab" aria-selected={tab() === "changes"} classList={{ on: tab() === "changes" }} onClick={() => setTab("changes")}>
-            <FolderGit2 size={13} /> <span>{tx("Mudanças")}</span>
-            <Show when={changes().length}><i class="pane-seg-n">{changes().length > 99 ? "99+" : changes().length}</i></Show>
-          </button>
-          <button role="tab" aria-selected={tab() === "term"} classList={{ on: tab() === "term" }} onClick={() => setTab("term")}>
-            <SquareTerminal size={13} /> <span>{tx("Terminal")}</span>
-          </button>
-        </div>
-        <span class="pane-gap" />
-        <Show when={st()?.repo}>
-          <span class="pane-branch" title={tx("Branch atual")}><GitBranch size={12} /> <span>{st()!.branch ?? "HEAD"}</span></span>
-        </Show>
-        <button class="icon-btn small" title={tx("Abrir no modo Código do projeto (editor e Git completos)")} onClick={() => showChange(props.pid, open())}><PanelRightOpen size={13} /></button>
-      </div>
-      <Switch>
-        <Match when={tab() === "changes"}>
-          <div class="pane-changes">
-            <Show when={st()} fallback={<div class="pane-empty">{entry().error || <><span class="spinner" /> {tx("Lendo o git…")}</>}</div>}>
-              <Show when={st()!.repo} fallback={<div class="pane-empty">{tx("Esta pasta não usa git.")}</div>}>
-                <Show when={changes().length} fallback={<div class="pane-empty">{tx("Nada mudou desde o último commit.")}</div>}>
-                  {/* pelo caminho: a leitura do git a cada 4 s traz objetos novos, e a linha
-                      (com o diff aberto) não deve ser recriada por isso */}
-                  <For each={paths()}>
-                    {(path) => (
-                      <Show when={byPath().get(path)}>
-                        {(c) => <ChangeRow pid={props.pid} c={c()} rel={rel(path)} open={open() === rel(path)} onToggle={(r) => setOpen(open() === r ? null : r)} />}
-                      </Show>
-                    )}
-                  </For>
-                </Show>
-              </Show>
-            </Show>
-          </div>
-          <Show when={st()?.repo}>
-            <div class="pane-commit">
-              <input
-                value={msg()}
-                placeholder={staged() ? txn(staged(), "Mensagem do commit ({n} preparado)", "Mensagem do commit ({n} preparados)") : tx("Mensagem do commit (leva tudo)")}
-                onInput={(e) => setCommitDraft(props.pid, e.currentTarget.value)}
-                onKeyDown={(e) => e.key === "Enter" && !e.isComposing && (e.preventDefault(), commit())}
-              />
-              <button class="primary-btn small" disabled={acting() || !changes().length} onClick={commit}>{tx("Commit")}</button>
-              <Show when={st()!.ahead}>
-                <button class="ghost-btn small" disabled={acting()} title={tx("Enviar: git push")} onClick={() => void act(() => pushGit(props.pid), tx("Enviado"))}>↑{st()!.ahead}</button>
-              </Show>
-              <Show when={st()!.behind}>
-                <button class="ghost-btn small" disabled={acting()} title={tx("Baixar: git pull")} onClick={() => void act(() => pullGit(props.pid), tx("Atualizado"))}>↓{st()!.behind}</button>
-              </Show>
-            </div>
-          </Show>
-        </Match>
-        <Match when={tab() === "term"}>
-          <div class="pane-term">
-            <Suspense fallback={<div class="pane-empty"><span class="spinner" /></div>}>
-              <ProjectTerminal pid={props.pid} />
-            </Suspense>
-          </div>
-        </Match>
-      </Switch>
-    </div>
-  );
-}
-
-/** Um arquivo mudado: letra, nome, +/−; um clique mostra o diff ali mesmo. */
-function ChangeRow(props: { pid: string; c: GitChange; rel: string | null; open: boolean; onToggle: (r: string) => void }) {
-  const l = () => changeLabel(props.c);
-  const name = () => props.c.path.slice(props.c.path.lastIndexOf("/") + 1);
-  const dir = () => (props.c.path.includes("/") ? props.c.path.slice(0, props.c.path.lastIndexOf("/")) : "");
-  const [raw, setRaw] = createSignal<string | null>(null);
-  // abre: lê o diff; aberto e o arquivo mudou de novo (outros +/−): lê outra vez
-  createEffect(on(() => [props.open, props.c.added, props.c.removed] as const, async ([o]) => {
-    if (!o || !props.rel) return;
-    try {
-      setRaw(await fileDiff(props.pid, props.rel));
-    } catch (e) {
-      setRaw("");
-      showToast(String(e instanceof Error ? e.message : e));
-    }
-  }));
-  const parsed = createMemo(() => (raw() ? parseDiff(raw()!) : null));
-  return (
-    <div class="pane-change" classList={{ open: props.open }}>
-      <button class="pane-change-row" disabled={props.rel === null} title={`${props.c.path} · ${tx(l().word)}`} onClick={() => props.rel !== null && props.onToggle(props.rel)}>
-        <i class={`pane-letter ${l().tone}`}>{l().letter}</i>
-        <span class="pane-change-name">{name()}</span>
-        <small class="pane-change-dir">{dir()}</small>
-        <Show when={props.c.added != null || props.c.removed != null}>
-          <Delta add={props.c.added ?? 0} del={props.c.removed ?? 0} pid={props.rel !== null ? props.pid : null} path={props.rel} />
-        </Show>
-        <ChevronDown size={12} class="pane-change-chev" />
-      </button>
-      <Show when={props.open}>
-        <div class="pane-diff">
-          <Show when={parsed()} fallback={<div class="pane-empty"><span class="spinner" /></div>}>
-            {(d) => (
-              <Show when={!d().binary} fallback={<div class="pane-empty">{tx("Arquivo binário: o git não mostra as linhas dele.")}</div>}>
-                <DiffRows rows={d().rows} ext={props.c.path.split(".").pop() ?? ""} split={false} />
-              </Show>
-            )}
-          </Show>
-        </div>
-      </Show>
     </div>
   );
 }

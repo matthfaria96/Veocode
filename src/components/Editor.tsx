@@ -17,7 +17,7 @@ import { ask } from "../dialogs";
 import { draftOf, dropDraft, edit, isUnsaved, saveNow, textOf } from "../editing";
 import { openRealFile } from "../realProject";
 import { defaultFileContent, fileContents } from "../data/mock";
-import { ALL_CHANGES, MAP_TAB, closeTab, commitOfTab, currentProject, diffPathOf, isCommitTab, isDiffTab, openFile, projectId, showToast, ws } from "../store";
+import { ALL_CHANGES, MAP_TAB, closeTab, commitOfTab, currentProject, diffPathOf, isCommitTab, isDiffTab, openFile, projectId, showToast, ws, type FileView } from "../store";
 import { tx } from "../i18n";
 import { tokenize } from "../syntax";
 
@@ -42,16 +42,22 @@ function CodeLines(props: { lines: { t: string; added: boolean; removed: boolean
   );
 }
 
-/** Conteúdo de um arquivo real: dá para escrever direto; grava sozinho (editing.ts). */
+/** O arquivo aberto na tela do projeto. */
 function RealCode(props: { ext: string }) {
-  const view = () => ws.contents[ws.activeFile];
-  const path = () => ws.activeFile;
-  const text = () => textOf(path());
+  return <EditFile pid={projectId()} path={ws.activeFile} view={ws.contents[ws.activeFile]} changed={ws.changedLines[ws.activeFile]} ext={props.ext} />;
+}
+
+/** Conteúdo de um arquivo real: dá para escrever direto; grava sozinho (editing.ts). Serve à tela do
+ *  projeto e às colunas da tela Início (cada uma com o projeto e o arquivo dela). */
+export function EditFile(props: { pid: string; path: string; view: FileView | undefined; changed?: number[]; ext: string }) {
+  const view = () => props.view;
+  const path = () => props.path;
+  const text = () => textOf(path(), props.pid, props.view);
   const big = () => (text()?.split("\n").length ?? 0) > MAX_LINES;
   const lines = createMemo(() => {
     const t = text();
     if (t === null || big()) return [];
-    const changed = new Set(isUnsaved(path()) ? [] : ws.changedLines[path()] ?? []);
+    const changed = new Set(isUnsaved(path(), props.pid) ? [] : props.changed ?? []);
     return t.split("\n").map((line, i) => ({ t: line, added: changed.has(i + 1), removed: false }));
   });
   let area!: HTMLTextAreaElement;
@@ -60,7 +66,7 @@ function RealCode(props: { ext: string }) {
     const mod = e.metaKey || e.ctrlKey;
     if (mod && e.key.toLowerCase() === "s") {
       e.preventDefault();
-      void saveNow(path());
+      void saveNow(path(), props.pid);
       return;
     }
     if (e.key === "Tab" && !mod && !e.altKey) {
@@ -69,7 +75,7 @@ function RealCode(props: { ext: string }) {
       const { selectionStart: a, selectionEnd: b, value } = area;
       const indent = /\t/.test(value) && !/^ {2,}/m.test(value) ? "\t" : "  ";
       area.setRangeText(indent, a, b, "end");
-      edit(path(), area.value);
+      edit(path(), area.value, props.pid);
     }
   };
 
@@ -82,7 +88,7 @@ function RealCode(props: { ext: string }) {
         {(v) => <div class="editor-empty">{(v as { message: string }).message}</div>}
       </Match>
       <Match when={(view()!.kind === "binary" || view()!.kind === "tooLarge") && isImagePath(path())}>
-        <ImageView pid={projectId()} path={path()} size={(view() as { size: number }).size} />
+        <ImageView pid={props.pid} path={path()} size={(view() as { size: number }).size} />
       </Match>
       <Match when={view()!.kind === "binary" || view()!.kind === "tooLarge"}>
         <div class="editor-empty">
@@ -90,7 +96,7 @@ function RealCode(props: { ext: string }) {
             <span>
               {view()!.kind === "binary" ? tx("Este arquivo não é texto") : tx("Arquivo grande demais para o editor")} ({formatSize((view() as { size: number }).size)}).
             </span>
-            <button class="primary-btn small" onClick={() => api.openEntry(projectId(), path()).catch((e) => showToast(String(e)))}><ExternalLink size={13} /> {tx("Abrir com o programa padrão")}</button>
+            <button class="primary-btn small" onClick={() => api.openEntry(props.pid, path()).catch((e) => showToast(String(e)))}><ExternalLink size={13} /> {tx("Abrir com o programa padrão")}</button>
           </div>
         </div>
       </Match>
@@ -120,9 +126,9 @@ function RealCode(props: { ext: string }) {
               autocapitalize="off"
               aria-label={tx("Conteúdo de {path}", { path: path() })}
               rows={Math.max(lines().length, text()?.split("\n").length ?? 1)}
-              onInput={(e) => edit(path(), e.currentTarget.value)}
+              onInput={(e) => edit(path(), e.currentTarget.value, props.pid)}
               onKeyDown={onKey}
-              onBlur={() => void saveNow(path())}
+              onBlur={() => void saveNow(path(), props.pid)}
             />
           </div>
         </div>
@@ -132,8 +138,8 @@ function RealCode(props: { ext: string }) {
 }
 
 /** Situação da gravação do arquivo aberto, embaixo das abas. */
-function SaveState() {
-  const d = () => draftOf(ws.activeFile);
+export function SaveState(props: { pid: string; path: string }) {
+  const d = () => draftOf(props.path, props.pid);
   return (
     <span class="save-state" classList={{ err: d()?.status === "error" }}>
       <Show when={d()} fallback={<span>{tx("Clique no texto para editar · grava sozinho")}</span>}>
@@ -143,7 +149,7 @@ function SaveState() {
             <Match when={x().status === "saved"}><Check size={12} /> {tx("Salvo")}</Match>
             <Match when={x().status === "error"}>
               <AlertTriangle size={12} /> {tx("Não salvou: {error}", { error: x().error })}
-              <button class="link-btn" onClick={() => void saveNow(ws.activeFile)}>{tx("Tentar de novo")}</button>
+              <button class="link-btn" onClick={() => void saveNow(props.path, props.pid)}>{tx("Tentar de novo")}</button>
             </Match>
           </Switch>
         )}
@@ -154,8 +160,13 @@ function SaveState() {
 
 /** Fecha a aba; se ainda falta gravar, grava antes (e avisa se não deu). */
 async function closeRealTab(path: string) {
-  if (isUnsaved(path)) {
-    const ok = await saveNow(path);
+  if (await readyToClose(path, projectId())) closeTab(path);
+}
+
+/** Antes de fechar a aba de um arquivo: grava o que falta; se não der, pergunta. Sim = pode fechar. */
+export async function readyToClose(path: string, pid: string): Promise<boolean> {
+  if (isUnsaved(path, pid)) {
+    const ok = await saveNow(path, pid);
     if (!ok) {
       const r = await ask({
         title: tx("Não deu para salvar {pop}", { pop: path.split("/").pop() }),
@@ -165,11 +176,11 @@ async function closeRealTab(path: string) {
           { id: "drop", label: tx("Fechar sem salvar"), tone: "danger" },
         ],
       });
-      if (r?.id !== "drop") return;
+      if (r?.id !== "drop") return false;
     }
   }
-  dropDraft(path);
-  closeTab(path);
+  dropDraft(path, pid);
+  return true;
 }
 
 export default function Editor(props: { tools?: JSX.Element }) {
@@ -238,7 +249,7 @@ export default function Editor(props: { tools?: JSX.Element }) {
       <Show when={ws.activeFile} fallback={<EditorHome />}>
         <div class="breadcrumb">
           <span>{ws.activeFile.split("/").join("  ›  ")}</span>
-          <Show when={!currentProject().demo && ws.contents[ws.activeFile]?.kind === "text"}><SaveState /></Show>
+          <Show when={!currentProject().demo && ws.contents[ws.activeFile]?.kind === "text"}><SaveState pid={projectId()} path={ws.activeFile} /></Show>
         </div>
         <Show when={currentProject().demo} fallback={<RealCode ext={ext()} />}>
           <CodeLines lines={lines()} ext={ext()} plusGutter />

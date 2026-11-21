@@ -68,7 +68,7 @@ export const topics: Topic[] = [
           "Os projetos entram sozinhos: quem pede você vem primeiro, depois quem está trabalhando e quem mexeu por último.",
           "Cabem tantas colunas quanto a janela permite, sem ficarem apertadas: janela maior, mais colunas (até oito).",
           "Cada coluna tem o chat completo do projeto, com uma aba para cada conversa rodando ao mesmo tempo e o + para começar outra.",
-          "Os dois ícones no topo da coluna trocam entre IA (a conversa) e Código (o que mudou, commit e terminal).",
+          "Os dois ícones no topo da coluna trocam entre IA (a conversa) e Código: a árvore de arquivos, várias abas para editar (grava sozinho), as mudanças com o commit e o terminal embaixo.",
           "Arraste um projeto pelo título até outro para trocar de lugar. O ✕ tira da tela, e a IA continua trabalhando.",
           "O botão de tela cheia amplia uma coluna, e as outras continuam rodando. No ⋯: abrir o projeto completo, nova conversa e fixar no lugar.",
         ],
@@ -157,7 +157,7 @@ export const topics: Topic[] = [
         items: [
           "Os passos ficam numa linha cinza (\"Executou 4 comandos, leu 2 arquivos ›\"). Clique para ver um por um.",
           "A última linha diz o que ela está fazendo e há quanto tempo (\"Executando um comando · 4 min 47 s\").",
-          "Os números verdes e vermelhos (+12 −3) são as linhas que ela mudou. Clique para ver a mudança no Git, no modo Código.",
+          "Os números verdes e vermelhos (+12 −3) são as linhas que ela mudou. Clique para ver a mudança no modo Código (numa coluna do Início, na própria coluna).",
           "A lista de tarefas dela vira um cartão: ✓ nas feitas, girando na de agora, um círculo nas que faltam.",
           "Quando ela precisa de permissão, aparece um cartão com Permitir e Recusar.",
           "Parar, na linha de baixo (ou Esc na caixa), para tudo: a resposta, os comandos e os ajudantes dela. A conversa fica salva.",
